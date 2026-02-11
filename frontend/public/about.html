@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About Us - AgriMarket</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="stylesheet" href="/assets/css/components.css">
+  <link rel="stylesheet" href="/assets/css/utilities.css">
+  
+  <!-- Tailwind Config -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2d5016',
+            'primary-light': '#4a7c59',
+            secondary: '#20c997',
+            accent: '#ffc107',
+            dark: '#212529',
+            light: '#f8f9fa',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-50">
+  
+  <!-- Navigation -->
+  <nav id="main-navbar"></nav>
+  
+  <!-- Main Content -->
+  <main class="min-h-screen">
+    
+    <!-- Hero Section -->
+    <section class="bg-gradient-to-r from-primary to-primary-light text-white py-16">
+      <div class="container mx-auto px-4">
+        <div class="max-w-4xl mx-auto text-center">
+          <i class="bi bi-info-circle text-6xl mb-4"></i>
+          <h1 class="text-4xl md:text-5xl font-bold mb-4">About Us</h1>
+          <p class="text-xl opacity-90">Tungkol sa AgriMarket</p>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Content Section -->
+    <section class="py-16">
+      <div class="container mx-auto px-4">
+        <div class="max-w-4xl mx-auto">
+          
+          <!-- Main Description -->
+          <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
+            <div class="prose max-w-none">
+              <p class="text-lg text-gray-700 leading-relaxed mb-6">
+                AgriMarket ay isang <strong>verified online agriculture and fisheries marketplace</strong> na idinisenyo upang direktang ikonekta ang mga magsasaka at mangingisda ng Rizal Province sa mga lehitimong mamimili.
+              </p>
+            </div>
+          </div>
+          
+          <!-- Problem Statement -->
+          <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6 flex items-center">
+              <i class="bi bi-exclamation-triangle text-accent mr-3"></i>
+              Ang Problema
+            </h2>
+            <p class="text-gray-700 mb-4">
+              Ang sistema ay binuo bilang tugon sa patuloy na problema ng:
+            </p>
+            <ul class="space-y-3">
+              <li class="flex items-start">
+                <i class="bi bi-x-circle text-red-500 mr-3 mt-1"></i>
+                <span class="text-gray-700">Pag-asa sa middlemen</span>
+              </li>
+              <li class="flex items-start">
+                <i class="bi bi-x-circle text-red-500 mr-3 mt-1"></i>
+                <span class="text-gray-700">Mababang farm-gate prices</span>
+              </li>
+              <li class="flex items-start">
+                <i class="bi bi-x-circle text-red-500 mr-3 mt-1"></i>
+                <span class="text-gray-700">Kakulangan ng price at location transparency</span>
+              </li>
+              <li class="flex items-start">
+                <i class="bi bi-x-circle text-red-500 mr-3 mt-1"></i>
+                <span class="text-gray-700">Kawalan ng structured at secure na digital marketplace</span>
+              </li>
+            </ul>
+          </div>
+          
+          <!-- Our Solution -->
+          <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6 flex items-center">
+              <i class="bi bi-lightbulb text-primary mr-3"></i>
+              Ang Solusyon
+            </h2>
+            <p class="text-gray-700 mb-4">
+              Sa pamamagitan ng manual verification, structured ordering, at admin-mediated issue handling, layunin ng AgriMarket na:
+            </p>
+            <ul class="space-y-3">
+              <li class="flex items-start">
+                <i class="bi bi-check-circle text-green-500 mr-3 mt-1"></i>
+                <span class="text-gray-700">Palakasin ang bargaining power ng primary producers</span>
+              </li>
+              <li class="flex items-start">
+                <i class="bi bi-check-circle text-green-500 mr-3 mt-1"></i>
+                <span class="text-gray-700">Bawasan ang transactional risk</span>
+              </li>
+              <li class="flex items-start">
+                <i class="bi bi-check-circle text-green-500 mr-3 mt-1"></i>
+                <span class="text-gray-700">Magbigay ng simple at mobile-friendly na platform para sa lokal na kalakalan</span>
+              </li>
+            </ul>
+          </div>
+          
+          <!-- Academic Project -->
+          <div class="bg-gradient-to-r from-blue-50 to-green-50 rounded-lg shadow-lg p-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4 flex items-center">
+              <i class="bi bi-mortarboard text-blue-600 mr-3"></i>
+              Academic Project
+            </h2>
+            <p class="text-gray-700">
+              Ang proyektong ito ay binuo bilang bahagi ng <strong>Integrative Programming and Technologies</strong> course ng <strong>ICCT Colleges Foundation Inc. – College of Engineering and Digital Technology</strong>.
+            </p>
+          </div>
+          
+        </div>
+      </div>
+    </section>
+    
+  </main>
+  
+  <!-- Footer -->
+  <footer id="main-footer" class="bg-primary text-white py-12 sm:py-16"></footer>
+  
+  <!-- Scripts -->
+  <script type="module" src="/assets/js/components/navbar.js"></script>
+  <script type="module" src="/assets/js/components/footer.js"></script>
+  <script type="module">
+    import { renderNavbar } from '/assets/js/components/navbar.js';
+    import { renderFooter } from '/assets/js/components/footer.js';
+    
+    renderNavbar();
+    renderFooter();
+  </script>
+  
+</body>
+</html>

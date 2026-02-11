@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAQ - AgriMarket</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="stylesheet" href="/assets/css/components.css">
+  <link rel="stylesheet" href="/assets/css/utilities.css">
+  
+  <!-- Tailwind Config -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2d5016',
+            'primary-light': '#4a7c59',
+            secondary: '#20c997',
+            accent: '#ffc107',
+            dark: '#212529',
+            light: '#f8f9fa',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-50">
+  
+  <!-- Navigation -->
+  <nav id="main-navbar"></nav>
+  
+  <!-- Main Content -->
+  <main class="min-h-screen">
+    
+    <!-- Hero Section -->
+    <section class="bg-gradient-to-r from-primary to-primary-light text-white py-16">
+      <div class="container mx-auto px-4">
+        <div class="max-w-4xl mx-auto text-center">
+          <i class="bi bi-question-circle text-6xl mb-4"></i>
+          <h1 class="text-4xl md:text-5xl font-bold mb-4">FAQ</h1>
+          <p class="text-xl opacity-90">Frequently Asked Questions</p>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Content Section -->
+    <section class="py-16">
+      <div class="container mx-auto px-4">
+        <div class="max-w-4xl mx-auto">
+          
+          <!-- FAQ Items -->
+          <div class="space-y-4">
+            
+            <!-- Question 1 -->
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+              <button class="faq-question w-full text-left p-6 flex items-center justify-between hover:bg-gray-50 transition">
+                <div class="flex items-start flex-grow">
+                  <i class="bi bi-question-circle text-primary text-xl mr-3 mt-1"></i>
+                  <h3 class="font-semibold text-gray-900">Kailangan bang verified bago magbenta?</h3>
+                </div>
+                <i class="bi bi-chevron-down text-gray-400 transition-transform faq-icon"></i>
+              </button>
+              <div class="faq-answer px-6 pb-6 hidden">
+                <div class="pl-9">
+                  <p class="text-gray-700">
+                    <strong>Oo.</strong> Ang seller verification ay required bago makapag-post ng produkto. Ito ay upang maprotektahan ang mga buyer at matiyak ang legitimacy ng mga nagtitinda.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Question 2 -->
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+              <button class="faq-question w-full text-left p-6 flex items-center justify-between hover:bg-gray-50 transition">
+                <div class="flex items-start flex-grow">
+                  <i class="bi bi-question-circle text-primary text-xl mr-3 mt-1"></i>
+                  <h3 class="font-semibold text-gray-900">May online payment ba?</h3>
+                </div>
+                <i class="bi bi-chevron-down text-gray-400 transition-transform faq-icon"></i>
+              </button>
+              <div class="faq-answer px-6 pb-6 hidden">
+                <div class="pl-9">
+                  <p class="text-gray-700">
+                    <strong>Wala.</strong> Cash-on-Delivery (COD) lamang ang available sa MVP (Minimum Viable Product) version. Ang online payment ay maaring idagdag sa future updates.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Question 3 -->
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+              <button class="faq-question w-full text-left p-6 flex items-center justify-between hover:bg-gray-50 transition">
+                <div class="flex items-start flex-grow">
+                  <i class="bi bi-question-circle text-primary text-xl mr-3 mt-1"></i>
+                  <h3 class="font-semibold text-gray-900">Sino ang nag-aapprove ng accounts?</h3>
+                </div>
+                <i class="bi bi-chevron-down text-gray-400 transition-transform faq-icon"></i>
+              </button>
+              <div class="faq-answer px-6 pb-6 hidden">
+                <div class="pl-9">
+                  <p class="text-gray-700">
+                    <strong>Manual admin approval</strong> ang ginagamit sa kasalukuyang bersyon. Ang admin ay mag-review ng submitted IDs at selfies bago mag-approve ng account.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Question 4 -->
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+              <button class="faq-question w-full text-left p-6 flex items-center justify-between hover:bg-gray-50 transition">
+                <div class="flex items-start flex-grow">
+                  <i class="bi bi-question-circle text-primary text-xl mr-3 mt-1"></i>
+                  <h3 class="font-semibold text-gray-900">Verified ba ang product labels tulad ng "Organic"?</h3>
+                </div>
+                <i class="bi bi-chevron-down text-gray-400 transition-transform faq-icon"></i>
+              </button>
+              <div class="faq-answer px-6 pb-6 hidden">
+                <div class="pl-9">
+                  <p class="text-gray-700">
+                    <strong>Hindi.</strong> Ang labels ay self-declared ng seller at may disclaimer. Ang platform ay hindi nag-verify ng organic certification o iba pang product claims. Buyers ay advised na mag-tanong ng clarification sa seller.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Question 5 -->
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+              <button class="faq-question w-full text-left p-6 flex items-center justify-between hover:bg-gray-50 transition">
+                <div class="flex items-start flex-grow">
+                  <i class="bi bi-question-circle text-primary text-xl mr-3 mt-1"></i>
+                  <h3 class="font-semibold text-gray-900">Paano kung may problema sa order?</h3>
+                </div>
+                <i class="bi bi-chevron-down text-gray-400 transition-transform faq-icon"></i>
+              </button>
+              <div class="faq-answer px-6 pb-6 hidden">
+                <div class="pl-9">
+                  <p class="text-gray-700">
+                    May <strong>formal issue reporting system</strong> para sa mga problema sa orders. Ang admin ay mag-mediate at mag-review ng ebidensya mula sa buyer at seller bago magbigay ng resolution.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Question 6 -->
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+              <button class="faq-question w-full text-left p-6 flex items-center justify-between hover:bg-gray-50 transition">
+                <div class="flex items-start flex-grow">
+                  <i class="bi bi-question-circle text-primary text-xl mr-3 mt-1"></i>
+                  <h3 class="font-semibold text-gray-900">Pwede bang mag-browse nang hindi naka-log in?</h3>
+                </div>
+                <i class="bi bi-chevron-down text-gray-400 transition-transform faq-icon"></i>
+              </button>
+              <div class="faq-answer px-6 pb-6 hidden">
+                <div class="pl-9">
+                  <p class="text-gray-700">
+                    <strong>Oo.</strong> Pwede mag-browse ng products kahit hindi naka-log in. Pero para makapag-order, kailangan ng verified buyer account.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+          </div>
+          
+          <!-- Additional Help -->
+          <div class="mt-12 bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6">
+            <div class="flex items-start">
+              <i class="bi bi-info-circle text-blue-500 text-2xl mr-3 mt-1"></i>
+              <div>
+                <h3 class="font-bold text-blue-900 mb-2">Hindi nakita ang sagot?</h3>
+                <p class="text-blue-800">
+                  Para sa iba pang tanong, makipag-ugnayan sa admin o tingnan ang <a href="/contact.html" class="underline hover:text-blue-600">Contact page</a>.
+                </p>
+              </div>
+            </div>
+          </div>
+          
+        </div>
+      </div>
+    </section>
+    
+  </main>
+  
+  <!-- Footer -->
+  <footer id="main-footer" class="bg-primary text-white py-12 sm:py-16"></footer>
+  
+  <!-- Scripts -->
+  <script type="module" src="/assets/js/components/navbar.js"></script>
+  <script type="module" src="/assets/js/components/footer.js"></script>
+  <script type="module">
+    import { renderNavbar } from '/assets/js/components/navbar.js';
+    import { renderFooter } from '/assets/js/components/footer.js';
+    
+    renderNavbar();
+    renderFooter();
+    
+    // FAQ Toggle functionality
+    document.querySelectorAll('.faq-question').forEach(button => {
+      button.addEventListener('click', () => {
+        const answer = button.nextElementSibling;
+        const icon = button.querySelector('.faq-icon');
+        
+        // Toggle answer visibility
+        answer.classList.toggle('hidden');
+        
+        // Rotate icon
+        icon.classList.toggle('rotate-180');
+      });
+    });
+  </script>
+  
+  <style>
+    .faq-icon {
+      transition: transform 0.3s ease;
+    }
+    .rotate-180 {
+      transform: rotate(180deg);
+    }
+  </style>
+  
+</body>
+</html>

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgriMarket - Sound Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: #f8fafc;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 0.25rem;
+            font-size: 0.875rem;
+        }
+        .button:hover {
+            background: #2563eb;
+        }
+        .button.success { background: #10b981; }
+        .button.success:hover { background: #059669; }
+        .button.warning { background: #f59e0b; }
+        .button.warning:hover { background: #d97706; }
+        .button.danger { background: #ef4444; }
+        .button.danger:hover { background: #dc2626; }
+        .status {
+            margin: 1rem 0;
+            padding: 1rem;
+            border-radius: 6px;
+            background: #f1f5f9;
+            border-left: 4px solid #3b82f6;
+        }
+        .console {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔊 AgriMarket Sound Test</h1>
+    
+    <div class="card">
+        <h2>💡 Instructions:</h2>
+        <ol>
+            <li><strong>Click anywhere on this page first</strong> (browsers require user interaction before playing sounds)</li>
+            <li>Test individual sounds or all sounds</li>
+            <li>Check volume and settings</li>
+            <li>Open browser console (F12) for detailed logs</li>
+        </ol>
+    </div>
+
+    <div class="card">
+        <h2>🎵 Test Individual Sounds</h2>
+        <div>
+            <button class="button" onclick="testSound('notification')">🔔 Notification</button>
+            <button class="button" onclick="testSound('message')">💬 Message</button>
+            <button class="button success" onclick="testSound('success')">✅ Success</button>
+            <button class="button warning" onclick="testSound('warning')">⚠️ Warning</button>
+            <button class="button danger" onclick="testSound('error')">❌ Error</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>⚙️ Sound Settings</h2>
+        <div class="controls">
+            <button class="button" onclick="toggleSounds()">Toggle Sounds</button>
+            <div class="volume-control">
+                <label>Volume:</label>
+                <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="0.5" onchange="setVolume(this.value)">
+                <span id="volumeValue">50%</span>
+            </div>
+            <button class="button" onclick="showSettings()">Show Settings</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🧪 Advanced Tests</h2>
+        <div>
+            <button class="button" onclick="testAllSounds()">Test All Sounds</button>
+            <button class="button" onclick="testFallbacks()">Test Fallback Beeps</button>
+            <button class="button" onclick="simulateNotifications()">Simulate Real Notifications</button>
+        </div>
+    </div>
+
+    <div id="status" class="status">
+        <strong>Status:</strong> Ready to test. Click any sound button to begin.
+    </div>
+
+    <div class="card">
+        <h2>📋 Console Log</h2>
+        <div id="console" class="console">Console output will appear here...\n</div>
+        <button class="button" onclick="clearConsole()">Clear Console</button>
+    </div>
+
+    <script type="module">
+        import { 
+            playNotificationSound, 
+            playMessageSound, 
+            playSuccessSound, 
+            playWarningSound,
+            playErrorSound,
+            isSoundEnabled,
+            enableSounds,
+            disableSounds,
+            toggleSounds as toggleSoundsSetting,
+            getVolume,
+            setVolume as setSoundVolume
+        } from './assets/js/features/notifications/notification-sound.js';
+
+        // Override console methods to display in page
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        const originalDebug = console.debug;
+        
+        const logToPage = (type, ...args) => {
+            const consoleEl = document.getElementById('console');
+            const timestamp = new Date().toLocaleTimeString();
+            const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : arg).join(' ');
+            consoleEl.textContent += `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        };
+        
+        console.log = (...args) => { originalLog.apply(console, args); logToPage('log', ...args); };
+        console.error = (...args) => { originalError.apply(console, args); logToPage('error', ...args); };
+        console.warn = (...args) => { originalWarn.apply(console, args); logToPage('warn', ...args); };
+        console.debug = (...args) => { originalDebug.apply(console, args); logToPage('debug', ...args); };
+
+        // Global functions for buttons
+        window.testSound = async (type) => {
+            const statusEl = document.getElementById('status');
+            statusEl.innerHTML = `<strong>Status:</strong> Testing ${type} sound...`;
+            
+            try {
+                switch (type) {
+                    case 'notification':
+                        await playNotificationSound();
+                        break;
+                    case 'message':
+                        await playMessageSound();
+                        break;
+                    case 'success':
+                        await playSuccessSound();
+                        break;
+                    case 'warning':
+                        await playWarningSound();
+                        break;
+                    case 'error':
+                        await playErrorSound();
+                        break;
+                }
+                statusEl.innerHTML = `<strong>Status:</strong> ✅ Played ${type} sound successfully`;
+            } catch (error) {
+                statusEl.innerHTML = `<strong>Status:</strong> ❌ Failed to play ${type} sound: ${error.message}`;
+            }
+        };
+
+        window.toggleSounds = () => {
+            toggleSoundsSetting();
+            const enabled = isSoundEnabled();
+            document.getElementById('status').innerHTML = `<strong>Status:</strong> Sounds ${enabled ? 'enabled' : 'disabled'}`;
+            updateVolumeDisplay();
+        };
+
+        window.setVolume = (value) => {
+            setSoundVolume(parseFloat(value));
+            updateVolumeDisplay();
+        };
+
+        window.showSettings = () => {
+            const settings = {
+                enabled: isSoundEnabled(),
+                volume: getVolume(),
+                localStorage: {
+                    enabled: localStorage.getItem('notification_sound_enabled'),
+                    volume: localStorage.getItem('notification_sound_volume')
+                }
+            };
+            
+            logToPage('info', 'Sound Settings:', settings);
+            document.getElementById('status').innerHTML = `<strong>Status:</strong> Settings logged to console`;
+        };
+
+        window.testAllSounds = async () => {
+            const sounds = ['notification', 'message', 'success', 'warning', 'error'];
+            document.getElementById('status').innerHTML = `<strong>Status:</strong> Testing all sounds...`;
+            
+            for (const sound of sounds) {
+                await window.testSound(sound);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            document.getElementById('status').innerHTML = `<strong>Status:</strong> ✅ All sound tests complete!`;
+        };
+
+        window.testFallbacks = async () => {
+            document.getElementById('status').innerHTML = `<strong>Status:</strong> Testing fallback beep sounds...`;
+            console.log('Testing fallback beep sounds...');
+            
+            // Temporarily disable audio files to force fallbacks
+            const originalFetch = window.fetch;
+            window.fetch = () => Promise.reject(new Error('Simulated 404 for fallback test'));
+            
+            try {
+                await window.testAllSounds();
+            } finally {
+                window.fetch = originalFetch;
+            }
+        };
+
+        window.simulateNotifications = async () => {
+            document.getElementById('status').innerHTML = `<strong>Status:</strong> Simulating real notifications...`;
+            
+            const notifications = [
+                { type: 'notification', message: 'New order received!' },
+                { type: 'message', message: 'New message from buyer' },
+                { type: 'success', message: 'Payment confirmed' },
+                { type: 'warning', message: 'Low stock alert' },
+                { type: 'error', message: 'Order processing failed' }
+            ];
+            
+            for (const notif of notifications) {
+                console.log(`📱 ${notif.message}`);
+                await window.testSound(notif.type);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+            
+            document.getElementById('status').innerHTML = `<strong>Status:</strong> ✅ Notification simulation complete!`;
+        };
+
+        window.clearConsole = () => {
+            document.getElementById('console').textContent = 'Console cleared...\n';
+        };
+
+        function updateVolumeDisplay() {
+            const volume = getVolume();
+            const enabled = isSoundEnabled();
+            document.getElementById('volumeSlider').value = volume;
+            document.getElementById('volumeValue').textContent = `${Math.round(volume * 100)}%${enabled ? '' : ' (Disabled)'}`;
+        }
+
+        // Initialize
+        updateVolumeDisplay();
+        console.log('🔊 Sound test page loaded!');
+        console.log('💡 Click anywhere on the page, then test the sounds');
+    </script>
+</body>
+</html>

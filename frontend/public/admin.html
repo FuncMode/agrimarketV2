@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - AgriMarket</title>
+  
+  <!-- Security Headers (set via nginx/server, not meta tags) -->
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  
+  <!-- DNS Prefetch & Preconnect -->
+  <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+  <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+  
+  <!-- Preload Critical CSS -->
+  <link rel="preload" href="/assets/css/main.css" as="style">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" integrity="sha384-4LISF5TTJX/fLmGSxO53rV4miRxdg84mZsxmO8Rx5jGtp/LbrixFETvWa5a6sESd" crossorigin="anonymous">
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="stylesheet" href="/assets/css/components.css">
+  
+    <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
+</head>
+<body class="bg-light">
+  
+  <nav id="main-navbar" class="navbar"></nav>
+  
+  <div class="container mx-auto px-4 py-4 sm:py-6 md:py-8">
+    
+    <!-- Dashboard Stats -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+      <div class="card">
+        <div class="card-body">
+          <p class="text-gray-600 text-xs sm:text-sm">Total Users</p>
+          <p id="stat-users" class="text-xl sm:text-2xl lg:text-3xl font-bold">0</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <p class="text-gray-600 text-xs sm:text-sm">Pending Verifications</p>
+          <p id="stat-pending-verifications" class="text-xl sm:text-2xl lg:text-3xl font-bold text-warning">0</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <p class="text-gray-600 text-xs sm:text-sm">Open Issues</p>
+          <p id="stat-open-issues" class="text-xl sm:text-2xl lg:text-3xl font-bold text-danger">0</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <p class="text-gray-600 text-xs sm:text-sm">Total Products</p>
+          <p id="stat-products" class="text-xl sm:text-2xl lg:text-3xl font-bold">0</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Verifications Section -->
+    <section id="verifications" class="mb-8 sm:mb-12">
+      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Pending Verifications</h2>
+      <div id="verifications-list"></div>
+    </section>
+    
+    <!-- Issues Section -->
+    <section id="issues" class="mb-8 sm:mb-12">
+      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Issues & Reports</h2>
+      <div class="card">
+        <div class="card-body">
+          <!-- Mobile View -->
+          <div class="block sm:hidden" id="issues-mobile-view">
+            <!-- Mobile cards will be rendered by JS -->
+          </div>
+          
+          <!-- Desktop Table View -->
+          <div class="hidden sm:block overflow-x-auto">
+            <table class="table w-full min-w-[600px]">
+              <thead>
+                <tr>
+                  <th class="text-left whitespace-nowrap">ID</th>
+                  <th class="text-left whitespace-nowrap">Type</th>
+                  <th class="text-left whitespace-nowrap">Reporter</th>
+                  <th class="text-left whitespace-nowrap">Status</th>
+                  <th class="text-left whitespace-nowrap">Date</th>
+                  <th class="text-left whitespace-nowrap">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="issues-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Users Section -->
+    <section id="users" class="mb-8 sm:mb-12">
+      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">User Management</h2>
+      <div class="card">
+        <div class="card-body">
+          <!-- Filters -->
+          <div class="flex flex-wrap gap-4 mb-6">
+            <select id="filter-role" class="form-select flex-1 min-w-[150px]">
+              <option value="">All Roles</option>
+              <option value="buyer">Buyers</option>
+              <option value="seller">Sellers</option>
+            </select>
+            
+            <select id="filter-status" class="form-select flex-1 min-w-[150px]">
+              <option value="">All Statuses</option>
+              <option value="unverified">Unverified</option>
+              <option value="verification_pending">Pending Verification</option>
+              <option value="verified">Verified</option>
+              <option value="rejected">Rejected</option>
+              <option value="suspended">Suspended</option>
+              <option value="banned">Banned</option>
+            </select>
+            
+            <input type="text" id="search-users" class="form-control flex-1 min-w-[200px]" placeholder="Search by name or email...">
+            
+            <button id="btn-search-users" class="btn btn-primary">
+              <i class="bi bi-search"></i> Search
+            </button>
+          </div>
+          
+          <!-- Users List -->
+          <div id="users-list-container">
+            <!-- Mobile View -->
+            <div class="block sm:hidden" id="users-mobile-view"></div>
+            
+            <!-- Desktop Table View -->
+            <div class="hidden sm:block overflow-x-auto">
+              <table class="table w-full min-w-[800px]">
+                <thead>
+                  <tr>
+                    <th class="text-left whitespace-nowrap">Name</th>
+                    <th class="text-left whitespace-nowrap">Email</th>
+                    <th class="text-left whitespace-nowrap">Role</th>
+                    <th class="text-left whitespace-nowrap">Status</th>
+                    <th class="text-left whitespace-nowrap">Joined</th>
+                    <th class="text-left whitespace-nowrap">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-body">
+                  <tr><td colspan="6" class="text-center py-8"><div class="loading-spinner mx-auto"></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          <!-- Pagination -->
+          <div id="users-pagination" class="flex justify-center gap-2 mt-6"></div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- System Monitoring Section -->
+    <section id="system-monitoring" class="mb-8 sm:mb-12">
+      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">System Monitoring</h2>
+      
+      <!-- Socket Connections -->
+      <div class="card mb-6">
+        <div class="card-body">
+          <h3 class="text-xl font-semibold mb-4 flex items-center gap-2">
+            <i class="bi bi-broadcast text-primary"></i>
+            Socket Connections
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Connected Users</p>
+              <p id="socket-users-count" class="text-2xl font-bold text-primary">0</p>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Total Connections</p>
+              <p id="socket-connections-count" class="text-2xl font-bold text-success">0</p>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Status</p>
+              <p id="socket-status" class="text-lg font-bold">
+                <span class="badge badge-secondary">Unknown</span>
+              </p>
+            </div>
+          </div>
+          <button id="btn-refresh-sockets" class="btn btn-sm btn-outline">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+          </button>
+        </div>
+      </div>
+      
+      <!-- IP Blocking Stats -->
+      <div class="card mb-6">
+        <div class="card-body">
+          <h3 class="text-xl font-semibold mb-4 flex items-center gap-2">
+            <i class="bi bi-shield-lock text-warning"></i>
+            IP Blocking & Security
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Blocked IPs</p>
+              <p id="blocked-ips-count" class="text-2xl font-bold text-danger">0</p>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Failed Attempts (24h)</p>
+              <p id="failed-attempts-count" class="text-2xl font-bold text-warning">0</p>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Rate Limit Blocks</p>
+              <p id="rate-limit-count" class="text-2xl font-bold text-info">0</p>
+            </div>
+          </div>
+          <button id="btn-refresh-security" class="btn btn-sm btn-outline">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+          </button>
+        </div>
+      </div>
+      
+      <!-- Database Health -->
+      <div class="card">
+        <div class="card-body">
+          <h3 class="text-xl font-semibold mb-4 flex items-center gap-2">
+            <i class="bi bi-database text-success"></i>
+            Database Health
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Status</p>
+              <p id="db-status" class="text-lg font-bold">
+                <span class="badge badge-secondary">Unknown</span>
+              </p>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Query Count</p>
+              <p id="db-query-count" class="text-2xl font-bold">0</p>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Avg Response Time</p>
+              <p id="db-avg-time" class="text-2xl font-bold">0ms</p>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <p class="text-gray-600 text-sm">Error Rate</p>
+              <p id="db-error-rate" class="text-2xl font-bold">0%</p>
+            </div>
+          </div>
+          <button id="btn-refresh-database" class="btn btn-sm btn-outline">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+          </button>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Logs Section -->
+    <section id="logs" class="mb-12">
+      <h2 class="text-3xl font-bold mb-6">System Logs</h2>
+      <div class="card">
+        <div class="card-body">
+          <div class="flex gap-4 mb-4">
+            <select id="log-type" class="form-select">
+              <option value="all">All Logs</option>
+              <option value="auth">Authentication</option>
+              <option value="admin">Admin Actions</option>
+              <option value="security">Security Events</option>
+            </select>
+            <input type="date" id="log-date" class="form-control">
+            <button id="btn-search-logs" class="btn btn-primary">Search</button>
+          </div>
+          <div id="logs-viewer" class="max-h-96 overflow-y-auto"></div>
+        </div>
+      </div>
+    </section>
+    
+  </div>
+  
+  <!-- Socket.io Client Library -->
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" integrity="sha384-/KNQL8Nu5gCHLqwqfQjA689Hhoqgi2S84SNUxC3roTe4EhJ9AfLkp8QiQcU8AMzI" crossorigin="anonymous" defer></script>
+  
+  <script src="/assets/js/config/env-loader.js"></script>
+  
+  <!-- Performance & Security -->
+  <script type="module">
+    import { initPerformanceMonitoring } from '/assets/js/utils/performance-monitor.js';
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      initPerformanceMonitoring();
+    }
+  </script>
+  
+  <script type="module" src="/assets/js/pages/admin.main.js"></script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables (never commit real secrets)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Temporary / runtime files
+temp/
+tmp/
+*.tmp
+*.bak
+*.old
+.cache/
+
+# Uploads / user-generated content
+uploads/*
+!uploads/.gitkeep
+
+# Build output
+dist/
+build/
+coverage/
+.nyc_output/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Secrets / keys / certs
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Local scripts that may contain credentials (keep untracked)
+create-admin.js
+
+# Example environment files (keep for reference)
+.env.example
+database-consolidated.sql
+.gitignore

@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Verification - AgriMarket</title>
+  
+  <!-- Security Headers (set via nginx/server, not meta tags) -->
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  
+  <!-- DNS Prefetch & Preconnect -->
+  <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+  <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+  
+  <!-- Preload Critical CSS -->
+  <link rel="preload" href="/assets/css/main.css" as="style">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" integrity="sha384-4LISF5TTJX/fLmGSxO53rV4miRxdg84mZsxmO8Rx5jGtp/LbrixFETvWa5a6sESd" crossorigin="anonymous">
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="stylesheet" href="/assets/css/components.css">
+
+      <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
+  
+  <style>
+    .verification-header {
+      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+      color: white;
+      text-align: center;
+      padding: 2rem;
+      border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+      margin: -1.5rem -1.5rem 2rem -1.5rem;
+    }
+    
+    .verification-step {
+      background: var(--color-gray-50);
+      border: 2px dashed var(--color-gray-300);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      transition: all var(--transition-normal);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .verification-step:hover {
+      border-color: var(--color-primary);
+      background: var(--color-gray-100);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    
+    .verification-step.has-file {
+      border-color: var(--color-success);
+      background: rgba(40, 167, 69, 0.05);
+      border-style: solid;
+    }
+    
+    .file-input-wrapper {
+      position: relative;
+      cursor: pointer;
+    }
+    
+    .file-input-wrapper input[type="file"] {
+      position: absolute;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+    
+    .upload-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--color-primary);
+      color: white;
+      border-radius: var(--radius-full);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1rem;
+      font-size: 1.5rem;
+      transition: all var(--transition-fast);
+    }
+    
+    .verification-step:hover .upload-icon {
+      transform: scale(1.1);
+      box-shadow: var(--shadow-lg);
+    }
+    
+    .progress-bar {
+      height: 4px;
+      background: var(--color-gray-200);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+      transition: width var(--transition-normal);
+      border-radius: var(--radius-full);
+    }
+    
+    .guideline-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 0;
+    }
+    
+    .guideline-icon {
+      color: var(--color-success);
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  
+  <nav id="main-navbar" class="navbar"></nav>
+  
+  <div class="container max-w-4xl mx-auto px-4 py-4 sm:py-6 md:py-8">
+    
+    <div class="card shadow-xl">
+      <div class="card-body">
+        
+        <!-- Header Section -->
+        <div class="verification-header">
+          <div class="flex items-center justify-center gap-3 mb-3">
+            <i class="bi bi-shield-check" style="font-size: 2.5rem;"></i>
+            <h1 class="text-3xl sm:text-4xl font-bold">Account Verification</h1>
+          </div>
+          <p class="text-lg opacity-90 max-w-2xl mx-auto">
+            Secure your marketplace experience with identity verification. 
+            This helps us maintain a trusted community for all users.
+          </p>
+          
+          <!-- Progress Bar -->
+          <div class="progress-bar mt-6">
+            <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+          </div>
+          <p id="progress-text" class="text-sm opacity-80 mt-2">Step 1 of 3: Select ID Type</p>
+        </div>
+        
+        <!-- Verification Form -->
+        <form id="verification-form" class="space-y-8">
+          
+          <!-- ID Type Selection -->
+          <div class="form-group">
+            <label class="form-label text-lg font-semibold mb-3 block">
+              <i class="bi bi-card-text text-primary"></i> 
+              Choose Your ID Type
+              <span class="text-danger ml-1">*</span>
+            </label>
+            <select 
+              id="id-type" 
+              class="form-select text-lg py-4"
+              required
+            >
+              <option value="">Select your government-issued ID</option>
+              <option value="drivers_license">🚗 Driver's License</option>
+              <option value="philid">🆔 Philippine ID (PhilID)</option>
+              <option value="passport">✈️ Passport</option>
+              <option value="nbi_clearance">📋 NBI Clearance</option>
+            </select>
+            <div class="invalid-feedback"></div>
+          </div>
+          
+          <!-- ID Upload Section -->
+          <div class="verification-step" id="id-upload-section">
+            <div class="file-input-wrapper">
+              <input 
+                type="file" 
+                id="id-document" 
+                accept="image/jpeg,image/jpg,image/png"
+                class="form-control"
+                required
+              >
+              
+              <div class="text-center">
+                <div class="upload-icon">
+                  <i class="bi bi-card-text"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-2 text-gray-800">
+                  Upload Government ID
+                  <span class="text-danger ml-1">*</span>
+                </h3>
+                <p class="text-gray-600 mb-4">
+                  Take a clear photo of your government-issued ID
+                </p>
+                
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm text-gray-500 mb-4">
+                  <div class="flex items-center gap-2">
+                    <i class="bi bi-check-circle text-success"></i>
+                    National ID
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <i class="bi bi-check-circle text-success"></i>
+                    Driver's License
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <i class="bi bi-check-circle text-success"></i>
+                    Passport
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <i class="bi bi-check-circle text-success"></i>
+                    Voter's ID
+                  </div>
+                </div>
+                
+                <div class="btn btn-outline-primary btn-lg">
+                  <i class="bi bi-cloud-upload"></i>
+                  Click to upload or drag & drop
+                </div>
+              </div>
+            </div>
+            
+            <div class="invalid-feedback"></div>
+            
+            <!-- ID Preview -->
+            <div id="id-preview" class="mt-6 text-center" style="display: none;">
+              <div class="inline-block relative">
+                <img src="" alt="ID Preview" class="max-w-sm w-full rounded-xl shadow-lg border-4 border-success">
+                <div class="absolute -top-2 -right-2 bg-success text-white rounded-full w-8 h-8 flex items-center justify-center">
+                  <i class="bi bi-check text-sm"></i>
+                </div>
+              </div>
+              <p class="text-success font-medium mt-3">
+                <i class="bi bi-check-circle"></i>
+                Government ID uploaded successfully
+              </p>
+            </div>
+          </div>
+          
+          <!-- Selfie Upload Section -->
+          <div class="verification-step" id="selfie-upload-section">
+            <div class="file-input-wrapper">
+              <input 
+                type="file" 
+                id="selfie-photo" 
+                accept="image/jpeg,image/jpg,image/png"
+                class="form-control"
+                required
+              >
+              
+              <div class="text-center">
+                <div class="upload-icon" style="background: var(--color-secondary);">
+                  <i class="bi bi-camera"></i>
+                </div>
+                <h3 class="text-xl font-bold mb-2 text-gray-800">
+                  Upload Selfie with ID
+                  <span class="text-danger ml-1">*</span>
+                </h3>
+                <p class="text-gray-600 mb-4">
+                  Take a selfie while holding your ID next to your face
+                </p>
+                
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4 text-sm text-yellow-800">
+                  <i class="bi bi-lightbulb text-yellow-600"></i>
+                  <strong>Pro tip:</strong> Make sure both your face and ID details are clearly visible
+                </div>
+                
+                <div class="btn btn-outline-secondary btn-lg">
+                  <i class="bi bi-camera"></i>
+                  Take selfie or upload photo
+                </div>
+              </div>
+            </div>
+            
+            <div class="invalid-feedback"></div>
+            
+            <!-- Selfie Preview -->
+            <div id="selfie-preview" class="mt-6 text-center" style="display: none;">
+              <div class="inline-block relative">
+                <img src="" alt="Selfie Preview" class="max-w-sm w-full rounded-xl shadow-lg border-4 border-secondary">
+                <div class="absolute -top-2 -right-2 bg-secondary text-white rounded-full w-8 h-8 flex items-center justify-center">
+                  <i class="bi bi-check text-sm"></i>
+                </div>
+              </div>
+              <p class="text-secondary font-medium mt-3">
+                <i class="bi bi-check-circle"></i>
+                Selfie uploaded successfully
+              </p>
+            </div>
+          </div>
+          
+          <!-- Enhanced Guidelines -->
+          <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-12 h-12 bg-info text-white rounded-full flex items-center justify-center">
+                <i class="bi bi-info-circle text-xl"></i>
+              </div>
+              <div>
+                <h4 class="text-xl font-bold text-gray-800 mb-1">
+                  Verification Guidelines
+                </h4>
+                <p class="text-gray-600 text-sm">
+                  Follow these requirements for faster approval
+                </p>
+              </div>
+            </div>
+            
+            <div class="grid md:grid-cols-2 gap-4">
+              <div class="space-y-3">
+                <h5 class="font-semibold text-gray-700 mb-2">
+                  <i class="bi bi-camera text-primary"></i> Photo Quality
+                </h5>
+                <div class="guideline-item">
+                  <i class="bi bi-check-circle guideline-icon"></i>
+                  <span class="text-sm">Clear and well-lit photos</span>
+                </div>
+                <div class="guideline-item">
+                  <i class="bi bi-check-circle guideline-icon"></i>
+                  <span class="text-sm">All text must be readable</span>
+                </div>
+                <div class="guideline-item">
+                  <i class="bi bi-check-circle guideline-icon"></i>
+                  <span class="text-sm">No blurry or dark images</span>
+                </div>
+              </div>
+              
+              <div class="space-y-3">
+                <h5 class="font-semibold text-gray-700 mb-2">
+                  <i class="bi bi-file-earmark-text text-secondary"></i> File Requirements
+                </h5>
+                <div class="guideline-item">
+                  <i class="bi bi-check-circle guideline-icon"></i>
+                  <span class="text-sm">JPG, JPEG, PNG formats only</span>
+                </div>
+                <div class="guideline-item">
+                  <i class="bi bi-check-circle guideline-icon"></i>
+                  <span class="text-sm">Maximum 5MB per image</span>
+                </div>
+                <div class="guideline-item">
+                  <i class="bi bi-check-circle guideline-icon"></i>
+                  <span class="text-sm">Face and ID must be visible in selfie</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="mt-6 p-4 bg-white rounded-lg border-l-4 border-warning">
+              <div class="flex items-start gap-3">
+                <i class="bi bi-exclamation-triangle text-warning text-xl mt-1"></i>
+                <div>
+                  <p class="font-medium text-gray-800 mb-1">Important Note</p>
+                  <p class="text-sm text-gray-600">
+                    Verification typically takes 24-48 hours. You'll be notified via email once your documents are reviewed.
+                    Make sure your uploaded documents match your account information.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Submit Section -->
+          <div class="bg-gray-50 rounded-xl p-6 text-center">
+            <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
+              <button 
+                type="submit" 
+                id="btn-submit-verification" 
+                class="btn btn-primary btn-xl px-8 py-4 text-lg font-bold shadow-lg"
+              >
+                <i class="bi bi-shield-check text-xl"></i> 
+                Submit for Verification
+              </button>
+              
+              <div class="flex items-center gap-4">
+                <div class="text-gray-400">or</div>
+                <a href="/seller.html" class="btn btn-outline btn-lg">
+                  <i class="bi bi-arrow-left"></i>
+                  Back to Dashboard
+                </a>
+              </div>
+            </div>
+            
+            <p class="text-xs text-gray-500 mt-4">
+              By submitting, you agree to our verification process and confirm that the information provided is accurate.
+            </p>
+          </div>
+          
+        </form>
+        
+      </div>
+    </div>
+    
+  </div>
+  
+  <script src="/assets/js/config/env-loader.js"></script>
+  
+  <!-- Performance & Security -->
+  <script type="module">
+    import { initPerformanceMonitoring } from '/assets/js/utils/performance-monitor.js';
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      initPerformanceMonitoring();
+    }
+  </script>
+  
+  <script type="module" src="/assets/js/pages/verification.main.js"></script>
+</body>
+</html>

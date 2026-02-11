@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How It Works - AgriMarket</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="stylesheet" href="/assets/css/components.css">
+  <link rel="stylesheet" href="/assets/css/utilities.css">
+  
+  <!-- Tailwind Config -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2d5016',
+            'primary-light': '#4a7c59',
+            secondary: '#20c997',
+            accent: '#ffc107',
+            dark: '#212529',
+            light: '#f8f9fa',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-50">
+  
+  <!-- Navigation -->
+  <nav id="main-navbar"></nav>
+  
+  <!-- Main Content -->
+  <main class="min-h-screen">
+    
+    <!-- Hero Section -->
+    <section class="bg-gradient-to-r from-primary to-primary-light text-white py-16">
+      <div class="container mx-auto px-4">
+        <div class="max-w-4xl mx-auto text-center">
+          <i class="bi bi-gear-fill text-6xl mb-4"></i>
+          <h1 class="text-4xl md:text-5xl font-bold mb-4">How It Works</h1>
+          <p class="text-xl opacity-90">Paano Gumagana ang AgriMarket</p>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Content Section -->
+    <section class="py-16">
+      <div class="container mx-auto px-4">
+        <div class="max-w-4xl mx-auto">
+          
+          <!-- Introduction -->
+          <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
+            <p class="text-lg text-gray-700 leading-relaxed">
+              Gumagana ang AgriMarket sa pamamagitan ng <strong>verified at role-based workflow</strong> upang matiyak ang seguridad at tiwala ng lahat ng user.
+            </p>
+          </div>
+          
+          <!-- Process Steps -->
+          <div class="space-y-6">
+            
+            <!-- Step 1: Registration -->
+            <div class="bg-white rounded-lg shadow-lg p-8">
+              <div class="flex items-start">
+                <div class="flex-shrink-0">
+                  <div class="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center text-xl font-bold">
+                    1
+                  </div>
+                </div>
+                <div class="ml-6 flex-grow">
+                  <h3 class="text-xl font-bold text-gray-900 mb-3">
+                    <i class="bi bi-person-plus text-primary mr-2"></i>
+                    Registration at Verification
+                  </h3>
+                  <ul class="space-y-2 text-gray-700">
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Ang buyers at sellers ay kailangang mag-register</span>
+                    </li>
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Required ang government-issued ID at actual selfie</span>
+                    </li>
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Manual approval ng admin bago makapag-transact</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Step 2: Product Listing -->
+            <div class="bg-white rounded-lg shadow-lg p-8">
+              <div class="flex items-start">
+                <div class="flex-shrink-0">
+                  <div class="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center text-xl font-bold">
+                    2
+                  </div>
+                </div>
+                <div class="ml-6 flex-grow">
+                  <h3 class="text-xl font-bold text-gray-900 mb-3">
+                    <i class="bi bi-box-seam text-primary mr-2"></i>
+                    Product Listing (Sellers Only)
+                  </h3>
+                  <ul class="space-y-2 text-gray-700">
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Verified sellers lamang ang pwedeng mag-post ng produkto</span>
+                    </li>
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Seller-controlled pricing (farm-gate price)</span>
+                    </li>
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>May malinaw na product at location details</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Step 3: Product Browsing -->
+            <div class="bg-white rounded-lg shadow-lg p-8">
+              <div class="flex items-start">
+                <div class="flex-shrink-0">
+                  <div class="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center text-xl font-bold">
+                    3
+                  </div>
+                </div>
+                <div class="ml-6 flex-grow">
+                  <h3 class="text-xl font-bold text-gray-900 mb-3">
+                    <i class="bi bi-search text-primary mr-2"></i>
+                    Product Browsing at Ordering (Buyers)
+                  </h3>
+                  <ul class="space-y-2 text-gray-700">
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Pwede mag-browse kahit hindi verified</span>
+                    </li>
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Verified buyers lamang ang pwedeng mag-place ng order</span>
+                    </li>
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>May cart, delivery option, at order confirmation</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Step 4: Payment & Delivery -->
+            <div class="bg-white rounded-lg shadow-lg p-8">
+              <div class="flex items-start">
+                <div class="flex-shrink-0">
+                  <div class="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center text-xl font-bold">
+                    4
+                  </div>
+                </div>
+                <div class="ml-6 flex-grow">
+                  <h3 class="text-xl font-bold text-gray-900 mb-3">
+                    <i class="bi bi-cash-coin text-primary mr-2"></i>
+                    Payment at Delivery
+                  </h3>
+                  <ul class="space-y-2 text-gray-700">
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Cash-on-Delivery (COD) lamang sa MVP</span>
+                    </li>
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Delivery coordination sa pamamagitan ng messaging at map tools</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Step 5: Issue Handling -->
+            <div class="bg-white rounded-lg shadow-lg p-8">
+              <div class="flex items-start">
+                <div class="flex-shrink-0">
+                  <div class="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center text-xl font-bold">
+                    5
+                  </div>
+                </div>
+                <div class="ml-6 flex-grow">
+                  <h3 class="text-xl font-bold text-gray-900 mb-3">
+                    <i class="bi bi-shield-check text-primary mr-2"></i>
+                    Issue Handling
+                  </h3>
+                  <ul class="space-y-2 text-gray-700">
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>May formal issue reporting</span>
+                    </li>
+                    <li class="flex items-start">
+                      <i class="bi bi-check2 text-green-500 mr-2 mt-1"></i>
+                      <span>Admin-mediated review at resolution</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            
+          </div>
+          
+        </div>
+      </div>
+    </section>
+    
+  </main>
+  
+  <!-- Footer -->
+  <footer id="main-footer" class="bg-primary text-white py-12 sm:py-16"></footer>
+  
+  <!-- Scripts -->
+  <script type="module" src="/assets/js/components/navbar.js"></script>
+  <script type="module" src="/assets/js/components/footer.js"></script>
+  <script type="module">
+    import { renderNavbar } from '/assets/js/components/navbar.js';
+    import { renderFooter } from '/assets/js/components/footer.js';
+    
+    renderNavbar();
+    renderFooter();
+  </script>
+  
+</body>
+</html>
