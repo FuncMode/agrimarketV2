@@ -42,6 +42,17 @@ const initializeTransporter = () => {
 
 const verifyEmailConfig = async () => {
   try {
+    // SendGrid doesn't need verification - just check if API key is set
+    if (process.env.EMAIL_SERVICE === 'sendgrid') {
+      if (!process.env.SENDGRID_API_KEY) {
+        console.warn('   SendGrid API key not configured');
+        return false;
+      }
+      console.log('   ✓ SendGrid API key configured');
+      return true;
+    }
+
+    // For Nodemailer, verify the connection
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
       console.warn('   Email not configured - skipping verification');
       return false;
@@ -716,30 +727,6 @@ async function sendEmail(emailData) {
       recipient: emailData.to,
       subject: emailData.subject,
       sendgridErrors: error.response?.data?.errors
-    });
-    
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-}
-
-  } catch (error) {
-    console.error('❌ Email send error:', error.message);
-    console.error('   Error code:', error.code);
-    console.error('   Error response:', error.response);
-    console.error('   Email service:', process.env.EMAIL_SERVICE);
-    console.error('   Email user:', process.env.EMAIL_USER ? process.env.EMAIL_USER.split('@')[0] + '@...' : 'NOT SET');
-    
-    // Log to deployment logs for debugging
-    const logger = require('../utils/logger');
-    logger.error('Email service failed', {
-      error: error.message,
-      code: error.code,
-      service: process.env.EMAIL_SERVICE,
-      recipient: emailData.to,
-      subject: emailData.subject
     });
     
     return {
