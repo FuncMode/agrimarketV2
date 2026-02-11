@@ -28,7 +28,7 @@ const initSocket = () => {
   }
   
   try {
-    const wsUrl = 'wss://agrimarket-production-04b3.up.railway.app'; // Production WebSocket URL
+    const wsUrl = 'wss://agrimarketv2-production.up.railway.app'; // Production WebSocket URL
     
     socket = io(wsUrl, {
       auth: {
