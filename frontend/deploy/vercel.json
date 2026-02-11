@@ -1,32 +1,11 @@
 {
   "version": 2,
-  "name": "agrimarket-frontend",
-  "builds": [
+  "public": "public",
+  "cleanUrls": true,
+  "rewrites": [
     {
-      "src": "public/**",
-      "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/assets/(.*)",
-      "dest": "/public/assets/$1"
-    },
-    {
-      "src": "/(.*\\.html)$",
-      "dest": "/public/$1"
-    },
-    {
-      "src": "/(.*\\.js)$",
-      "dest": "/public/$1"
-    },
-    {
-      "src": "/(.*\\.css)$",
-      "dest": "/public/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/$1"
+      "source": "/(.*)",
+      "destination": "/$1"
     }
   ]
 }
