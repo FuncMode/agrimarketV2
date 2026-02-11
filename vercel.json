@@ -1,6 +1,5 @@
 {
   "version": 2,
   "buildCommand": "npm run build",
-  "outputDirectory": "frontend/public",
-  "public": "frontend/public"
+  "outputDirectory": "frontend/public"
 }
