@@ -13,7 +13,9 @@ const initializeTransporter = () => {
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD
-      }
+      },
+      connectionTimeout: 5000,
+      socketTimeout: 5000
     });
   } else {
     transporter = nodemailer.createTransport({
@@ -23,7 +25,9 @@ const initializeTransporter = () => {
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD
-      }
+      },
+      connectionTimeout: 5000,
+      socketTimeout: 5000
     });
   }
 
@@ -609,7 +613,15 @@ async function sendEmail(emailData) {
       html: emailData.html || `<pre style="font-family: Arial, sans-serif; white-space: pre-wrap;">${emailData.body}</pre>`
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    // Send mail with 10-second timeout
+    const sendMailTimeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Email send timeout (10s)')), 10000)
+    );
+    
+    const info = await Promise.race([
+      transporter.sendMail(mailOptions),
+      sendMailTimeoutPromise
+    ]);
 
     console.log('   Email sent successfully');
     console.log('   Message ID:', info.messageId);

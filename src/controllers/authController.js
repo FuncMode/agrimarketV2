@@ -300,16 +300,22 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
 
   const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
 
-  // Send password reset email
+  // Send password reset email with timeout
   const { sendPasswordResetEmail } = require('../services/emailService');
   try {
-    await sendPasswordResetEmail(user, resetUrl);
+    const emailTimeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Email send timeout')), 8000)
+    );
+    await Promise.race([
+      sendPasswordResetEmail(user, resetUrl),
+      emailTimeoutPromise
+    ]);
   } catch (emailError) {
     const logger = require('../utils/logger');
     logger.error('Failed to send password reset email', {
       user_id: user.id,
       email: user.email,
-      error: emailError.message
+      error: emailError.message || emailError
     });
     // Don't throw error - still return success to prevent email enumeration
   }

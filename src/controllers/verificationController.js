@@ -352,7 +352,13 @@ exports.approveVerification = asyncHandler(async (req, res, next) => {
   });
 
   try {
-    const emailResult = await emailService.sendVerificationApprovedEmail(verification.users);
+    const emailTimeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Email send timeout')), 8000)
+    );
+    const emailResult = await Promise.race([
+      emailService.sendVerificationApprovedEmail(verification.users),
+      emailTimeoutPromise
+    ]);
     if (emailResult && emailResult.success) {
       console.log(`Verification approval email sent to ${verification.users.email}`);
       if (emailResult.messageId) {
@@ -427,7 +433,13 @@ exports.rejectVerification = asyncHandler(async (req, res, next) => {
   });
 
   try {
-    const emailResult = await emailService.sendVerificationRejectedEmail(verification.users, admin_notes);
+    const emailTimeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Email send timeout')), 8000)
+    );
+    const emailResult = await Promise.race([
+      emailService.sendVerificationRejectedEmail(verification.users, admin_notes),
+      emailTimeoutPromise
+    ]);
     if (emailResult && emailResult.success) {
       console.log(`Verification rejection email sent to ${verification.users.email}`);
       if (emailResult.messageId) {
@@ -495,7 +507,13 @@ exports.requestMoreEvidence = asyncHandler(async (req, res, next) => {
 
   // Send email notification
   try {
-    const emailResult = await emailService.sendVerificationRejectedEmail(verification.users, admin_notes);
+    const emailTimeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Email send timeout')), 8000)
+    );
+    const emailResult = await Promise.race([
+      emailService.sendVerificationRejectedEmail(verification.users, admin_notes),
+      emailTimeoutPromise
+    ]);
     if (emailResult && emailResult.success) {
       console.log(`✅ More evidence request email sent to ${verification.users.email}`);
       if (emailResult.messageId) {
