@@ -28,6 +28,9 @@ const notificationRoutes = require('./routes/notificationRoutes');
 
 const app = express();
 
+// Trust proxy for rate limiting behind Railway reverse proxy
+app.set('trust proxy', 1);
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
