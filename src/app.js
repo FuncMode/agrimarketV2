@@ -31,17 +31,52 @@ const app = express();
 // Trust proxy for rate limiting behind Railway reverse proxy
 app.set('trust proxy', 1);
 
+// Build dynamic CSP for development and production
+const getCSPDirectives = () => {
+  const connectSrcSources = [
+    "'self'",
+    "https://unpkg.com",
+    "https://cdn.socket.io",
+    "https://*.tile.openstreetmap.org",
+    "ws:",
+    "wss:"
+  ];
+
+  // Add development localhost sources
+  if (process.env.NODE_ENV === 'development') {
+    connectSrcSources.push(
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "http://localhost:8080",
+      "http://127.0.0.1:8080",
+      "ws://localhost:3000",
+      "ws://127.0.0.1:3000"
+    );
+  }
+
+  // Add production sources from env
+  if (process.env.CORS_ORIGIN) {
+    connectSrcSources.push(process.env.CORS_ORIGIN);
+    // Add WebSocket variant
+    if (process.env.CORS_ORIGIN.startsWith('https://')) {
+      connectSrcSources.push(process.env.CORS_ORIGIN.replace('https://', 'wss://'));
+    }
+  }
+
+  return {
+    defaultSrc: ["'self'"],
+    styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://cdn.jsdelivr.net", "https://unpkg.com"],
+    scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io", "https://cdn.tailwindcss.com", "https://unpkg.com"],
+    scriptSrcAttr: ["'unsafe-inline'"],
+    imgSrc: ["'self'", "data:", "https:"],
+    connectSrc: connectSrcSources,
+    fontSrc: ["'self'", "https://cdn.jsdelivr.net"],
+  };
+};
+
 app.use(helmet({
   contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://cdn.jsdelivr.net", "https://unpkg.com"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io", "https://cdn.tailwindcss.com", "https://unpkg.com"],
-      scriptSrcAttr: ["'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "http://localhost:8080", "http://127.0.0.1:8080", "https://unpkg.com", "https://cdn.socket.io", "https://*.tile.openstreetmap.org", "ws:", "wss:"],
-      fontSrc: ["'self'", "https://cdn.jsdelivr.net"],
-    },
+    directives: getCSPDirectives(),
   },
   hsts: {
     maxAge: 31536000, 

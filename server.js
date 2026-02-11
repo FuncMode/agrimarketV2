@@ -43,9 +43,18 @@ async function startServer() {
 
     const httpServer = http.createServer(app);
 
+    const socketCorsOrigins = [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://localhost:8080',
+      'http://127.0.0.1:8080',
+      process.env.CORS_ORIGIN,
+      process.env.FRONTEND_URL
+    ].filter(Boolean);
+
     const io = new Server(httpServer, {
       cors: {
-        origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+        origin: socketCorsOrigins,
         credentials: true,
         methods: ['GET', 'POST']
       },
@@ -63,7 +72,7 @@ async function startServer() {
     const dbMonitor = require('./src/utils/dbMonitor');
     dbMonitor.startPeriodicMonitoring(5 * 60 * 1000);
 
-    httpServer.listen(PORT, () => {
+    httpServer.listen(PORT, '0.0.0.0', () => {
       console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('AgriMarket Server is running!');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

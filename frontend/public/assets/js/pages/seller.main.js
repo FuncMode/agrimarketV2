@@ -1354,6 +1354,17 @@ window.viewOrderDetails = async (orderId) => {
         </div>
       ` : ''}
 
+      ${order.order_notes ? `
+        <div>
+          <p class="text-sm text-gray-600 mb-2">
+            <i class="bi bi-chat-left-text"></i> Buyer's Special Notes
+          </p>
+          <div class="bg-blue-50 p-3 rounded-lg border border-blue-200">
+            <p class="text-sm italic">"${order.order_notes}"</p>
+          </div>
+        </div>
+      ` : ''}
+
       <div>
         <p class="text-sm text-gray-600 mb-2">Order Items</p>
         <div class="space-y-2">
@@ -1375,15 +1386,6 @@ window.viewOrderDetails = async (orderId) => {
           <p class="text-2xl font-bold text-success">${formatCurrency(order.total_amount)}</p>
         </div>
       </div>
-
-      ${order.notes ? `
-        <div>
-          <p class="text-sm text-gray-600 mb-2">Buyer Notes</p>
-          <div class="bg-gray-50 p-3 rounded-lg">
-            <p class="text-sm">${order.notes}</p>
-          </div>
-        </div>
-      ` : ''}
 
       ${productReviews.length > 0 ? `
         <div class="border-t pt-4">

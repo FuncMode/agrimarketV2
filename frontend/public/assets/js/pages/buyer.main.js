@@ -2596,13 +2596,22 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
           };
         });
         
-        await rateOrder(orderId, reviews);
+        const response = await rateOrder(orderId, reviews);
         
-        showSuccess('Reviews submitted successfully!');
-        closeModal();
-        
-        // Reload orders
-        await loadOrders();
+        if (response && response.success !== false) {
+          // Close modal using the modal's close method
+          modal.close();
+          
+          // Show success message
+          showSuccess('Reviews submitted successfully!');
+          
+          // Reload orders
+          setTimeout(() => {
+            loadOrders().catch(err => console.error('Error reloading orders:', err));
+          }, 300);
+        } else {
+          throw new Error(response?.message || 'Failed to submit reviews');
+        }
         
       } catch (error) {
         console.error('Error submitting rating:', error);

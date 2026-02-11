@@ -17,10 +17,34 @@ if (isBrowser) {
   envSource = process.env;
 }
 
-// Create ENV object with fallback values
+// Create ENV object with environment-based fallback values
+// For development: use localhost, for production: use Railway backend
+const getDefaultApiUrl = () => {
+  if (isBrowser) {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:3000/api';
+    }
+    // For production (Vercel), don't use current domain, use Railway backend
+    // This is the hardcoded production backend URL
+    return 'https://agrimarketv2-production.up.railway.app/api';
+  }
+  return 'http://localhost:3000/api'; // Default for Node.js environment
+};
+
+const getDefaultWsUrl = () => {
+  if (isBrowser) {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'ws://localhost:3000';
+    }
+    // For production (Vercel), use Railway backend
+    return 'wss://agrimarketv2-production.up.railway.app';
+  }
+  return 'ws://localhost:3000'; // Default for Node.js environment
+};
+
 const ENV = {
-  API_BASE_URL: envSource.API_BASE_URL || envSource.VITE_API_BASE_URL || 'https://agrimarketv2-production.up.railway.app/api',
-  WS_URL: 'wss://agrimarketv2-production.up.railway.app', // Production WebSocket
+  API_BASE_URL: envSource.API_BASE_URL || envSource.VITE_API_BASE_URL || getDefaultApiUrl(),
+  WS_URL: envSource.WS_URL || envSource.VITE_WS_URL || getDefaultWsUrl(),
   SUPABASE_URL: envSource.SUPABASE_URL || envSource.VITE_SUPABASE_URL,
   SUPABASE_ANON_KEY: envSource.SUPABASE_ANON_KEY || envSource.VITE_SUPABASE_ANON_KEY,
   APP_NAME: envSource.APP_NAME || envSource.VITE_APP_NAME || 'AgriMarket',

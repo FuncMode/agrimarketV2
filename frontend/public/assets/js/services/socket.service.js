@@ -28,7 +28,9 @@ const initSocket = () => {
   }
   
   try {
-    const wsUrl = 'wss://agrimarketv2-production.up.railway.app'; // Production WebSocket URL
+    const wsUrl = ENV.WS_URL || 'wss://agrimarketv2-production.up.railway.app';
+    
+    console.log('Connecting to WebSocket:', wsUrl);
     
     socket = io(wsUrl, {
       auth: {
@@ -136,27 +138,39 @@ const setupSocketListeners = () => {
   });
   
   socket.on('user:online', (data) => {
-    // Event captured
+    console.log('[Socket] user:online event received:', data);
   });
   
   socket.on('user:offline', (data) => {
-    // Event captured
+    console.log('[Socket] user:offline event received:', data);
   });
   
   socket.on('message_received', (data) => {
-    // Event captured
+    console.log('[Socket] message_received event received:', data);
   });
   
   socket.on('message_read_receipt', (data) => {
-    // Event captured
+    console.log('[Socket] message_read_receipt event received:', data);
   });
   
   socket.on('notification', (data) => {
-    // Event captured
+    console.log('[Socket] notification event received:', data);
   });
   
   socket.on('notification:new', (data) => {
-    // Event captured
+    console.log('[Socket] notification:new event received:', data);
+  });
+  
+  socket.on('order:updated', (data) => {
+    console.log('[Socket] order:updated event received:', data);
+  });
+  
+  socket.on('order:new', (data) => {
+    console.log('[Socket] order:new event received:', data);
+  });
+  
+  socket.on('order:cancelled', (data) => {
+    console.log('[Socket] order:cancelled event received:', data);
   });
   
   socket.on('error', (error) => {
@@ -165,7 +179,7 @@ const setupSocketListeners = () => {
   });
   
   socket.on('users:online:initial', (data) => {
-    // Event captured
+    console.log('[Socket] users:online:initial event received:', data);
   });
 };
 
@@ -356,9 +370,11 @@ const onTypingStatus = (callback) => {
 
 const onUserOnline = (callback) => {
   if (!socket) {
+    console.warn('[Socket] Cannot register onUserOnline - socket is null');
     return null;
   }
   
+  console.log('[Socket] Registering user:online listener');
   socket.on('user:online', callback);
   
   return () => {
@@ -368,9 +384,11 @@ const onUserOnline = (callback) => {
 
 const onUserOffline = (callback) => {
   if (!socket) {
+    console.warn('[Socket] Cannot register onUserOffline - socket is null');
     return null;
   }
   
+  console.log('[Socket] Registering user:offline listener');
   socket.on('user:offline', callback);
   
   return () => {
@@ -379,8 +397,12 @@ const onUserOffline = (callback) => {
 };
 
 const onInitialOnlineUsers = (callback) => {
-  if (!socket) return null;
+  if (!socket) {
+    console.warn('[Socket] Cannot register onInitialOnlineUsers - socket is null');
+    return null;
+  }
   
+  console.log('[Socket] Registering users:online:initial listener');
   socket.on('users:online:initial', callback);
   
   return () => {
@@ -391,8 +413,12 @@ const onInitialOnlineUsers = (callback) => {
 // ============ Order Updates ============
 
 const onOrderUpdate = (callback) => {
-  if (!socket) return null;
+  if (!socket) {
+    console.warn('[Socket] Cannot register onOrderUpdate - socket is null');
+    return null;
+  }
   
+  console.log('[Socket] Registering order:updated listener');
   socket.on('order:updated', callback);
   
   return () => {
@@ -401,8 +427,12 @@ const onOrderUpdate = (callback) => {
 };
 
 const onNewOrder = (callback) => {
-  if (!socket) return null;
+  if (!socket) {
+    console.warn('[Socket] Cannot register onNewOrder - socket is null');
+    return null;
+  }
   
+  console.log('[Socket] Registering order:new listener');
   socket.on('order:new', callback);
   
   return () => {
@@ -411,8 +441,12 @@ const onNewOrder = (callback) => {
 };
 
 const onOrderCancelled = (callback) => {
-  if (!socket) return null;
+  if (!socket) {
+    console.warn('[Socket] Cannot register onOrderCancelled - socket is null');
+    return null;
+  }
   
+  console.log('[Socket] Registering order:cancelled listener');
   socket.on('order:cancelled', callback);
   
   return () => {
@@ -423,8 +457,12 @@ const onOrderCancelled = (callback) => {
 // ============ Notifications ============
 
 const onNotification = (callback) => {
-  if (!socket) return null;
+  if (!socket) {
+    console.warn('[Socket] Cannot register onNotification - socket is null');
+    return null;
+  }
   
+  console.log('[Socket] Registering notification listener (both notification and notification:new events)');
   // Listen to both 'notification' and 'notification:new' events
   socket.on('notification', callback);
   socket.on('notification:new', callback);
@@ -439,23 +477,32 @@ const onNotification = (callback) => {
 
 const on = (event, callback) => {
   if (!socket) {
-    console.warn('Socket not initialized');
+    console.warn('[Socket] Socket not initialized. Event listener not registered for:', event);
     return null;
   }
   
+  console.log('[Socket] Registering listener for event:', event);
   socket.on(event, callback);
   
   return () => {
+    console.log('[Socket] Unregistering listener for event:', event);
     socket.off(event, callback);
   };
 };
 
 const emit = (event, data) => {
-  if (!socket || !isConnected) {
-    console.warn('Socket not connected');
+  if (!socket) {
+    console.warn('[Socket] Socket not initialized. Cannot emit event:', event, data);
     return false;
   }
   
+  if (!isConnected) {
+    console.warn('[Socket] Socket not connected. Cannot emit event:', event, 'Queueing...', data);
+    messageQueue.push({ event, data });
+    return false;
+  }
+  
+  console.log('[Socket] Emitting event:', event, data);
   socket.emit(event, data);
   return true;
 };

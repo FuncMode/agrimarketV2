@@ -9,12 +9,12 @@
                       window.location.hostname === '127.0.0.1';
   
   const apiBase = isLocalhost 
-    ? 'http://localhost:8080/api'
-    : `${window.location.protocol}//${window.location.host}/api`;
+    ? 'http://localhost:3000/api'
+    : 'https://agrimarketv2-production.up.railway.app/api'; // Production Railway backend
     
   const socketUrl = isLocalhost
-    ? 'http://localhost:8080'
-    : `${window.location.protocol}//${window.location.host}`;
+    ? 'ws://localhost:3000'
+    : 'wss://agrimarketv2-production.up.railway.app'; // Production Railway WebSocket
 
   // Load from environment variables (injected by server)
   const envVars = window.__ENV || {};
