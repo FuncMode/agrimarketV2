@@ -635,7 +635,22 @@ async function sendEmail(emailData) {
     };
 
   } catch (error) {
-    console.error('Email send error:', error.message);
+    console.error('❌ Email send error:', error.message);
+    console.error('   Error code:', error.code);
+    console.error('   Error response:', error.response);
+    console.error('   Email service:', process.env.EMAIL_SERVICE);
+    console.error('   Email user:', process.env.EMAIL_USER ? process.env.EMAIL_USER.split('@')[0] + '@...' : 'NOT SET');
+    
+    // Log to deployment logs for debugging
+    const logger = require('../utils/logger');
+    logger.error('Email service failed', {
+      error: error.message,
+      code: error.code,
+      service: process.env.EMAIL_SERVICE,
+      recipient: emailData.to,
+      subject: emailData.subject
+    });
+    
     return {
       success: false,
       error: error.message
