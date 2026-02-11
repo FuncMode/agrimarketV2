@@ -10,20 +10,23 @@
   "routes": [
     {
       "src": "/assets/(.*)",
-      "dest": "/assets/$1"
+      "dest": "/public/assets/$1"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "https://your-backend-api.com/api/$1"
+      "src": "/(.*\\.html)$",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/(.*\\.js)$",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/(.*\\.css)$",
+      "dest": "/public/$1"
     },
     {
       "src": "/(.*)",
       "dest": "/public/$1"
     }
-  ],
-  "env": {
-    "VITE_API_BASE_URL": "https://your-backend-api.com/api",
-    "VITE_SUPABASE_URL": "@supabase_url",
-    "VITE_SUPABASE_ANON_KEY": "@supabase_anon_key"
-  }
+  ]
 }
