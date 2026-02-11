@@ -33,15 +33,24 @@ const initializeTransporter = () => {
 const verifyEmailConfig = async () => {
   try {
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-      console.warn('Email not configured - check .env EMAIL_* variables');
+      console.warn('   Email not configured - skipping verification');
       return false;
     }
 
     const transporter = initializeTransporter();
-    await transporter.verify();
+    
+    // Add timeout to email verification (5 seconds max)
+    const verificationPromise = transporter.verify();
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Email verification timeout')), 5000)
+    );
+
+    await Promise.race([verificationPromise, timeoutPromise]);
+    console.log('   ✓ Email service verified successfully');
     return true;
   } catch (error) {
-    console.error('Email service verification failed:', error.message);
+    console.warn(`   ⚠️ Email service verification failed: ${error.message}`);
+    console.warn('   Email notifications may not work. Email features disabled for now.');
     return false;
   }
 };

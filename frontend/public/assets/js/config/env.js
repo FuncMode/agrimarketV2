@@ -19,8 +19,8 @@ if (isBrowser) {
 
 // Create ENV object with fallback values
 const ENV = {
-  API_BASE_URL: envSource.API_BASE_URL || envSource.VITE_API_BASE_URL || 'http://localhost:8080/api',
-  WS_URL: 'wss://agrimarket-production-04b3.up.railway.app', // Force Railway WebSocket
+  API_BASE_URL: envSource.API_BASE_URL || envSource.VITE_API_BASE_URL || 'https://agrimarketv2-production.up.railway.app/api',
+  WS_URL: 'wss://agrimarketv2-production.up.railway.app', // Production WebSocket
   SUPABASE_URL: envSource.SUPABASE_URL || envSource.VITE_SUPABASE_URL,
   SUPABASE_ANON_KEY: envSource.SUPABASE_ANON_KEY || envSource.VITE_SUPABASE_ANON_KEY,
   APP_NAME: envSource.APP_NAME || envSource.VITE_APP_NAME || 'AgriMarket',
