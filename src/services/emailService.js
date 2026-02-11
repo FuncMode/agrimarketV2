@@ -1,10 +1,16 @@
 // src\services\emailService.js
 
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 let transporter = null;
 
 const initializeTransporter = () => {
+  // If using SendGrid, we don't need a transporter
+  if (process.env.EMAIL_SERVICE === 'sendgrid') {
+    return { type: 'sendgrid' };
+  }
+
   if (transporter) return transporter;
 
   if (process.env.EMAIL_SERVICE === 'gmail') {
@@ -595,6 +601,63 @@ async function sendEmail(emailData) {
       };
     }
 
+    // SendGrid API
+    if (process.env.EMAIL_SERVICE === 'sendgrid') {
+      if (!process.env.SENDGRID_API_KEY) {
+        console.warn('SendGrid API key not configured');
+        return {
+          success: false,
+          message: 'SendGrid not configured'
+        };
+      }
+
+      const sendGridPayload = {
+        personalizations: [{
+          to: [{ email: emailData.to }],
+          subject: emailData.subject
+        }],
+        from: {
+          email: process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@agrimarket.com',
+          name: 'AgriMarket'
+        },
+        content: [
+          {
+            type: 'text/plain',
+            value: emailData.body
+          },
+          {
+            type: 'text/html',
+            value: emailData.html || `<pre style="font-family: Arial, sans-serif; white-space: pre-wrap;">${emailData.body}</pre>`
+          }
+        ]
+      };
+
+      const sendGridTimeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('SendGrid request timeout (10s)')), 10000)
+      );
+
+      const response = await Promise.race([
+        axios.post('https://api.sendgrid.com/v3/mail/send', sendGridPayload, {
+          headers: {
+            'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }),
+        sendGridTimeoutPromise
+      ]);
+
+      console.log('   ✅ Email sent successfully via SendGrid');
+      console.log('   To:', emailData.to);
+      console.log('   Subject:', emailData.subject);
+
+      return {
+        success: true,
+        message: 'Email sent successfully',
+        messageId: response.headers['x-message-id'] || 'sendgrid-sent'
+      };
+    }
+
+    // Nodemailer SMTP fallback
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
       console.warn('Email service not configured');
       return {
@@ -633,6 +696,34 @@ async function sendEmail(emailData) {
       message: 'Email sent successfully',
       messageId: info.messageId
     };
+
+  } catch (error) {
+    console.error('❌ Email send error:', error.message);
+    console.error('   Error code:', error.code || error.response?.status);
+    console.error('   Email service:', process.env.EMAIL_SERVICE);
+    console.error('   Email from:', process.env.EMAIL_FROM ? process.env.EMAIL_FROM.split('@')[0] + '@...' : 'NOT SET');
+    
+    if (error.response?.data) {
+      console.error('   SendGrid response:', error.response.data);
+    }
+    
+    // Log to deployment logs for debugging
+    const logger = require('../utils/logger');
+    logger.error('Email service failed', {
+      error: error.message,
+      code: error.code || error.response?.status,
+      service: process.env.EMAIL_SERVICE,
+      recipient: emailData.to,
+      subject: emailData.subject,
+      sendgridErrors: error.response?.data?.errors
+    });
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
 
   } catch (error) {
     console.error('❌ Email send error:', error.message);
