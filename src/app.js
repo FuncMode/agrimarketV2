@@ -110,6 +110,7 @@ app.use(cors(corsOptions));
 
 const { ipBlockingService } = require('./middleware/ipBlockingMiddleware');
 const logger = require('./utils/logger');
+const { getClientIp } = require('./utils/ipHelper');
 
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
@@ -120,8 +121,9 @@ const limiter = rateLimit({
   },
   standardHeaders: true, 
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
   handler: (req, res) => {
-    const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+    const clientIP = getClientIp(req);
     ipBlockingService.recordViolation(clientIP);
     logger.warn('Rate limit exceeded', {
       ip: clientIP,
@@ -145,8 +147,9 @@ const authLimiter = rateLimit({
   skipSuccessfulRequests: false,
   standardHeaders: true, 
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
   handler: (req, res) => {
-    const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+    const clientIP = getClientIp(req);
     ipBlockingService.recordViolation(clientIP);
     logger.warn('Auth rate limit exceeded', {
       ip: clientIP,

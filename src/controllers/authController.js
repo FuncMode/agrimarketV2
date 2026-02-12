@@ -4,8 +4,10 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { supabase, supabaseService } = require('../config/database');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
+const { getClientIp } = require('../utils/ipHelper');
 const { ipBlockingService } = require('../middleware/ipBlockingMiddleware');
 
+// ... existing code ...
 
 const generateToken = (userId) => {
   return jwt.sign(
@@ -23,7 +25,6 @@ const hashPassword = async (password) => {
 const comparePassword = async (plainPassword, hashedPassword) => {
   return bcrypt.compare(plainPassword, hashedPassword);
 };
-
 
 exports.signup = asyncHandler(async (req, res, next) => {
   const {
@@ -151,7 +152,7 @@ exports.login = asyncHandler(async (req, res, next) => {
     .single();
 
   if (error || !user) {
-    const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+    const clientIP = getClientIp(req);
     ipBlockingService.recordViolation(clientIP);
     throw new AppError('Invalid email or password.', 401);
   }
@@ -159,7 +160,7 @@ exports.login = asyncHandler(async (req, res, next) => {
   const isPasswordValid = await comparePassword(password, user.password_hash);
 
   if (!isPasswordValid) {
-    const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+    const clientIP = getClientIp(req);
     ipBlockingService.recordViolation(clientIP);
     throw new AppError('Invalid email or password.', 401);
   }

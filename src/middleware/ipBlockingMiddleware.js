@@ -1,5 +1,6 @@
 // src\middleware\ipBlockingMiddleware.js
 
+const { getClientIp } = require('../utils/ipHelper');
 const logger = require('../utils/logger');
 
 class IPBlockingService {
@@ -93,7 +94,7 @@ class IPBlockingService {
 const ipBlockingService = new IPBlockingService();
 
 const ipBlockingMiddleware = (req, res, next) => {
-  const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+  const clientIP = getClientIp(req);
   
   // Allow admin stats endpoint even if blocked, so they can see why
   if (req.path === '/api/admin/security/ip-blocking' || req.path === '/api/admin/dashboard') {
@@ -125,7 +126,7 @@ const ipBlockingMiddleware = (req, res, next) => {
 
 const recordRateLimitViolation = (req, res, next) => {
   const originalSend = res.send;
-  const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+  const clientIP = getClientIp(req);
   
   res.send = function(body) {
     if (res.statusCode === 429) {
