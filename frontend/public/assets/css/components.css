@@ -1,4 +1,3 @@
-
 .btn {
   display: inline-flex;
   align-items: center;
@@ -26,7 +25,7 @@
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
   transition: left 0.5s;
 }
 
@@ -35,8 +34,8 @@
 }
 
 .btn:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
 }
 
 .btn:active {
@@ -45,14 +44,10 @@
 }
 
 .btn:disabled {
-  opacity: 0.5;
+  opacity: 0.65;
   cursor: not-allowed;
   transform: none;
-}
-
-.btn:disabled:hover {
-  transform: none;
-  box-shadow: none;
+  pointer-events: none;
 }
 
 .btn-primary {
@@ -167,8 +162,8 @@
 }
 
 .card:hover {
-  box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  transform: translateY(-4px);
 }
 
 .card:hover::before {
@@ -234,13 +229,12 @@
 
 .form-control:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.1);
-  transform: scale(1.02);
+  box-shadow: 0 0 0 3px rgba(27, 122, 61, 0.1);
 }
 
 .form-control:hover {
   border-color: var(--color-primary-light);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .form-control::placeholder {
@@ -300,8 +294,13 @@ select.form-control:hover {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 /* Enhanced toast animations */
@@ -314,6 +313,7 @@ select.form-control:hover {
     transform: translateX(100%);
     opacity: 0;
   }
+
   to {
     transform: translateX(0);
     opacity: 1;
@@ -335,7 +335,7 @@ select.form-control:hover {
 
 #main-navbar.scrolled {
   background-color: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
 }
 
 /* Product grid enhancements */
@@ -344,23 +344,42 @@ select.form-control:hover {
   animation: fadeInUp 0.8s ease-out 0.3s forwards;
 }
 
-#featured-products > * {
+#featured-products>* {
   animation: fadeInUp 0.6s ease-out both;
 }
 
-#featured-products > *:nth-child(1) { animation-delay: 0.1s; }
-#featured-products > *:nth-child(2) { animation-delay: 0.2s; }
-#featured-products > *:nth-child(3) { animation-delay: 0.3s; }
-#featured-products > *:nth-child(4) { animation-delay: 0.4s; }
-#featured-products > *:nth-child(5) { animation-delay: 0.5s; }
-#featured-products > *:nth-child(6) { animation-delay: 0.6s; }
-#featured-products > *:nth-child(7) { animation-delay: 0.7s; }
-#featured-products > *:nth-child(8) { animation-delay: 0.8s; }
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin-bottom: var(--spacing-sm);
-  color: var(--color-dark);
+#featured-products>*:nth-child(1) {
+  animation-delay: 0.1s;
 }
+
+#featured-products>*:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+#featured-products>*:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+#featured-products>*:nth-child(4) {
+  animation-delay: 0.4s;
+}
+
+#featured-products>*:nth-child(5) {
+  animation-delay: 0.5s;
+}
+
+#featured-products>*:nth-child(6) {
+  animation-delay: 0.6s;
+}
+
+#featured-products>*:nth-child(7) {
+  animation-delay: 0.7s;
+}
+
+#featured-products>*:nth-child(8) {
+  animation-delay: 0.8s;
+}
+
 
 .card-text {
   color: var(--color-gray-600);
@@ -390,7 +409,7 @@ select.form-control:hover {
 }
 
 #featured-products .card {
-  min-height: 520px;
+  min-height: auto;
 }
 
 .product-card-badge {
@@ -419,53 +438,7 @@ select.form-control:hover {
 }
 
 
-.form-group {
-  margin-bottom: var(--spacing-lg);
-  display: flex;
-  flex-direction: column;
-}
 
-.form-label {
-  display: block;
-  margin-bottom: var(--spacing-sm);
-  font-weight: 600;
-  color: var(--color-dark);
-}
-
-.form-control {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  border: 2px solid var(--color-gray-300);
-  border-radius: var(--radius-md);
-  font-size: 1rem;
-  transition: all var(--transition-fast);
-  font-family: var(--font-sans);
-}
-
-.form-control:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.1);
-}
-
-.form-control.is-invalid {
-  border-color: var(--color-danger);
-}
-
-.form-control.is-invalid:focus {
-  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
-}
-
-.invalid-feedback {
-  display: none;
-  margin-top: var(--spacing-xs);
-  color: var(--color-danger);
-  font-size: 0.875rem;
-}
-
-.form-control.is-invalid ~ .invalid-feedback {
-  display: block;
-}
 
 
 #password-strength {
@@ -664,7 +637,7 @@ select.form-control:hover {
   pointer-events: none;
 }
 
-#toast-container > * {
+#toast-container>* {
   pointer-events: auto;
 }
 
@@ -865,10 +838,26 @@ select.form-control:hover {
 
 .navbar-menu {
   display: flex;
-  align-items: center;  gap: var(--spacing-xl);  gap: var(--spacing-lg);
+  align-items: center;
+  gap: var(--spacing-lg);
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* Laptop viewport - ensure consistent spacing */
+@media (min-width: 1024px) {
+  .navbar-menu {
+    gap: 1.5rem;
+  }
+
+  .navbar-menu li {
+    margin: 0;
+  }
+
+  .navbar-link {
+    padding: 0.5rem 0.75rem;
+  }
 }
 
 .navbar-link {
@@ -971,19 +960,19 @@ select.form-control:hover {
   .navbar-menu {
     gap: var(--spacing-md);
   }
-  
+
   .navbar-link {
     padding: 0.375rem 0.5rem;
     font-size: 0.875rem;
   }
-  
+
   .navbar-link i {
     font-size: 1rem;
   }
 }
 
 @media (max-width: 768px) {
-  
+
   .sellerOrders {
     margin-inline-start: 4.5rem;
   }
@@ -1007,11 +996,11 @@ select.form-control:hover {
   .buyerIssues {
     margin-inline-start: .1rem;
   }
-  
+
   .mobile-menu-toggle {
     display: flex;
   }
-  
+
   .navbar-nav {
     position: fixed;
     top: 0;
@@ -1029,29 +1018,29 @@ select.form-control:hover {
     overflow-y: auto;
     padding-top: 80px;
   }
-  
+
   .navbar-nav.mobile-menu-open {
     transform: translateX(0);
     opacity: 1;
     visibility: visible;
   }
-  
+
   .navbar-menu {
     flex-direction: column;
     gap: 0;
     padding: var(--spacing-md);
     width: 100%;
   }
-  
+
   .navbar-menu li {
     width: 100%;
     border-bottom: 1px solid var(--color-gray-200);
   }
-  
+
   .navbar-menu li:last-child {
     border-bottom: none;
   }
-  
+
   .navbar-link {
     display: flex;
     align-items: center;
@@ -1062,7 +1051,7 @@ select.form-control:hover {
     transition: all var(--transition-fast);
     min-height: 48px;
   }
-  
+
   .navbar-link i {
     font-size: 1.25rem;
     width: 1.75rem;
@@ -1074,11 +1063,11 @@ select.form-control:hover {
     justify-content: center;
     line-height: 1;
   }
-  
+
   .navbar-link:hover {
     background-color: var(--color-gray-100);
   }
-  
+
   .notification-bell {
     padding: var(--spacing-md);
     gap: 0.875rem;
@@ -1095,14 +1084,14 @@ select.form-control:hover {
     border-radius: 0;
     transform: none !important;
   }
-  
+
   .notification-bell:hover {
     transform: none !important;
     background-color: var(--color-gray-100);
     border-radius: 0;
     color: var(--color-primary);
   }
-  
+
   .notification-bell i {
     font-size: 1.25rem;
     width: 1.75rem;
@@ -1114,7 +1103,7 @@ select.form-control:hover {
     justify-content: center;
     line-height: 1;
   }
-  
+
   .navbar-menu .btn {
     width: 100%;
     margin: var(--spacing-xs) 0;
@@ -1122,7 +1111,7 @@ select.form-control:hover {
     gap: 0.875rem;
     min-height: 48px;
   }
-  
+
   .navbar-menu .btn i {
     font-size: 1.25rem;
     width: 1.75rem;
@@ -1138,7 +1127,7 @@ select.form-control:hover {
   .dropdown {
     width: 100%;
   }
-  
+
   .dropdown .btn {
     width: 100%;
     justify-content: flex-start;
@@ -1147,7 +1136,7 @@ select.form-control:hover {
     min-height: 48px;
     text-align: left;
   }
-  
+
   .dropdown .btn i {
     font-size: 1.25rem;
     width: 1.75rem;
@@ -1159,14 +1148,14 @@ select.form-control:hover {
     justify-content: center;
     line-height: 1;
   }
-  
+
   .notification-badge {
     position: relative;
     top: auto;
     right: auto;
     margin-left: auto;
   }
-  
+
   .dropdown-menu {
     position: static;
     display: block !important;
@@ -1178,7 +1167,7 @@ select.form-control:hover {
     right: auto;
     z-index: auto;
   }
-  
+
   .dropdown-menu.show {
     display: block !important;
   }
@@ -1188,15 +1177,15 @@ select.form-control:hover {
   .navbar-container {
     padding: var(--spacing-sm) var(--spacing-md);
   }
-  
+
   .navbar-brand {
     font-size: 1.125rem;
   }
-  
+
   .navbar-brand i {
     font-size: 1.125rem;
   }
-  
+
   .navbar-nav {
     width: 280px;
   }
@@ -1224,9 +1213,26 @@ select.form-control:hover {
 }
 
 @keyframes bellShake {
-  0%, 100% { transform: rotate(0deg); }
-  10%, 30%, 50%, 70%, 90% { transform: rotate(-10deg); }
-  20%, 40%, 60%, 80% { transform: rotate(10deg); }
+
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: rotate(-10deg);
+  }
+
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: rotate(10deg);
+  }
 }
 
 .notification-badge {
@@ -1253,6 +1259,7 @@ select.form-control:hover {
     opacity: 0;
     transform: scale(0.5);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -1264,10 +1271,13 @@ select.form-control:hover {
 }
 
 @keyframes badgePulse {
-  0%, 100% { 
-    transform: scale(1); 
+
+  0%,
+  100% {
+    transform: scale(1);
   }
-  50% { 
+
+  50% {
     transform: scale(1.3);
     box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.2);
   }
@@ -1304,12 +1314,10 @@ select.form-control:hover {
 
 
 .skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-gray-200) 25%,
-    var(--color-gray-300) 50%,
-    var(--color-gray-200) 75%
-  );
+  background: linear-gradient(90deg,
+      var(--color-gray-200) 25%,
+      var(--color-gray-300) 50%,
+      var(--color-gray-200) 75%);
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s ease-in-out infinite;
   border-radius: var(--radius-md);
@@ -1319,6 +1327,7 @@ select.form-control:hover {
   0% {
     background-position: 200% 0;
   }
+
   100% {
     background-position: -200% 0;
   }
@@ -1357,8 +1366,13 @@ select.form-control:hover {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .product-details-modal {
@@ -1380,12 +1394,13 @@ select.form-control:hover {
 }
 
 @keyframes modalSlideIn {
-  from { 
+  from {
     opacity: 0;
     transform: translate(-50%, -60%);
     scale: 0.95;
   }
-  to { 
+
+  to {
     opacity: 1;
     transform: translate(-50%, -50%);
     scale: 1;
@@ -1569,29 +1584,29 @@ select.form-control:hover {
     left: 0;
     transform: none;
   }
-  
+
   .product-details-content {
     grid-template-columns: 1fr;
     grid-template-rows: 300px 1fr;
   }
-  
+
   .product-map-section {
     border-right: none;
     border-bottom: 1px solid var(--color-gray-200);
   }
-  
+
   .product-details-header {
     padding: 1rem 1.5rem;
   }
-  
+
   .product-info-section {
     padding: 1.5rem;
   }
-  
+
   .product-details-grid {
     grid-template-columns: 1fr;
   }
-  
+
   /* General Modal Improvements for Mobile */
   .modal {
     width: 95vw !important;
@@ -1599,57 +1614,58 @@ select.form-control:hover {
     margin: 1rem auto !important;
     max-height: calc(100vh - 2rem) !important;
   }
-  
+
   .modal-header {
     padding: 1rem !important;
     flex-wrap: wrap;
   }
-  
+
   .modal-title {
     font-size: 1.25rem !important;
     line-height: 1.3;
   }
-  
+
   .modal-body {
     padding: 1rem !important;
     max-height: calc(100vh - 160px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
-  
+
   .modal-footer {
     padding: 1rem !important;
     flex-wrap: wrap;
     gap: 0.75rem;
   }
-  
+
   .modal-footer .btn {
     flex: 1;
     min-width: 100px;
   }
-  
+
   /* Form improvements in modals */
   .modal .form-control {
-    font-size: 16px !important; /* Prevents zoom on iOS */
+    font-size: 16px !important;
+    /* Prevents zoom on iOS */
     padding: 0.875rem !important;
     min-height: 44px;
   }
-  
+
   .modal .form-group {
     margin-bottom: 1rem;
   }
-  
+
   /* Better button spacing in modals */
   .modal .btn-group {
     flex-direction: column;
     width: 100%;
   }
-  
+
   .modal .btn-group .btn {
     width: 100%;
     margin-bottom: 0.5rem;
   }
-  
+
   .modal .btn-group .btn:last-child {
     margin-bottom: 0;
   }
@@ -1707,15 +1723,17 @@ select.form-control:hover {
 }
 
 @keyframes markerDrop {
-  0% { 
+  0% {
     opacity: 0;
     transform: rotate(-45deg) translateY(-20px) scale(0.5);
   }
-  60% { 
+
+  60% {
     opacity: 1;
     transform: rotate(-45deg) translateY(5px) scale(1.1);
   }
-  100% { 
+
+  100% {
     opacity: 1;
     transform: rotate(-45deg) translateY(0) scale(1);
   }
@@ -1757,15 +1775,17 @@ select.form-control:hover {
 }
 
 @keyframes clusterPop {
-  0% { 
+  0% {
     opacity: 0;
     transform: scale(0.5);
   }
-  60% { 
+
+  60% {
     opacity: 1;
     transform: scale(1.1);
   }
-  100% { 
+
+  100% {
     opacity: 1;
     transform: scale(1);
   }
@@ -1850,6 +1870,7 @@ select.form-control:hover {
   background-color: var(--color-primary-dark);
   border-color: var(--color-primary-dark);
 }
+
 /* ================================================== */
 /* Chat & Messaging Enhancements */
 /* ================================================== */
@@ -1916,6 +1937,7 @@ select.form-control:hover {
     opacity: 0;
     transform: translateY(10px) scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -1933,6 +1955,7 @@ select.form-control:hover {
     opacity: 0;
     transform: translateX(10px) scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: translateX(0) scale(1);
@@ -1948,8 +1971,13 @@ select.form-control:hover {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 #typing-indicator i {
@@ -1957,9 +1985,13 @@ select.form-control:hover {
 }
 
 @keyframes typingBounce {
-  0%, 60%, 100% {
+
+  0%,
+  60%,
+  100% {
     transform: translateY(0);
   }
+
   30% {
     transform: translateY(-4px);
   }
@@ -2025,9 +2057,12 @@ select.form-control:hover {
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.6;
   }
@@ -2052,6 +2087,7 @@ select.form-control:hover {
     opacity: 0;
     transform: translateX(-20px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -2104,11 +2140,11 @@ select.form-control:hover {
     max-height: none;
     border-radius: 0;
   }
-  
+
   #chat-messages {
     padding: 1rem;
   }
-  
+
   .chat-input {
     padding: 1rem;
   }
@@ -2116,6 +2152,7 @@ select.form-control:hover {
 
 /* Accessibility improvements */
 @media (prefers-reduced-motion: reduce) {
+
   .chat-message,
   .chat-message.message-sent,
   #typing-indicator,
@@ -2123,13 +2160,13 @@ select.form-control:hover {
   .connection-status {
     animation: none;
   }
-  
+
   #typing-indicator i,
   #online-status i.bi-circle-fill,
   .message-pending::after {
     animation: none;
   }
-  
+
   * {
     transition-duration: 0.01ms !important;
   }
@@ -2139,6 +2176,7 @@ select.form-control:hover {
 
 /* Small devices (landscape phones, 576px and up) to tablets (768px) */
 @media (max-width: 767.98px) {
+
   /* Better button touch targets */
   .btn {
     min-height: 44px;
@@ -2147,57 +2185,59 @@ select.form-control:hover {
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
-  
+
   .btn-sm {
     min-height: 38px;
     padding: 0.5rem 0.75rem;
     font-size: 0.8125rem;
   }
-  
+
   /* Form improvements */
-  .form-control, .form-select {
+  .form-control,
+  .form-select {
     min-height: 44px;
     padding: 0.875rem 1rem;
-    font-size: 16px; /* Prevents zoom on iOS */
+    font-size: 16px;
+    /* Prevents zoom on iOS */
     touch-action: manipulation;
   }
-  
+
   .form-label {
     font-size: 0.875rem;
     margin-bottom: 0.375rem;
   }
-  
+
   /* Card improvements */
   .card {
     margin-bottom: 1rem;
     box-shadow: var(--shadow-sm);
   }
-  
+
   .card-body {
     padding: 1rem;
   }
-  
+
   .card-title {
     font-size: 1.125rem;
   }
-  
+
   /* Table responsiveness */
   .table-responsive {
     border: none;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
-  
+
   .table {
     font-size: 0.875rem;
   }
-  
+
   .table th,
   .table td {
     padding: 0.5rem 0.375rem;
     white-space: nowrap;
   }
-  
+
   /* Dropdown improvements */
   .dropdown-menu {
     min-width: 200px;
@@ -2205,12 +2245,12 @@ select.form-control:hover {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
-  
+
   .dropdown-item {
     padding: 0.75rem 1rem;
     font-size: 0.875rem;
   }
-  
+
   /* Navigation improvements */
   .navbar-nav .nav-link {
     padding: 0.875rem 1rem;
@@ -2218,32 +2258,32 @@ select.form-control:hover {
     align-items: center;
     gap: 0.5rem;
   }
-  
+
   /* Alert improvements */
   .alert {
     margin-bottom: 1rem;
     padding: 0.875rem 1rem;
     border-radius: var(--radius-md);
   }
-  
+
   /* Badge improvements */
   .badge {
     font-size: 0.75rem;
     padding: 0.375rem 0.5rem;
   }
-  
+
   /* Progress bar improvements */
   .progress {
     height: 0.75rem;
   }
-  
+
   /* Pagination improvements */
   .pagination {
     justify-content: center;
     flex-wrap: wrap;
     gap: 0.25rem;
   }
-  
+
   .pagination .page-link {
     padding: 0.5rem 0.75rem;
     min-width: 44px;
@@ -2253,6 +2293,7 @@ select.form-control:hover {
 
 /* Very small devices (portrait phones, less than 576px) */
 @media (max-width: 575.98px) {
+
   /* Full-screen modals on very small screens */
   .modal,
   .product-details-modal {
@@ -2266,100 +2307,118 @@ select.form-control:hover {
     left: 0 !important;
     transform: none !important;
   }
-  
+
   .modal-header {
     padding: 0.875rem 1rem !important;
     border-bottom: 1px solid var(--color-gray-300);
   }
-  
+
   .modal-title {
     font-size: 1.125rem !important;
   }
-  
+
   .modal-body {
     padding: 0.875rem 1rem !important;
     max-height: calc(100vh - 140px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
-  
+
   .modal-footer {
     padding: 0.875rem 1rem !important;
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .modal-footer .btn {
     width: 100%;
     margin-bottom: 0.5rem;
   }
-  
+
   .modal-footer .btn:last-child {
     margin-bottom: 0;
   }
-  
+
   /* Stack grid layouts */
   .row {
     margin: 0;
   }
-  
-  .col, [class*="col-"] {
+
+  .col,
+  [class*="col-"] {
     padding-left: 0.5rem;
     padding-right: 0.5rem;
     margin-bottom: 1rem;
   }
-  
+
   /* Full width form groups */
   .form-row {
     flex-direction: column;
   }
-  
-  .form-row > div {
+
+  .form-row>div {
     width: 100% !important;
     margin-bottom: 0.75rem;
   }
-  
+
   /* Button groups stack vertically */
   .btn-group {
     flex-direction: column;
     width: 100%;
   }
-  
+
   .btn-group .btn {
     width: 100%;
     border-radius: var(--radius-md) !important;
     margin-bottom: 0.5rem;
   }
-  
+
   .btn-group .btn:last-child {
     margin-bottom: 0;
   }
-  
+
   /* Navbar improvements */
   .navbar-brand {
     font-size: 1.125rem;
   }
-  
+
   .navbar-nav {
     width: 280px;
   }
-  
+
   /* Container improvements */
   .container {
     padding-left: 0.75rem;
     padding-right: 0.75rem;
   }
-  
+
   /* Typography adjustments */
-  h1 { font-size: 1.5rem; }
-  h2 { font-size: 1.375rem; }
-  h3 { font-size: 1.25rem; }
-  h4 { font-size: 1.125rem; }
-  h5 { font-size: 1rem; }
-  h6 { font-size: 0.875rem; }
-  
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.375rem;
+  }
+
+  h3 {
+    font-size: 1.25rem;
+  }
+
+  h4 {
+    font-size: 1.125rem;
+  }
+
+  h5 {
+    font-size: 1rem;
+  }
+
+  h6 {
+    font-size: 0.875rem;
+  }
+
   /* Improved touch targets */
-  .btn, 
+  .btn,
   .nav-link,
   .dropdown-item,
   .pagination .page-link,
@@ -2377,12 +2436,12 @@ select.form-control:hover {
     transform: none;
     box-shadow: var(--shadow-md);
   }
-  
+
   .card:hover {
     transform: none;
     box-shadow: var(--shadow-md);
   }
-  
+
   .dropdown-item:hover {
     background-color: var(--color-gray-100);
   }
@@ -2393,15 +2452,15 @@ select.form-control:hover {
   .modal {
     border: 2px solid var(--color-dark);
   }
-  
+
   .btn {
     border-width: 2px;
   }
-  
+
   .form-control {
     border-width: 2px;
   }
-  
+
   .card {
     border: 1px solid var(--color-gray-400);
   }

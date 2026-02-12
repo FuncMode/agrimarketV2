@@ -1,60 +1,91 @@
 
 :root {
-
-  --color-primary: #28a745;
-  --color-primary-dark: #218838;
-  --color-primary-light: #5cb85c;
-  --color-secondary: #20c997;
-  --color-accent: #ffc107;
-  --color-danger: #dc3545;
-  --color-warning: #ffc107;
-  --color-info: #17a2b8;
-  --color-success: #28a745;
+  /* Primary palette — refined agricultural green */
+  --color-primary: #1B7A3D;
+  --color-primary-dark: #145C2E;
+  --color-primary-light: #3DA35D;
+  --color-primary-50: #E8F5E9;
+  --color-primary-100: #C8E6C9;
   
-
-  --color-dark: #212529;
-  --color-gray-900: #212529;
-  --color-gray-800: #343a40;
-  --color-gray-700: #495057;
-  --color-gray-600: #6c757d;
-  --color-gray-500: #adb5bd;
-  --color-gray-400: #ced4da;
-  --color-gray-300: #dee2e6;
-  --color-gray-200: #e9ecef;
-  --color-gray-100: #f8f9fa;
-  --color-light: #f8f9fa;
-  --color-white: #ffffff;
+  /* Secondary — teal accent */
+  --color-secondary: #0D9488;
+  --color-secondary-dark: #0A766C;
+  --color-secondary-light: #2DD4BF;
   
+  /* Accent — warm gold */
+  --color-accent: #F59E0B;
+  --color-accent-dark: #D97706;
+  
+  /* Semantic colors */
+  --color-danger: #DC2626;
+  --color-warning: #F59E0B;
+  --color-info: #0EA5E9;
+  --color-success: #16A34A;
+  
+  /* Neutral scale with softer tones */
+  --color-dark: #1A1F25;
+  --color-gray-900: #1A1F25;
+  --color-gray-800: #2D3339;
+  --color-gray-700: #4A5260;
+  --color-gray-600: #64748B;
+  --color-gray-500: #94A3B8;
+  --color-gray-400: #CBD5E1;
+  --color-gray-300: #E2E8F0;
+  --color-gray-200: #F1F5F9;
+  --color-gray-100: #F8FAFC;
+  --color-gray-50: #FAFBFD;
+  --color-light: #F8FAFC;
+  --color-white: #FFFFFF;
+  
+  /* Typography */
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-display: 'Poppins', 'Inter', sans-serif;
   
+  /* Typography scale (modular 1.25 ratio) */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+  
+  /* Spacing scale */
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
   --spacing-md: 1rem;
   --spacing-lg: 1.5rem;
   --spacing-xl: 2rem;
   --spacing-2xl: 3rem;
+  --spacing-3xl: 4rem;
+  --spacing-4xl: 6rem;
   
+  /* Border radius */
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
   --radius-full: 9999px;
   
+  /* Shadows */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
   
+  /* Transitions */
   --transition-fast: 150ms ease;
   --transition-normal: 300ms ease;
   --transition-slow: 500ms ease;
   
-  /* Animation Variables */
+  /* Animation easing */
   --animation-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
   --animation-smooth: cubic-bezier(0.4, 0, 0.2, 1);
   --animation-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
   
+  /* Z-index scale */
   --z-dropdown: 1000;
   --z-sticky: 1020;
   --z-fixed: 1030;
@@ -63,6 +94,12 @@
   --z-popover: 1060;
   --z-tooltip: 1070;
   --z-toast: 1080;
+  
+  /* Container widths */
+  --container-sm: 640px;
+  --container-md: 768px;
+  --container-lg: 1024px;
+  --container-xl: 1280px;
 }
 
 /* Font Loading Optimization */
@@ -103,6 +140,13 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--color-dark);
   animation: slideInUp 0.8s var(--animation-smooth) both;
 }
+
+h1 { font-size: var(--text-5xl); }
+h2 { font-size: var(--text-4xl); }
+h3 { font-size: var(--text-3xl); }
+h4 { font-size: var(--text-2xl); }
+h5 { font-size: var(--text-xl); }
+h6 { font-size: var(--text-lg); }
 
 /* ============ KEYFRAME ANIMATIONS ============ */
 @keyframes fadeInUp {
@@ -236,17 +280,16 @@ h1, h2, h3, h4, h5, h6 {
 a {
   color: var(--color-primary);
   text-decoration: none;
-  transition: all var(--transition-fast);
+  transition: color var(--transition-fast);
   position: relative;
 }
 
 a:hover {
   color: var(--color-primary-dark);
-  transform: translateY(-2px);
 }
 
 a:active {
-  transform: translateY(0);
+  color: var(--color-primary-dark);
 }
 
 /* Link hover effect with underline animation */
@@ -270,12 +313,6 @@ img {
   max-width: 100%;
   height: auto;
   display: block;
-  transition: all var(--transition-normal);
-}
-
-img:hover {
-  transform: scale(1.02);
-  filter: brightness(1.05);
 }
 
 /* Lazy Loading Image Transitions - Only for manual lazy loading with data-src */
@@ -295,26 +332,26 @@ img.error {
 
 
 .sr-only {
-  position: absolute !important;
-  width: 1px !important;
-  height: 1px !important;
-  padding: 0 !important;
-  margin: -1px !important;
-  overflow: hidden !important;
-  clip: rect(0, 0, 0, 0) !important;
-  white-space: nowrap !important;
-  border: 0 !important;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .focus\:not-sr-only:focus {
-  position: static !important;
-  width: auto !important;
-  height: auto !important;
-  padding: 0.5rem 1rem !important;
-  margin: 0 !important;
-  overflow: visible !important;
-  clip: auto !important;
-  white-space: normal !important;
+  position: static;
+  width: auto;
+  height: auto;
+  padding: 0.5rem 1rem;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
 }
 
 *:focus {
@@ -505,15 +542,7 @@ a:focus {
 }
 
 
-::selection {
-  background-color: var(--color-primary);
-  color: white;
-}
 
-::-moz-selection {
-  background-color: var(--color-primary);
-  color: white;
-}
 
 
 .text-primary { color: var(--color-primary); }
@@ -777,17 +806,7 @@ a:focus {
 }
 
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
+
 
 
 /* Extra Small Devices (phones in portrait, less than 576px) */

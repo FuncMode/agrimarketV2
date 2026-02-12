@@ -29,52 +29,54 @@
     <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
     
     <style>
-        /* Modern Profile Styles */
+        /* Clean & Modern Profile Styles */
         .profile-container {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 50%, #bbf7d0 100%);
             min-height: 100vh;
         }
         
         .profile-card {
             backdrop-filter: blur(10px);
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         .profile-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            box-shadow: 0 12px 24px -4px rgba(34, 197, 94, 0.15);
         }
         
         .profile-avatar {
-            width: 120px;
-            height: 120px;
-            margin-top: -60px;
-            border: 5px solid white;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-            transition: all 0.3s ease;
+            width: 110px;
+            height: 110px;
+            margin-top: -55px;
+            border: 4px solid white;
+            box-shadow: 0 8px 20px rgba(34, 197, 94, 0.2);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         .profile-avatar:hover {
-            transform: scale(1.05);
+            transform: scale(1.03);
+            box-shadow: 0 12px 28px rgba(34, 197, 94, 0.25);
         }
         
         .info-card {
             background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
-            transition: all 0.3s ease;
-            border: 1px solid rgba(0, 0, 0, 0.05);
+            border-radius: 16px;
+            padding: 1.25rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(34, 197, 94, 0.08);
         }
         
         .info-card:hover {
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-            border-color: rgba(102, 126, 234, 0.3);
+            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.12);
+            border-color: rgba(34, 197, 94, 0.2);
+            transform: translateY(-1px);
         }
         
         .stat-card {
             position: relative;
             overflow: hidden;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         .stat-card::before {
@@ -84,7 +86,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.1) 100%);
+            background: linear-gradient(135deg, transparent 0%, rgba(34, 197, 94, 0.05) 100%);
             opacity: 0;
             transition: opacity 0.3s ease;
         }
@@ -94,47 +96,48 @@
         }
         
         .stat-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(34, 197, 94, 0.15);
         }
         
         .floating-label {
-            font-size: 0.75rem;
-            color: #6b7280;
-            font-weight: 500;
+            font-size: 0.7rem;
+            color: #22c55e;
+            font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.8px;
             margin-bottom: 0.5rem;
         }
         
         .profile-value {
             color: #1f2937;
-            font-size: 1.125rem;
+            font-size: 1.05rem;
             font-weight: 600;
         }
         
         .gradient-border {
             position: relative;
             background: white;
-            border-radius: 12px;
+            border-radius: 16px;
         }
         
         .gradient-border::before {
             content: '';
             position: absolute;
             inset: 0;
-            border-radius: 12px;
+            border-radius: 16px;
             padding: 2px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            background: linear-gradient(135deg, #22c55e, #16a34a);
             -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
             -webkit-mask-composite: xor;
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
             mask-composite: exclude;
         }
         
         .btn-modern {
             position: relative;
             overflow: hidden;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         .btn-modern::before {
@@ -145,9 +148,9 @@
             width: 0;
             height: 0;
             border-radius: 50%;
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.25);
             transform: translate(-50%, -50%);
-            transition: width 0.6s, height 0.6s;
+            transition: width 0.5s, height 0.5s;
         }
         
         .btn-modern:hover::before {
@@ -158,18 +161,18 @@
         .badge-modern {
             padding: 0.5rem 1rem;
             border-radius: 9999px;
-            font-size: 0.875rem;
+            font-size: 0.85rem;
             font-weight: 600;
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 6px rgba(34, 197, 94, 0.15);
         }
         
         @keyframes fadeIn {
             from {
                 opacity: 0;
-                transform: translateY(20px);
+                transform: translateY(15px);
             }
             to {
                 opacity: 1;
@@ -178,13 +181,13 @@
         }
         
         .animate-fade-in {
-            animation: fadeIn 0.5s ease-out;
+            animation: fadeIn 0.4s ease-out;
         }
         
         .divider {
             height: 1px;
-            background: linear-gradient(90deg, transparent, #e5e7eb, transparent);
-            margin: 2rem 0;
+            background: linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.2), transparent);
+            margin: 1.75rem 0;
         }
         
         .icon-wrapper {
@@ -195,11 +198,11 @@
             align-items: center;
             justify-content: center;
             font-size: 1.5rem;
-            transition: all 0.3s ease;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         .icon-wrapper:hover {
-            transform: rotate(360deg);
+            transform: scale(1.05);
         }
     </style>
 </head>
@@ -212,17 +215,17 @@
         <div class="max-w-4xl mx-auto px-4">
             <!-- Header -->
             <div class="mb-6 sm:mb-8 animate-fade-in">
-                <button id="back-btn" class="flex items-center gap-2 text-white hover:text-gray-200 mb-4 sm:mb-6 touch-manipulation transition-all duration-300 bg-white bg-opacity-20 px-4 py-2 rounded-lg backdrop-blur-sm hover:bg-opacity-30">
+                <button id="back-btn" class="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 sm:mb-6 touch-manipulation transition-all duration-300 bg-white bg-opacity-60 px-4 py-2 rounded-lg backdrop-blur-sm hover:bg-opacity-80 shadow-sm">
                     <i class="bi bi-chevron-left"></i> 
                     <span class="font-medium">Back</span>
                 </button>
                 <div class="flex items-center gap-4">
-                    <div class="icon-wrapper bg-white bg-opacity-20 backdrop-blur-sm text-white">
+                    <div class="icon-wrapper bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-md">
                         <i class="bi bi-person-circle"></i>
                     </div>
                     <div>
-                        <h1 class="text-3xl sm:text-4xl font-bold text-white drop-shadow-lg">My Profile</h1>
-                        <p class="text-white text-opacity-90 mt-1">Manage your account information</p>
+                        <h1 class="text-3xl sm:text-4xl font-bold text-gray-800 drop-shadow-sm">My Profile</h1>
+                        <p class="text-gray-600 mt-1">Manage your account information</p>
                     </div>
                 </div>
             </div>
@@ -230,14 +233,14 @@
             <!-- Profile Card -->
             <div class="profile-card bg-white rounded-2xl shadow-2xl overflow-hidden mb-6 animate-fade-in" style="animation-delay: 0.1s;">
                 <!-- Avatar Section -->
-                <div class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-32 sm:h-40 relative">
-                    <div class="absolute inset-0 bg-black bg-opacity-10"></div>
+                <div class="bg-gradient-to-r from-green-400 via-emerald-500 to-teal-500 h-32 sm:h-40 relative">
+                    <div class="absolute inset-0 bg-white bg-opacity-10"></div>
                     <div class="absolute inset-0 backdrop-blur-sm bg-white bg-opacity-5"></div>
                 </div>
                 <div class="px-4 sm:px-8 pb-6 sm:pb-8">
                     <!-- Avatar -->
                     <div class="flex justify-center">
-                        <div class="profile-avatar bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-5xl font-bold">
+                        <div class="profile-avatar bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-white text-5xl font-bold">
                             <i class="bi bi-person-fill"></i>
                         </div>
                     </div>
@@ -249,7 +252,7 @@
                             <!-- First Name -->
                             <div class="info-card">
                                 <div class="flex items-start gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper bg-gradient-to-br from-green-500 to-emerald-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
                                         <i class="bi bi-person"></i>
                                     </div>
                                     <div class="flex-1">
@@ -262,7 +265,7 @@
                             <!-- Last Name -->
                             <div class="info-card">
                                 <div class="flex items-start gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-purple-500 to-pink-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper bg-gradient-to-br from-teal-500 to-cyan-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
                                         <i class="bi bi-person-badge"></i>
                                     </div>
                                     <div class="flex-1">
@@ -275,7 +278,7 @@
                             <!-- Email -->
                             <div class="info-card md:col-span-2">
                                 <div class="flex items-start gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-green-500 to-teal-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper bg-gradient-to-br from-blue-500 to-sky-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
                                         <i class="bi bi-envelope"></i>
                                     </div>
                                     <div class="flex-1">
@@ -301,13 +304,13 @@
                             <!-- User Type -->
                             <div class="info-card">
                                 <div class="flex items-start gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-yellow-500 to-orange-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper bg-gradient-to-br from-amber-500 to-yellow-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
                                         <i class="bi bi-award"></i>
                                     </div>
                                     <div class="flex-1">
                                         <label class="floating-label">User Type</label>
                                         <p id="view-role" class="profile-value">
-                                            <span id="role-badge" class="badge-modern bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
+                                            <span id="role-badge" class="badge-modern bg-gradient-to-r from-green-500 to-emerald-600 text-white">
                                                 <i class="bi bi-shield-check"></i>
                                                 Loading...
                                             </span>
@@ -340,7 +343,7 @@
                         <!-- Address Section -->
                         <div class="info-card">
                             <div class="flex items-start gap-3">
-                                <div class="icon-wrapper bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                <div class="icon-wrapper bg-gradient-to-br from-red-500 to-rose-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
                                     <i class="bi bi-geo-alt"></i>
                                 </div>
                                 <div class="flex-1">
@@ -385,9 +388,9 @@
 
                     <!-- Edit Form (Hidden) -->
                     <form id="profile-form" class="space-y-6 hidden mt-8">
-                        <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-6 mb-6">
+                        <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 mb-6">
                             <div class="flex items-center gap-3 mb-2">
-                                <i class="bi bi-pencil-square text-indigo-600 text-2xl"></i>
+                                <i class="bi bi-pencil-square text-green-600 text-2xl"></i>
                                 <h3 class="text-xl font-bold text-gray-900">Edit Your Information</h3>
                             </div>
                             <p class="text-gray-600 text-sm">Update your profile details below</p>
@@ -396,31 +399,31 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                                    <i class="bi bi-person text-indigo-600"></i>
+                                    <i class="bi bi-person text-green-600"></i>
                                     First Name
                                 </label>
-                                <input type="text" id="edit-first-name" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base transition-all duration-300" required>
+                                <input type="text" id="edit-first-name" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base transition-all duration-300" required>
                             </div>
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                                    <i class="bi bi-person-badge text-purple-600"></i>
+                                    <i class="bi bi-person-badge text-teal-600"></i>
                                     Last Name
                                 </label>
-                                <input type="text" id="edit-last-name" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base transition-all duration-300" required>
+                                <input type="text" id="edit-last-name" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base transition-all duration-300" required>
                             </div>
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                                     <i class="bi bi-phone text-orange-600"></i>
                                     Phone Number
                                 </label>
-                                <input type="tel" id="edit-phone" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base transition-all duration-300" pattern="(09|\+639)\d{9}" placeholder="+639XXXXXXXXX">
+                                <input type="tel" id="edit-phone" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base transition-all duration-300" pattern="(09|\+639)\d{9}" placeholder="+639XXXXXXXXX">
                             </div>
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                                     <i class="bi bi-building text-cyan-600"></i>
                                     Municipality
                                 </label>
-                                <select id="edit-municipality" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base transition-all duration-300">
+                                <select id="edit-municipality" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base transition-all duration-300">
                                     <option value="">Select Municipality</option>
                                 </select>
                             </div>
@@ -432,8 +435,8 @@
                                 Delivery Address
                             </label>
                             <div style="position: relative;">
-                                <button type="button" id="open-location-picker-btn" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent flex items-center gap-3 transition-all duration-300">
-                                    <div class="icon-wrapper bg-gradient-to-br from-red-500 to-pink-600 text-white text-base" style="width: 36px; height: 36px; font-size: 1rem;">
+                                <button type="button" id="open-location-picker-btn" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent flex items-center gap-3 transition-all duration-300">
+                                    <div class="icon-wrapper bg-gradient-to-br from-red-500 to-rose-600 text-white text-base" style="width: 36px; height: 36px; font-size: 1rem;">
                                         <i class="bi bi-pin-map-fill"></i>
                                     </div>
                                     <span id="selected-address-display" class="flex-1 text-gray-700">Click to select location on map</span>
@@ -463,12 +466,12 @@
 
             <!-- Stats Section -->
             <div id="stats-section" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 hidden animate-fade-in" style="animation-delay: 0.2s;">
-                <div class="stat-card bg-white rounded-2xl shadow-lg p-6 border-l-4 border-blue-500 hover:shadow-2xl">
+                <div class="stat-card bg-white rounded-2xl shadow-lg p-6 border-l-4 border-green-500 hover:shadow-2xl">
                     <div class="flex items-center justify-between mb-4">
-                        <div class="icon-wrapper bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
+                        <div class="icon-wrapper bg-gradient-to-br from-green-500 to-emerald-600 text-white">
                             <i class="bi bi-cart-check"></i>
                         </div>
-                        <i class="bi bi-graph-up text-blue-500 text-2xl"></i>
+                        <i class="bi bi-graph-up text-green-500 text-2xl"></i>
                     </div>
                     <p class="text-gray-600 text-sm font-medium uppercase tracking-wide mb-2">Total Orders</p>
                     <p id="stat-orders" class="text-4xl font-bold text-gray-900 mb-1">0</p>
@@ -485,12 +488,12 @@
                     <p id="stat-completed" class="text-4xl font-bold text-gray-900 mb-1">0</p>
                     <p class="text-xs text-gray-500">Successfully completed</p>
                 </div>
-                <div class="stat-card bg-white rounded-2xl shadow-lg p-6 border-l-4 border-yellow-500 hover:shadow-2xl">
+                <div class="stat-card bg-white rounded-2xl shadow-lg p-6 border-l-4 border-amber-500 hover:shadow-2xl">
                     <div class="flex items-center justify-between mb-4">
-                        <div class="icon-wrapper bg-gradient-to-br from-yellow-500 to-orange-600 text-white">
+                        <div class="icon-wrapper bg-gradient-to-br from-amber-500 to-orange-600 text-white">
                             <i class="bi bi-clock-history"></i>
                         </div>
-                        <i class="bi bi-hourglass-split text-yellow-500 text-2xl"></i>
+                        <i class="bi bi-hourglass-split text-amber-500 text-2xl"></i>
                     </div>
                     <p class="text-gray-600 text-sm font-medium uppercase tracking-wide mb-2">Pending</p>
                     <p id="stat-pending" class="text-4xl font-bold text-gray-900 mb-1">0</p>
@@ -500,9 +503,9 @@
 
             <!-- Danger Zone -->
             <div class="bg-white rounded-2xl shadow-lg overflow-hidden border-l-4 border-red-500 animate-fade-in" style="animation-delay: 0.3s;">
-                <div class="bg-gradient-to-r from-red-50 to-pink-50 px-6 py-4 border-b border-red-100">
+                <div class="bg-gradient-to-r from-red-50 to-rose-50 px-6 py-4 border-b border-red-100">
                     <h3 class="text-xl font-bold text-red-700 flex items-center gap-3">
-                        <div class="icon-wrapper bg-gradient-to-br from-red-500 to-pink-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                        <div class="icon-wrapper bg-gradient-to-br from-red-500 to-rose-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
                             <i class="bi bi-exclamation-triangle-fill"></i>
                         </div>
                         Danger Zone
