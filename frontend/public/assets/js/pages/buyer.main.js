@@ -796,7 +796,7 @@ const renderProductInfo = (product, container) => {
         
         <div class="product-detail-item">
           <div class="label">Available Stock</div>
-          <div class="value"><i class="bi bi-box"></i> ${product.available_quantity || 0} ${product.unit_type || 'units'}</div>
+          <div class="value"><i class="bi bi-box"></i> ${product.available_quantity || 0}</div>
         </div>
         
         <div class="product-detail-item">

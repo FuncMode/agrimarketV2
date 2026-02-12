@@ -107,7 +107,7 @@ const createProductCard = (product, options = {}) => {
         
         <div class="text-right">
           <p class="text-sm text-gray-600">Available</p>
-          <p class="font-semibold">${product.available_quantity} ${product.unit_type}</p>
+          <p class="font-semibold">${product.available_quantity}</p>
         </div>
       </div>
     </div>
