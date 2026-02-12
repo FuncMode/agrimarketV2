@@ -9,6 +9,10 @@ class IPBlockingService {
     this.VIOLATION_THRESHOLD = parseInt(process.env.IP_BLOCK_VIOLATION_THRESHOLD) || 5;
     this.BLOCK_DURATION_MS = parseInt(process.env.IP_BLOCK_DURATION_MS) || 60 * 60 * 1000; // 1 hour default
     this.VIOLATION_RESET_MS = parseInt(process.env.IP_VIOLATION_RESET_MS) || 15 * 60 * 1000; // 15 minutes
+    
+    // Stats counters
+    this.totalFailedAttempts = 0;
+    this.totalBlockedRequests = 0;
   }
 
   recordViolation(ip) {
@@ -16,6 +20,7 @@ class IPBlockingService {
     const violations = this.violationCounts.get(ip) || { count: 0, firstViolation: now };
     
     violations.count += 1;
+    this.totalFailedAttempts++;
     
     if (violations.count >= this.VIOLATION_THRESHOLD) {
       this.blockIP(ip);
@@ -77,6 +82,8 @@ class IPBlockingService {
     return {
       blocked_count: this.blockedIPs.size,
       violation_tracking_count: this.violationCounts.size,
+      total_failed_attempts: this.totalFailedAttempts,
+      total_blocked_requests: this.totalBlockedRequests,
       threshold: this.VIOLATION_THRESHOLD,
       block_duration_ms: this.BLOCK_DURATION_MS
     };
@@ -88,9 +95,17 @@ const ipBlockingService = new IPBlockingService();
 const ipBlockingMiddleware = (req, res, next) => {
   const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
   
+  // Allow admin stats endpoint even if blocked, so they can see why
+  if (req.path === '/api/admin/security/ip-blocking' || req.path === '/api/admin/dashboard') {
+    return next();
+  }
+  
   if (ipBlockingService.isBlocked(clientIP)) {
     const remainingSeconds = ipBlockingService.getBlockTimeRemaining(clientIP);
     const remainingMinutes = Math.ceil(remainingSeconds / 60);
+    
+    // Increment blocked requests counter
+    ipBlockingService.totalBlockedRequests++;
     
     logger.warn('Blocked IP attempted access', {
       ip: clientIP,

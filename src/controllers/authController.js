@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { supabase, supabaseService } = require('../config/database');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
+const { ipBlockingService } = require('../middleware/ipBlockingMiddleware');
 
 
 const generateToken = (userId) => {
@@ -150,12 +151,16 @@ exports.login = asyncHandler(async (req, res, next) => {
     .single();
 
   if (error || !user) {
+    const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+    ipBlockingService.recordViolation(clientIP);
     throw new AppError('Invalid email or password.', 401);
   }
 
   const isPasswordValid = await comparePassword(password, user.password_hash);
 
   if (!isPasswordValid) {
+    const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+    ipBlockingService.recordViolation(clientIP);
     throw new AppError('Invalid email or password.', 401);
   }
 

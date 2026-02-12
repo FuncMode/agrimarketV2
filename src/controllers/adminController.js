@@ -502,7 +502,13 @@ exports.getIPBlockingStats = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: {
-      ip_blocking: stats
+      ip_blocking: {
+        blocked_ips: stats.blocked_count || 0,
+        failed_attempts_24h: stats.total_failed_attempts || 0,
+        rate_limited_requests: stats.total_blocked_requests || 0,
+        // Include other service stats if needed for debugging
+        violation_tracking_count: stats.violation_tracking_count
+      }
     }
   });
 });
@@ -510,14 +516,25 @@ exports.getIPBlockingStats = asyncHandler(async (req, res, next) => {
 exports.getDatabaseStats = asyncHandler(async (req, res, next) => {
   const dbMonitor = require('../utils/dbMonitor');
   
-  const stats = dbMonitor.getStats();
+  // Perform health check first to update stats
   const healthCheck = await dbMonitor.checkConnection();
+  
+  // Get updated stats
+  const rawStats = dbMonitor.getStats();
+  
+  // Calculate specific metrics for frontend (which expects snake_case)
+  const totalQueries = rawStats.totalQueries || 0;
+  const failedQueries = rawStats.failedQueries || 0;
+  // Calculate percentage as a number, handle division by zero
+  const errorRateVal = totalQueries > 0 ? (failedQueries / totalQueries) * 100 : 0;
   
   res.status(200).json({
     success: true,
     data: {
       database: {
-        ...stats,
+        query_count: totalQueries,
+        avg_response_time: rawStats.averageResponseTime || 0,
+        error_rate: errorRateVal,
         current_status: healthCheck.healthy ? 'healthy' : 'unhealthy',
         last_check_duration_ms: healthCheck.duration || 0
       }
