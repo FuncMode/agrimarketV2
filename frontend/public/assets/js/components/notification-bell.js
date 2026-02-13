@@ -157,73 +157,8 @@ const cleanup = () => {
 };
 
 // ============ Add CSS Animations ============
-
-if (!document.getElementById('notification-bell-styles')) {
-  const style = document.createElement('style');
-  style.id = 'notification-bell-styles';
-  style.textContent = `
-    .notification-bell {
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.5rem;
-      height: 2.5rem;
-      border-radius: 0.5rem;
-      transition: background-color 0.15s ease;
-    }
-    
-    .notification-bell:hover {
-      background-color: var(--color-gray-100);
-    }
-    
-    .notification-bell.has-new-notification {
-      animation: bell-shake 0.5s ease;
-    }
-    
-    @keyframes bell-shake {
-      0%, 100% { transform: rotate(0deg); }
-      10%, 30%, 50%, 70%, 90% { transform: rotate(-10deg); }
-      20%, 40%, 60%, 80% { transform: rotate(10deg); }
-    }
-    
-    .notification-badge {
-      position: absolute;
-      top: -4px;
-      right: -4px;
-      background-color: var(--color-danger);
-      color: white;
-      border-radius: 9999px;
-      padding: 0.125rem 0.375rem;
-      font-size: 0.75rem;
-      font-weight: 700;
-      min-width: 1.25rem;
-      text-align: center;
-      line-height: 1;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .pulse-animation {
-      animation: pulse 1s ease;
-    }
-    
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.2); }
-    }
-    
-    .ring-animation {
-      animation: ring 0.5s ease;
-    }
-    
-    @keyframes ring {
-      0%, 100% { transform: rotate(0deg); }
-      10%, 30%, 50%, 70%, 90% { transform: rotate(-15deg); }
-      20%, 40%, 60%, 80% { transform: rotate(15deg); }
-    }
-  `;
-  document.head.appendChild(style);
-}
+// Styles are now handling in components.css
+// Keeping this comment block to indicate removal of duplicate styles
 
 // ============ Exports ============
 

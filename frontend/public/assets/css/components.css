@@ -305,10 +305,10 @@ select.form-control:hover {
 
 /* Enhanced toast animations */
 .toast {
-  animation: slideInRight 0.3s ease-out, fadeOut 0.3s ease-in 4.7s forwards;
+  animation: toastSlideInRight 0.3s ease-out, fadeOut 0.3s ease-in 4.7s forwards;
 }
 
-@keyframes slideInRight {
+@keyframes toastSlideInRight {
   from {
     transform: translateX(100%);
     opacity: 0;
@@ -1309,6 +1309,33 @@ select.form-control:hover {
   }
 }
 
+.ring-animation {
+  animation: ring 0.5s ease;
+}
+
+@keyframes ring {
+
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: rotate(-15deg);
+  }
+
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: rotate(15deg);
+  }
+}
+
 .notification-dropdown {
   position: absolute;
   top: calc(100% + 8px);
@@ -1391,15 +1418,7 @@ select.form-control:hover {
   animation: fadeIn 0.15s ease-out;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
+/* fadeIn keyframe removed - using main.css version */
 
 .product-details-modal {
   position: fixed;
