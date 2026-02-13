@@ -974,27 +974,27 @@ select.form-control:hover {
 @media (max-width: 768px) {
 
   .sellerOrders {
-    margin-inline-start: 4.5rem;
+    margin-inline-start: 0;
   }
 
   .sellerMessage {
-    margin-inline-start: 5.5rem;
+    margin-inline-start: 0;
   }
 
   .buyerNotif {
-    margin-inline-start: 1.2rem;
+    margin-inline-start: 0;
   }
 
   .buyerCart {
-    margin-inline-start: 3.3rem;
+    margin-inline-start: 0;
   }
 
   .buyerMessage {
-    margin-inline-start: 5.5rem;
+    margin-inline-start: 0;
   }
 
   .buyerIssues {
-    margin-inline-start: .1rem;
+    margin-inline-start: 0;
   }
 
   .mobile-menu-toggle {

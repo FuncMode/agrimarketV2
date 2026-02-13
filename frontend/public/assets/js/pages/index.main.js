@@ -971,9 +971,9 @@ window.viewProduct = (productId) => {
         <i class="bi bi-cart-plus"></i> Add to Cart
       </button>
     ` : !isAuth ? `
-      <a href="/index.html?login=buyer" class="btn btn-primary">
+    <button class="btn btn-primary" onclick="window.showLoginModal('buyer'); this.closest('.modal-backdrop').remove()">
         <i class="bi bi-box-arrow-in-right"></i> Login to Buy
-      </a>
+    </button>
     ` : ''}
   `;
   

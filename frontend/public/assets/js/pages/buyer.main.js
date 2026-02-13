@@ -85,6 +85,7 @@ let issueFilters = {
 let currentCart = null;
 let currentOrders = [];
 let currentIssues = [];
+let currentConversations = []; // Cache conversations data
 let productDetailsMap = null;
 let userLocation = null;
 
@@ -2087,6 +2088,25 @@ const createOrderCard = (order) => {
           </div>
         ` : ''}
         
+        ${order.has_unavailable_product && order.status === 'pending' ? `
+          <div class="mb-4 p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-400">
+            <p class="text-sm font-semibold mb-2 text-yellow-800">
+              <i class="bi bi-exclamation-triangle"></i> Product Unavailable
+            </p>
+            <p class="text-sm text-yellow-700 mb-3">
+              The following product(s) in your order have been ${order.unavailable_products[0]?.status === 'draft' ? 'temporarily unavailable (draft)' : 'paused'} by the seller:
+            </p>
+            <ul class="text-sm text-yellow-700 mb-3 ml-4">
+              ${order.unavailable_products.map(prod => `
+                <li class="mb-1"><i class="bi bi-dash"></i> ${prod.name} <span class="text-xs italic">(${prod.status})</span></li>
+              `).join('')}
+            </ul>
+            <button class="btn btn-sm btn-outline-warning" onclick="window.openOrderChat('${order.id}')">
+              <i class="bi bi-chat-dots"></i> Ask Seller About This
+            </button>
+          </div>
+        ` : ''}
+        
         <div class="flex gap-2 flex-wrap">
           <button class="btn btn-sm btn-outline" onclick="window.viewOrderDetails('${order.id}')">
             <i class="bi bi-eye"></i> View Details
@@ -2177,10 +2197,25 @@ window.viewOrderDetails = async (orderId) => {
         
         <div class="border-t pt-4">
           <h4 class="font-semibold mb-2">Order Items</h4>
+          ${order.has_unavailable_product && order.status === 'pending' ? `
+            <div class="mb-3 p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-400">
+              <p class="text-sm font-semibold text-yellow-800 mb-2">
+                <i class="bi bi-exclamation-triangle"></i> Product Unavailable
+              </p>
+              <p class="text-sm text-yellow-700 mb-2">
+                The following product(s) have been ${order.unavailable_products[0]?.status === 'draft' ? 'temporarily unavailable (draft)' : 'paused'} by the seller:
+              </p>
+              <ul class="text-sm text-yellow-700 ml-4">
+                ${order.unavailable_products.map(prod => `
+                  <li><i class="bi bi-dash"></i> ${prod.name} <span class="text-xs italic">(${prod.status})</span></li>
+                `).join('')}
+              </ul>
+            </div>
+          ` : ''}
           <div class="space-y-2">
             ${order.items.map(item => `
-              <div class="flex justify-between text-sm">
-                <span>${item.product_name} (${item.quantity} ${item.unit_type})</span>
+              <div class="flex justify-between text-sm ${item.product_status === 'paused' || item.product_status === 'draft' ? 'text-yellow-700 bg-yellow-50 p-2 rounded' : ''}">
+                <span>${item.product_name} (${item.quantity} ${item.unit_type})${item.product_status === 'paused' || item.product_status === 'draft' ? ` <span class="text-xs italic">[${item.product_status}]</span>` : ''}</span>
                 <span class="font-semibold">${formatCurrency(item.subtotal)}</span>
               </div>
             `).join('')}
@@ -2975,46 +3010,60 @@ const updateOnlineStatusDisplay = () => {
 // ============ Messaging ============
 
 const loadConversations = async () => {
+  // First, update the conversations data in the background
+  await updateConversationsData();
+  
+  // Then render if container exists
   const container = document.getElementById('conversations-list');
   if (!container) return;
   
+  renderConversationsList(container);
+};
+
+// Fetch and cache conversations data (always executes, even if DOM doesn't exist)
+const updateConversationsData = async () => {
   try {
     const response = await getConversations();
-    const conversations = response.data?.conversations || [];
-    
-    if (conversations.length === 0) {
-      container.innerHTML = '<p class="text-center text-gray-500 py-4">No conversations yet</p>';
-      return;
-    }
-    
-    container.innerHTML = conversations.map(conv => {
-      const userId = conv.other_party_id;
-      return `
-      <div class="conversation-item p-3 hover:bg-gray-100 cursor-pointer rounded-lg"
-           data-order-id="${conv.order_id}"
-           data-user-id="${userId}"
-           onclick="window.openConversation('${conv.order_id}')">
-        <div class="flex items-center gap-3">
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <p class="font-semibold">${conv.other_party}</p>
-              <span class="status-badge-container" data-user-id="${userId}"></span>
-            </div>
-            <p class="text-sm text-gray-600 truncate">${conv.last_message || 'No messages yet'}</p>
+    currentConversations = response.data?.conversations || [];
+  } catch (error) {
+    console.error('Error updating conversations data:', error);
+  }
+};
+
+// Render conversations list using cached data
+const renderConversationsList = (container) => {
+  if (currentConversations.length === 0) {
+    container.innerHTML = '<p class="text-center text-gray-500 py-4">No conversations yet</p>';
+    return;
+  }
+
+  container.innerHTML = currentConversations.map(conv => {
+    const userId = conv.other_party_id;
+    return `
+    <div class="conversation-item p-3 hover:bg-gray-100 cursor-pointer rounded-lg"
+         data-order-id="${conv.order_id}"
+         data-user-id="${userId}"
+         onclick="window.openConversation('${conv.order_id}')">
+      <div class="flex items-center gap-3">
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <p class="font-semibold">${conv.other_party}</p>
+            <span class="status-badge-container" data-user-id="${userId}"></span>
           </div>
-          ${conv.unread_count > 0 ? `
-            <span class="badge badge-danger" data-conversation-badge="${conv.order_id}">${conv.unread_count}</span>
-          ` : `
-            <span class="badge badge-danger" data-conversation-badge="${conv.order_id}" style="display: none;"></span>
-          `}
+          <p class="text-sm text-gray-600 truncate">${conv.last_message || 'No messages yet'}</p>
         </div>
+        ${conv.unread_count > 0 ? `
+          <span class="badge badge-danger" data-conversation-badge="${conv.order_id}">${conv.unread_count}</span>
+        ` : `
+          <span class="badge badge-danger" data-conversation-badge="${conv.order_id}" style="display: none;"></span>
+        `}
       </div>
-    `;
-    }).join('');
-    
-    // Add status badges to conversation items - THIS HAPPENS AFTER HTML IS SET
-    await new Promise(resolve => setTimeout(resolve, 0)); // Ensure DOM is updated
-    
+    </div>
+  `;
+  }).join('');
+  
+  // Add status badges to conversation items
+  new Promise(resolve => setTimeout(resolve, 0)).then(() => {
     document.querySelectorAll('.status-badge-container').forEach(container => {
       const userId = container.dataset.userId;
       if (userId) {
@@ -3025,18 +3074,17 @@ const loadConversations = async () => {
         container.innerHTML = '<span class="text-xs text-gray-400">-</span>';
       }
     });
-    
-  } catch (error) {
-    console.error('Error loading conversations:', error);
-  }
+  });
 };
 
 // Update a single conversation's badge and message preview
 const updateConversationBadge = async (orderId) => {
   try {
-    const response = await getConversations();
-    const conversations = response.data?.conversations || [];
-    const conversation = conversations.find(c => c.order_id === orderId);
+    // First update the cached data
+    await updateConversationsData();
+    
+    // Then find the conversation in cache
+    const conversation = currentConversations.find(c => c.order_id === orderId);
     
     if (conversation) {
       const badge = document.querySelector(`[data-conversation-badge="${orderId}"]`);
@@ -3294,38 +3342,47 @@ const initializeRealTime = async () => {
       
       // Listen for new messages from socket
       on('message_received', (data) => {
-        // Check if user is currently viewing this conversation
-        const isViewingThisConversation = currentPage === 'messaging' && currentConversation === data.order_id;
-        
-        // Only update conversations and show badge if NOT currently viewing this conversation
-        if (!isViewingThisConversation) {
-          // Update conversations list and badges
-          loadConversations();
-          // Update message badge in navbar
-          updateMessageBadge();
-          // Show toast for new messages in other conversations (no sound - we play message sound separately)
-          showToast('New message received', 'info', 5000, false);
-          // Play message sound
-          playMessageSound();
-        } else {
-          // User is viewing the conversation, just add the message to chat
-          const chatMessages = document.getElementById('chat-messages');
-          if (chatMessages) {
-            addMessageBubbleToChat(data);
+        // ALWAYS update conversations data, even if UI isn't visible
+        (async () => {
+          await updateConversationsData();
+          
+          // Check if user is currently viewing this conversation
+          const isViewingThisConversation = currentPage === 'messaging' && currentConversation === data.order_id;
+          
+          // ALWAYS update the conversations list preview on the left side (real-time)
+          const container = document.getElementById('conversations-list');
+          if (container) {
+            renderConversationsList(container);
           }
           
-          // Auto-mark incoming messages as read if user is viewing the conversation
-          setTimeout(async () => {
-            try {
-              await markMessagesAsRead(data.order_id);
-              // Update badge to reflect the read state
-              updateConversationBadge(data.order_id);
-              updateMessageBadge();
-            } catch (error) {
-              // Silently fail
+          // Only show notification and update badge if NOT currently viewing this conversation
+          if (!isViewingThisConversation) {
+            // Update message badge in navbar
+            updateMessageBadge();
+            // Show toast for new messages in other conversations (no sound - we play message sound separately)
+            showToast('New message received', 'info', 5000, false);
+            // Play message sound
+            playMessageSound();
+          } else {
+            // User is viewing the conversation, add the message to chat
+            const chatMessages = document.getElementById('chat-messages');
+            if (chatMessages) {
+              addMessageBubbleToChat(data);
             }
-          }, 500);
-        }
+            
+            // Auto-mark incoming messages as read if user is viewing the conversation
+            setTimeout(async () => {
+              try {
+                await markMessagesAsRead(data.order_id);
+                // Update badge to reflect the read state
+                updateConversationBadge(data.order_id);
+                updateMessageBadge();
+              } catch (error) {
+                // Silently fail
+              }
+            }, 500);
+          }
+        })();
       });
       
       // Listen for message read receipts

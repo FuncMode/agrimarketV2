@@ -11,6 +11,7 @@ const createProductCard = (product, options = {}) => {
   const {
     showActions = true,
     showSeller = true,
+    showViewButton = true,
     onView = null,
     onAddToCart = null,
     onEdit = null,
@@ -115,9 +116,11 @@ const createProductCard = (product, options = {}) => {
     ${showActions ? `
       <div class="card-footer">
         <div class="flex gap-2">
+          ${showViewButton ? `
           <button class="btn-view btn btn-outline flex-1">
             <i class="bi bi-eye"></i> View
           </button>
+          ` : ''}
           ${canBuy ? `
             <button class="btn-add-cart btn btn-primary flex-1">
               <i class="bi bi-cart-plus"></i> Add to Cart

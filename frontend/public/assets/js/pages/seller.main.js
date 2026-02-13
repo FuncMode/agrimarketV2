@@ -6,6 +6,7 @@ import { showToast, showError, showSuccess } from '../components/toast.js';
 import { showSpinner, hideSpinner } from '../components/loading-spinner.js';
 import { createModal, closeModal } from '../components/modal.js';
 import { openIssueModal } from '../components/issue-modal.js';
+import { createProductCard } from '../components/product-card.js';
 import { requireAuth, requireVerification, getUser, getToken, getUserId } from '../core/auth.js';
 import { formatCurrency, formatDate, formatRelativeTime } from '../utils/formatters.js';
 import { validateRequired, validateNumber } from '../utils/validators.js';
@@ -61,6 +62,7 @@ let issueFilters = {
   status: 'all'
 };
 let currentIssues = [];
+let currentConversations = []; // Cache conversations data
 
 // ============ Initialization ============
 
@@ -245,7 +247,19 @@ const loadProducts = async () => {
     
     // Populate both views
     if (tbody) tbody.innerHTML = currentProducts.map(product => createProductRow(product)).join('');
-    if (mobileView) mobileView.innerHTML = currentProducts.map(product => createProductCard(product)).join('');
+    if (mobileView) {
+      mobileView.innerHTML = '';
+      currentProducts.forEach(product => {
+        const card = createProductCard(product, {
+          showActions: true,
+          showSeller: false, // Seller knows it's their product
+          showViewButton: false, // Hide view button for seller
+          onEdit: () => window.editProduct(product.id),
+          onDelete: () => window.deleteProduct(product.id)
+        });
+        mobileView.appendChild(card);
+      });
+    }
     
   } catch (error) {
     console.error('Error loading products:', error);
@@ -337,55 +351,7 @@ const createProductRow = (product) => {
   `;
 };
 
-const createProductCard = (product) => {
-  const statusColors = {
-    active: 'success',
-    paused: 'warning',
-    draft: 'secondary'
-  };
-  
-  return `
-    <div class="card mb-4" data-product-id="${product.id}">
-      <div class="card-body">
-        <div class="flex items-start gap-3 mb-3">
-          <img src="${product.photo_path || product.photos?.[0] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2216%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'}" 
-               alt="${product.name}"
-               class="w-16 h-16 object-cover rounded">
-          <div class="flex-1">
-            <h3 class="font-semibold text-lg">${product.name}</h3>
-            <p class="text-sm text-gray-600 mb-1"><i class="bi bi-geo-alt"></i> ${product.municipality}</p>
-            <p class="text-sm text-gray-600">${product.category}</p>
-          </div>
-        </div>
-        
-        <div class="grid grid-cols-2 gap-4 mb-3 text-sm">
-          <div>
-            <span class="text-gray-600">Price:</span>
-            <p class="font-semibold">${formatCurrency(product.price_per_unit)} / ${product.unit_type}</p>
-          </div>
-          <div>
-            <span class="text-gray-600">Stock:</span>
-            <p class="font-semibold">${product.available_quantity}</p>
-          </div>
-        </div>
-        
-        <div class="flex items-center justify-between">
-          <span class="badge badge-${statusColors[product.status] || 'secondary'}">
-            ${product.status}
-          </span>
-          <div class="flex gap-2">
-            <button class="btn btn-sm btn-outline" onclick="window.editProduct('${product.id}')">
-              <i class="bi bi-pencil"></i> Edit
-            </button>
-            <button class="btn btn-sm btn-danger" onclick="window.deleteProduct('${product.id}')">
-              <i class="bi bi-trash"></i> Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-};
+
 
 // ============ Product Modal (Create/Edit) ============
 
@@ -664,9 +630,54 @@ window.deleteProduct = async (productId) => {
       await loadDashboardStats();
     } catch (error) {
       console.error('Error deleting product:', error);
-      showError('Failed to delete product');
-      btnConfirm.disabled = false;
-      btnConfirm.innerHTML = '<i class="bi bi-trash"></i> Delete';
+      
+      // Provide more specific feedback for 500 or 409 errors (likely foreign key constraints)
+      if (error.status === 500 || error.status === 409) {
+        // Close delete confirmation modal
+        document.querySelector('.modal-backdrop').remove();
+        
+        // Suggest archiving instead
+        const archiveModal = createModal({
+          title: 'Cannot Delete Product',
+          content: `
+            <div class="text-center">
+              <i class="bi bi-exclamation-triangle text-amber-500 text-5xl mb-3"></i>
+              <p class="text-gray-700 mb-2">This product cannot be deleted because it has associated orders or data.</p>
+              <p class="text-sm text-gray-500 mb-4">You can pause the product instead to hide it from buyers.</p>
+            </div>
+          `,
+          footer: `
+            <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+            <button class="btn btn-warning" id="btn-pause-product">
+              <i class="bi bi-pause-circle"></i> Pause Product
+            </button>
+          `,
+          size: 'sm'
+        });
+        
+        document.getElementById('btn-pause-product').addEventListener('click', async () => {
+          try {
+            // Find product and update status
+            const product = currentProducts.find(p => p.id === productId);
+            if (product) {
+              const { updateProduct } = await import('../services/product.service.js');
+              await updateProduct(productId, { ...product, status: 'paused' });
+              showSuccess('Product paused successfully');
+              document.querySelector('.modal-backdrop').remove();
+              await loadProducts();
+            }
+          } catch (err) {
+            showError('Failed to pause product');
+          }
+        });
+      } else {
+        showError('Failed to delete product');
+      }
+      
+      if (btnConfirm) {
+        btnConfirm.disabled = false;
+        btnConfirm.innerHTML = '<i class="bi bi-trash"></i> Delete';
+      }
     }
   });
 };
@@ -1817,46 +1828,60 @@ const updateOnlineStatusDisplay = () => {
   }
 };
 const loadConversations = async () => {
+  // First, update the conversations data in the background
+  await updateConversationsData();
+  
+  // Then render if container exists
   const container = document.getElementById('conversations-list');
   if (!container) return;
   
+  renderConversationsList(container);
+};
+
+// Fetch and cache conversations data (always executes, even if DOM doesn't exist)
+const updateConversationsData = async () => {
   try {
     const response = await getConversations();
-    const conversations = response.data?.conversations || [];
-    
-    if (conversations.length === 0) {
-      container.innerHTML = '<p class="text-center text-gray-500 py-4">No conversations yet</p>';
-      return;
-    }
-    
-    container.innerHTML = conversations.map(conv => {
-      const userId = conv.other_party_id;
-      return `
-        <div class="conversation-item p-3 hover:bg-gray-100 cursor-pointer rounded-lg"
-             data-order-id="${conv.order_id}"
-             data-user-id="${userId}"
-             onclick="window.openConversation('${conv.order_id}')">
-          <div class="flex items-center gap-3">
-            <div class="flex-1">
-              <div class="flex items-center gap-2">
-                <p class="font-semibold">${conv.other_party}</p>
-                <span class="status-badge-container" data-user-id="${userId}"></span>
-              </div>
-              <p class="text-sm text-gray-600 truncate">${conv.last_message || 'No messages yet'}</p>
+    currentConversations = response.data?.conversations || [];
+  } catch (error) {
+    console.error('Error updating conversations data:', error);
+  }
+};
+
+// Render conversations list using cached data
+const renderConversationsList = (container) => {
+  if (currentConversations.length === 0) {
+    container.innerHTML = '<p class="text-center text-gray-500 py-4">No conversations yet</p>';
+    return;
+  }
+
+  container.innerHTML = currentConversations.map(conv => {
+    const userId = conv.other_party_id;
+    return `
+      <div class="conversation-item p-3 hover:bg-gray-100 cursor-pointer rounded-lg"
+           data-order-id="${conv.order_id}"
+           data-user-id="${userId}"
+           onclick="window.openConversation('${conv.order_id}')">
+        <div class="flex items-center gap-3">
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <p class="font-semibold">${conv.other_party}</p>
+              <span class="status-badge-container" data-user-id="${userId}"></span>
             </div>
-            ${conv.unread_count > 0 ? `
-              <span class="badge badge-danger" data-conversation-badge="${conv.order_id}">${conv.unread_count}</span>
-            ` : `
-              <span class="badge badge-danger" data-conversation-badge="${conv.order_id}" style="display: none;"></span>
-            `}
+            <p class="text-sm text-gray-600 truncate">${conv.last_message || 'No messages yet'}</p>
           </div>
+          ${conv.unread_count > 0 ? `
+            <span class="badge badge-danger" data-conversation-badge="${conv.order_id}">${conv.unread_count}</span>
+          ` : `
+            <span class="badge badge-danger" data-conversation-badge="${conv.order_id}" style="display: none;"></span>
+          `}
         </div>
-      `;
-    }).join('');
-    
-    // Add status badges to conversation items - THIS HAPPENS AFTER HTML IS SET
-    await new Promise(resolve => setTimeout(resolve, 0)); // Ensure DOM is updated
-    
+      </div>
+    `;
+  }).join('');
+  
+  // Add status badges to conversation items
+  new Promise(resolve => setTimeout(resolve, 0)).then(() => {
     document.querySelectorAll('.status-badge-container').forEach(container => {
       const userId = container.dataset.userId;
       if (userId) {
@@ -1867,18 +1892,17 @@ const loadConversations = async () => {
         container.innerHTML = '<span class="text-xs text-gray-400">-</span>';
       }
     });
-    
-  } catch (error) {
-    console.error('Error loading conversations:', error);
-  }
+  });
 };
 
 // Update a single conversation's badge and message preview
 const updateConversationBadge = async (orderId) => {
   try {
-    const response = await getConversations();
-    const conversations = response.data?.conversations || [];
-    const conversation = conversations.find(c => c.order_id === orderId);
+    // First update the cached data
+    await updateConversationsData();
+    
+    // Then find the conversation in cache
+    const conversation = currentConversations.find(c => c.order_id === orderId);
     
     if (conversation) {
       const badge = document.querySelector(`[data-conversation-badge="${orderId}"]`);
@@ -2179,46 +2203,54 @@ const initializeRealTime = async () => {
       
       // Listen for new messages from socket
       on('message_received', (data) => {
-        // Check if user is currently viewing this conversation
-        const isViewingThisConversation = currentPage === 'messaging' && currentConversation === data.order_id;
-        
-        // Only show notification and update badge if NOT currently viewing this conversation
-        if (!isViewingThisConversation) {
-          // Show notification toast for new messages
-          if (data) {
-            const senderName = data.sender?.full_name || data.sender_name || 'Buyer';
-            const messagePreview = data.message_text?.substring(0, 50) || 'New message';
-            showToast(`📨 ${senderName}: ${messagePreview}`, 'info', 5000, false);
+        // ALWAYS update conversations data, even if UI isn't visible
+        (async () => {
+          await updateConversationsData();
+          
+          // Check if user is currently viewing this conversation
+          const isViewingThisConversation = currentPage === 'messaging' && currentConversation === data.order_id;
+          
+          // ALWAYS update the conversations list preview on the left side (real-time)
+          const container = document.getElementById('conversations-list');
+          if (container) {
+            renderConversationsList(container);
           }
           
-          // Play message sound
-          playMessageSound();
-          
-          // Reload conversations to update message preview and badges from server
-          loadConversations();
-          
-          // Update message badge in navbar
-          updateMessageBadge();
-        } else {
-          // User is viewing the conversation, just add the message to chat in real-time
-          const chatMessages = document.getElementById('chat-messages');
-          if (chatMessages) {
-            addMessageBubbleToChat(data);
-          }
-          
-          // Auto-mark incoming messages as read if user is viewing the conversation
-          setTimeout(async () => {
-            try {
-              await markMessagesAsRead(data.order_id);
-              
-              // Update badge after marking as read
-              updateConversationBadge(data.order_id);
-              updateMessageBadge();
-            } catch (error) {
-              console.error('Failed to auto-mark message as read:', error);
+          // Only show notification and update badge if NOT currently viewing this conversation
+          if (!isViewingThisConversation) {
+            // Show notification toast for new messages
+            if (data) {
+              const senderName = data.sender?.full_name || data.sender_name || 'Buyer';
+              const messagePreview = data.message_text?.substring(0, 50) || 'New message';
+              showToast(`📨 ${senderName}: ${messagePreview}`, 'info', 5000, false);
             }
-          }, 500);
-        }
+            
+            // Play message sound
+            playMessageSound();
+            
+            // Update message badge in navbar
+            updateMessageBadge();
+          } else {
+            // User is viewing the conversation, add the message to chat in real-time
+            const chatMessages = document.getElementById('chat-messages');
+            if (chatMessages) {
+              addMessageBubbleToChat(data);
+            }
+            
+            // Auto-mark incoming messages as read if user is viewing the conversation
+            setTimeout(async () => {
+              try {
+                await markMessagesAsRead(data.order_id);
+                
+                // Update badge after marking as read
+                updateConversationBadge(data.order_id);
+                updateMessageBadge();
+              } catch (error) {
+                console.error('Failed to auto-mark message as read:', error);
+              }
+            }, 500);
+          }
+        })();
       });
       
       // Listen for message read receipts

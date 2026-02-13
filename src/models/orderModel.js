@@ -108,6 +108,46 @@ exports.getOrderById = async (orderId) => {
 
   order.items = items || [];
 
+  // Get product statuses for all items
+  if (order.items.length > 0) {
+    const productIds = [...new Set(order.items.map(item => item.product_id))];
+    let productStatusMap = {};
+    
+    if (productIds.length > 0) {
+      const { data: products } = await supabase
+        .from('products')
+        .select('id, status')
+        .in('id', productIds);
+      
+      if (products) {
+        products.forEach(product => {
+          productStatusMap[product.id] = product.status;
+        });
+      }
+    }
+
+    // Add product status to each item
+    order.items.forEach(item => {
+      item.product_status = productStatusMap[item.product_id] || 'active';
+    });
+
+    // Check if any item has paused or draft status
+    order.has_unavailable_product = order.items.some(item => 
+      item.product_status === 'paused' || item.product_status === 'draft'
+    );
+    
+    // Get the unavailable products for display
+    order.unavailable_products = order.items
+      .filter(item => item.product_status === 'paused' || item.product_status === 'draft')
+      .map(item => ({
+        name: item.product_name,
+        status: item.product_status
+      }));
+  } else {
+    order.has_unavailable_product = false;
+    order.unavailable_products = [];
+  }
+
   return { data: order, error: null };
 };
 
@@ -164,14 +204,54 @@ exports.getBuyerOrders = async (buyerId, filters = {}) => {
       .select('*')
       .in('order_id', orderIds);
 
-    // Map items to their respective orders
+    // Get all product IDs to fetch their current status
+    const productIds = [...new Set((allOrderItems || []).map(item => item.product_id))];
+    let productStatusMap = {};
+    
+    if (productIds.length > 0) {
+      const { data: products } = await supabase
+        .from('products')
+        .select('id, status')
+        .in('id', productIds);
+      
+      // Create a map of product_id -> status
+      if (products) {
+        products.forEach(product => {
+          productStatusMap[product.id] = product.status;
+        });
+      }
+    }
+
+    // Map items to their respective orders and add product status
     data.forEach(order => {
-      order.items = (allOrderItems || []).filter(item => item.order_id === order.id);
+      const orderItems = (allOrderItems || []).filter(item => item.order_id === order.id);
+      
+      // Add product status to each item and check if any product is paused/draft
+      orderItems.forEach(item => {
+        item.product_status = productStatusMap[item.product_id] || 'active';
+      });
+      
+      order.items = orderItems;
+      
+      // Check if any item has paused or draft status
+      order.has_unavailable_product = orderItems.some(item => 
+        item.product_status === 'paused' || item.product_status === 'draft'
+      );
+      
+      // Get the unavailable products for display
+      order.unavailable_products = orderItems
+        .filter(item => item.product_status === 'paused' || item.product_status === 'draft')
+        .map(item => ({
+          name: item.product_name,
+          status: item.product_status
+        }));
     });
   } else if (data) {
     // Ensure items array exists for all orders
     data.forEach(order => {
       order.items = [];
+      order.has_unavailable_product = false;
+      order.unavailable_products = [];
     });
   }
 

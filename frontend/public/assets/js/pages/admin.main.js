@@ -668,36 +668,41 @@ const loadUsers = async (page = 1) => {
         const roleBadge = user.role === 'seller' ? 'badge-primary' : 'badge-info';
         
         return `
-          <div class="card mb-3">
-            <div class="card-body">
-              <div class="flex justify-between items-start mb-2">
-                <div>
-                  <h4 class="font-bold">${user.full_name || 'N/A'}</h4>
-                  <p class="text-sm text-gray-600">${user.email}</p>
+          <div class="card mb-3 shadow-sm border border-gray-100">
+            <div class="card-body p-4">
+              <div class="flex justify-between items-start mb-3">
+                <div class="flex-1 mr-2">
+                  <h4 class="font-bold text-lg text-gray-800 truncate">${user.full_name || 'N/A'}</h4>
+                  <p class="text-sm text-gray-500 truncate">${user.email}</p>
                 </div>
-                <span class="badge ${statusBadge}">${user.status}</span>
+                <span class="badge ${statusBadge} shrink-0">${user.status}</span>
               </div>
-              <div class="mb-3">
-                <span class="badge ${roleBadge}">${user.role}</span>
-                <span class="text-sm text-gray-600 ml-2">Joined: ${formatDate(user.created_at)}</span>
+              
+              <div class="flex items-center gap-2 mb-4 text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                 <span class="badge ${roleBadge}">${user.role}</span>
+                 <span class="text-gray-400">|</span>
+                 <span><i class="bi bi-calendar3"></i> ${formatDate(user.created_at)}</span>
               </div>
-              <div class="flex gap-2 flex-wrap">
-                <button class="btn btn-sm btn-outline" onclick="window.viewUserDetails('${user.id}')">
+
+              <div class="grid grid-cols-2 gap-2">
+                <button class="btn btn-sm btn-outline w-full justify-center" onclick="window.viewUserDetails('${user.id}')">
                   <i class="bi bi-eye"></i> View
                 </button>
+                
                 ${user.status !== 'suspended' && user.status !== 'banned' ? `
-                  <button class="btn btn-sm btn-warning" onclick="window.suspendUserAction('${user.id}')">
+                  <button class="btn btn-sm btn-warning w-full justify-center" onclick="window.suspendUserAction('${user.id}')">
                     <i class="bi bi-pause-circle"></i> Suspend
                   </button>
-                  <button class="btn btn-sm btn-danger" onclick="window.banUserAction('${user.id}')">
+                  <button class="btn btn-sm btn-danger w-full justify-center" onclick="window.banUserAction('${user.id}')">
                     <i class="bi bi-slash-circle"></i> Ban
                   </button>
                 ` : `
-                  <button class="btn btn-sm btn-success" onclick="window.reinstateUserAction('${user.id}')">
+                  <button class="btn btn-sm btn-success w-full justify-center col-span-2" onclick="window.reinstateUserAction('${user.id}')">
                     <i class="bi bi-check-circle"></i> Reinstate
                   </button>
                 `}
-                <button class="btn btn-sm btn-danger" onclick="window.deleteUserAction('${user.id}')">
+                
+                <button class="btn btn-sm btn-danger w-full justify-center" onclick="window.deleteUserAction('${user.id}')">
                   <i class="bi bi-trash"></i> Delete
                 </button>
               </div>
