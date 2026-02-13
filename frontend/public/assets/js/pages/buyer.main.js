@@ -6,6 +6,7 @@ import { showToast, showError, showSuccess } from '../components/toast.js';
 import { showSpinner, hideSpinner } from '../components/loading-spinner.js';
 import { createProductCard, renderProductCards } from '../components/product-card.js';
 import { createModal, closeModal } from '../components/modal.js';
+import { createCarousel } from '../components/carousel.js';
 import { openIssueModal } from '../components/issue-modal.js';
 import { initMap, addMarkers, clearMarkers } from '../components/map.js';
 import { requireAuth, getToken } from '../core/auth.js';
@@ -505,52 +506,76 @@ const loadProductsOnMap = async () => {
       
       const marker = L.marker([coordinates.latitude, coordinates.longitude]);
       
-      // Create popup content showing all products from this seller
-      const productList = products.map(product => `
-        <div class="border-b border-gray-200 pb-2 mb-2 last:border-b-0 last:pb-0 last:mb-0">
-          <h5 class="font-semibold text-sm text-gray-800">${product.name}</h5>
-          <p class="text-xs text-gray-600 mb-1">${product.description || ''}</p>
-          <div class="flex justify-between items-center">
-            <span class="text-sm font-bold text-primary">${formatCurrency(product.price_per_unit)}/${product.unit_type}</span>
-            <button 
-              class="btn btn-xs btn-outline-primary" 
-              onclick="window.viewProductFromMap('${product.id}')"
-            >
-              View
-            </button>
-          </div>
-        </div>
-      `).join('');
+      let popupContent;
       
-      const popupContent = `
-        <div class="p-3" style="min-width: 280px; max-width: 320px;">
-          <div class="flex items-center gap-2 mb-3">
-            <i class="bi bi-shop text-primary"></i>
-            <h4 class="font-bold text-base text-gray-800">${seller_name}</h4>
-            ${seller_verified ? '<i class="bi bi-patch-check-fill text-success" title="Verified Seller"></i>' : ''}
-          </div>
-          
-          <p class="text-xs text-gray-600 mb-3">
-            <i class="bi bi-geo-alt"></i> ${municipality}
-          </p>
-          
-          <div class="mb-3">
-            <h5 class="font-semibold text-sm text-gray-700 mb-2">Products (${products.length}):</h5>
-            <div class="max-h-60 overflow-y-auto">
-              ${productList}
+      if (products.length > 0) {
+        // Create popup content showing all products from this seller
+        const productList = products.map(product => `
+          <div class="border-b border-gray-200 pb-2 mb-2 last:border-b-0 last:pb-0 last:mb-0">
+            <h5 class="font-semibold text-sm text-gray-800">${product.name}</h5>
+            <p class="text-xs text-gray-600 mb-1">${product.description || ''}</p>
+            <div class="flex justify-between items-center">
+              <span class="text-sm font-bold text-primary">${formatCurrency(product.price_per_unit)}/${product.unit_type}</span>
+              <button 
+                class="btn btn-xs btn-outline-primary" 
+                onclick="window.viewProductFromMap('${product.id}')"
+              >
+                View
+              </button>
             </div>
           </div>
-          
-          <div class="text-center">
-            <button 
-              class="btn btn-sm btn-primary w-full" 
-              onclick="window.viewAllSellerProducts('${sellerGroup.seller_name}', '${municipality}')"
-            >
-              <i class="bi bi-grid-3x3-gap"></i> View All ${products.length} Products
-            </button>
+        `).join('');
+        
+        popupContent = `
+          <div class="p-3" style="min-width: 280px; max-width: 320px;">
+            <div class="flex items-center gap-2 mb-3">
+              <i class="bi bi-shop text-primary"></i>
+              <h4 class="font-bold text-base text-gray-800">${seller_name}</h4>
+              ${seller_verified ? '<i class="bi bi-patch-check-fill text-success" title="Verified Seller"></i>' : ''}
+            </div>
+            
+            <p class="text-xs text-gray-600 mb-3">
+              <i class="bi bi-geo-alt"></i> ${municipality}
+            </p>
+            
+            <div class="mb-3">
+              <h5 class="font-semibold text-sm text-gray-700 mb-2">Products (${products.length}):</h5>
+              <div class="max-h-60 overflow-y-auto">
+                ${productList}
+              </div>
+            </div>
+            
+            <div class="text-center">
+              <button 
+                class="btn btn-sm btn-primary w-full" 
+                onclick="window.viewAllSellerProducts('${sellerGroup.seller_name}', '${municipality}')"
+              >
+                <i class="bi bi-grid-3x3-gap"></i> View All ${products.length} Products
+              </button>
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      } else {
+        // No products available
+        popupContent = `
+          <div class="p-3" style="min-width: 280px; max-width: 320px;">
+            <div class="flex items-center gap-2 mb-3">
+              <i class="bi bi-shop text-primary"></i>
+              <h4 class="font-bold text-base text-gray-800">${seller_name}</h4>
+              ${seller_verified ? '<i class="bi bi-patch-check-fill text-success" title="Verified Seller"></i>' : ''}
+            </div>
+            
+            <p class="text-xs text-gray-600 mb-3">
+              <i class="bi bi-geo-alt"></i> ${municipality}
+            </p>
+            
+            <div class="text-center p-4 bg-gray-100 rounded">
+              <i class="bi bi-inbox text-gray-400" style="font-size: 2rem;"></i>
+              <p class="text-sm text-gray-600 mt-2">No products yet</p>
+            </div>
+          </div>
+        `;
+      }
       
       marker.bindPopup(popupContent, {
         maxWidth: 320,
@@ -773,9 +798,22 @@ const renderProductInfo = (product, container) => {
   }
   
   try {
+    // Prepare photos array
+    const photos = product.photos && product.photos.length > 0 
+      ? product.photos 
+      : (product.photo_path ? [product.photo_path] : []);
+    
+    // Create carousel HTML
+    const carouselHtml = createCarousel(photos, product.name, {
+      height: '400px',
+      objectFit: 'cover',
+      showIndicators: photos.length > 1,
+      showArrows: photos.length > 1,
+      autoPlay: false
+    });
+    
     container.innerHTML = `
-      <img src="${product.photo_path || product.photos?.[0] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22800%22 height=%22400%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22800%22 height=%22400%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2240%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'}" 
-           alt="${product.name || 'Product'}">
+      ${carouselHtml}
       
       <div class="flex items-start justify-between mb-4">
         <h3 class="text-3xl font-bold">${product.name || 'Unknown Product'}</h3>
@@ -846,13 +884,25 @@ const renderProductInfoForDynamicModal = (product, container) => {
   }
   
   try {
+    // Prepare photos array
+    const photos = product.photos && product.photos.length > 0 
+      ? product.photos 
+      : (product.photo_path ? [product.photo_path] : []);
+    
+    // Create carousel HTML
+    const carouselHtml = createCarousel(photos, product.name, {
+      height: '300px',
+      objectFit: 'cover',
+      showIndicators: photos.length > 1,
+      showArrows: photos.length > 1,
+      autoPlay: false
+    });
+    
     container.innerHTML = `
       <div class="space-y-4">
-        <!-- Product Image -->
+        <!-- Product Carousel -->
         <div class="aspect-w-16 aspect-h-12 bg-gray-100 rounded-lg overflow-hidden">
-          <img src="${product.photo_path || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22400%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2220%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'}" 
-               alt="${product.name || 'Product'}" 
-               class="w-full h-48 object-cover">
+          ${carouselHtml}
         </div>
         
         <!-- Product Info -->

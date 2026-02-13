@@ -5,7 +5,7 @@ const router = express.Router();
 const productController = require('../controllers/productController');
 
 const { protect, restrictTo, requireVerified, optionalAuth } = require('../middleware/authMiddleware');
-const { uploadOptional } = require('../middleware/uploadMiddleware');
+const { uploadOptionalMultiple } = require('../middleware/uploadMiddleware');
 const { validateUUID } = require('../utils/validators');
 const {
   createProductValidation,
@@ -77,7 +77,7 @@ router.post(
   protect,
   restrictTo('seller'),
   requireVerified,
-  uploadOptional('photo'),
+  uploadOptionalMultiple('photo', 3),
   createProductValidation,
   productController.createProduct
 );
@@ -88,7 +88,7 @@ router.put(
   restrictTo('seller'),
   requireVerified,
   validateUUID('productId'),
-  uploadOptional('photo'),
+  uploadOptionalMultiple('photo', 3),
   updateProductValidation,
   productController.updateProduct
 );

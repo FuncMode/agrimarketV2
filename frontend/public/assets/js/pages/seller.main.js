@@ -351,7 +351,51 @@ const createProductRow = (product) => {
   `;
 };
 
+// ============ Product Photo Handlers ============
 
+const setupPhotoInputHandler = () => {
+  const photosInput = document.getElementById('product-photos');
+  if (!photosInput) return;
+
+  photosInput.addEventListener('change', function() {
+    const files = Array.from(this.files);
+    const preview = document.getElementById('photo-preview');
+    const warning = document.getElementById('photo-warning');
+
+    if (!preview) return;
+
+    // Clear previous preview
+    preview.innerHTML = '';
+    warning.style.display = 'none';
+
+    // Limit to 3 files
+    if (files.length > 3) {
+      warning.style.display = 'block';
+      warning.textContent = `⚠️ Only 3 images allowed. ${files.length - 3} file(s) will be ignored.`;
+    }
+
+    // Show preview for each file (max 3)
+    files.slice(0, 3).forEach((file, index) => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = document.createElement('div');
+        img.className = 'relative w-20 h-20';
+        img.innerHTML = `
+          <img src="${e.target.result}" alt="Preview ${index + 1}" class="w-full h-full object-cover rounded">
+          <span class="absolute top-0 right-0 bg-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">${index + 1}</span>
+        `;
+        preview.appendChild(img);
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+};
+
+window.removeExistingPhoto = (photoUrl) => {
+  // This will be handled during save by not including removed photos
+  // For now, we just show a message
+  showToast('Selected photos will replace existing ones when you save', 'info');
+};
 
 // ============ Product Modal (Create/Edit) ============
 
@@ -431,15 +475,28 @@ window.showProductModal = (productId = null) => {
       
       <!-- Photos -->
       <div class="form-group">
-        <label class="form-label">Product Photos</label>
-        <input type="file" id="product-photos" class="form-control" 
-               accept="image/jpeg,image/jpg,image/png" multiple>
-        <p class="text-sm text-gray-600 mt-1">Max 5 photos, 5MB each</p>
+        <label class="form-label">Product Photos <span class="text-danger">*</span></label>
+        <div class="mb-3">
+          <input type="file" id="product-photos" class="form-control" 
+                 accept="image/jpeg,image/jpg,image/png" multiple>
+          <p class="text-sm text-gray-600 mt-1">Upload up to 3 product images (JPG, PNG). Max 5MB each.</p>
+          <div id="photo-preview" class="flex gap-2 mt-3 flex-wrap"></div>
+          <div id="photo-warning" class="text-sm text-warning mt-2" style="display: none;"></div>
+        </div>
         ${editingProduct?.photos?.length > 0 ? `
-          <div class="flex gap-2 mt-2">
-            ${editingProduct.photos.map(photo => `
-              <img src="${photo}" alt="Product" class="w-20 h-20 object-cover rounded">
-            `).join('')}
+          <div class="mt-3">
+            <p class="text-sm font-semibold mb-2">Current Photos:</p>
+            <div class="flex gap-2 flex-wrap">
+              ${editingProduct.photos.map(photo => `
+                <div class="relative">
+                  <img src="${photo}" alt="Product" class="w-20 h-20 object-cover rounded">
+                  <button type="button" class="absolute -top-2 -right-2 bg-danger text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
+                          onclick="removeExistingPhoto('${photo}')" title="Remove this image">
+                    <i class="bi bi-x"></i>
+                  </button>
+                </div>
+              `).join('')}
+            </div>
           </div>
         ` : ''}
       </div>
@@ -491,6 +548,9 @@ window.showProductModal = (productId = null) => {
     footer: footer,
     size: 'lg'
   });
+  
+  // Setup photo input handler for preview and validation
+  setupPhotoInputHandler();
   
   // Handle save
   const btnSave = document.getElementById('btn-save-product');

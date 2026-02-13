@@ -14,6 +14,7 @@ exports.createProduct = async (productData) => {
       available_quantity: productData.available_quantity,
       municipality: productData.municipality,
       photo_path: productData.photo_path || null,
+      photos: productData.photos || [],
       status: productData.status || 'active'
     }])
     .select()

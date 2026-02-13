@@ -5,6 +5,7 @@ import { renderNavbar, updateCartCount, updateOrdersCount } from '../components/
 import { showToast, showError } from '../components/toast.js';
 import { showSpinner, hideSpinner } from '../components/loading-spinner.js';
 import { createModal } from '../components/modal.js';
+import { createCarousel } from '../components/carousel.js';
 import { listProducts, incrementViewCount } from '../services/product.service.js';
 import { getSellers } from '../services/user.service.js';
 import { formatCurrency } from '../utils/formatters.js';
@@ -319,15 +320,28 @@ const loadFreshProductsCount = async () => {
 // ============ Product Card ============
 
 const createProductCard = (product) => {
-  const imageUrl = product.photo_path || product.photos?.[0] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2220%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E';
   const isAuth = isAuthenticated();
   const canBuy = isAuth && isBuyer();
+  
+  // Prepare photos array
+  const photos = product.photos && product.photos.length > 0 
+    ? product.photos 
+    : (product.photo_path ? [product.photo_path] : []);
+  
+  // Create carousel HTML
+  const carouselHtml = createCarousel(photos, product.name, {
+    height: '250px',
+    objectFit: 'cover',
+    showIndicators: photos.length > 1,
+    showArrows: photos.length > 1,
+    autoPlay: false
+  });
   
   return `
     <div class="card product-card">
       ${product.tags?.includes('fresh') ? '<div class="product-card-badge">Fresh</div>' : ''}
       
-      <img src="${imageUrl}" alt="${product.name}" class="card-img" loading="lazy">
+      ${carouselHtml}
       
       <div class="card-body">
         <div class="flex items-center justify-between mb-2">
@@ -533,6 +547,15 @@ const updateMapMarkers = () => {
           title: seller.business_name || seller.full_name
         });
         
+        const hasProducts = seller.total_products && seller.total_products > 0;
+        const productContent = hasProducts 
+          ? `<button class="btn btn-sm btn-primary w-full text-xs py-2" onclick="window.viewSeller('${seller.id}')">
+              View Products
+            </button>`
+          : `<div class="p-2 bg-gray-100 rounded text-center text-xs text-gray-600 w-full">
+              <i class="bi bi-inbox"></i> No products yet
+            </div>`;
+        
         popupContent = `
           <div class="p-3" style="min-width: 240px; max-width: 300px;">
             <h4 class="font-bold text-sm mb-2 break-words">${seller.business_name || seller.full_name}</h4>
@@ -543,9 +566,7 @@ const updateMapMarkers = () => {
               <p class="text-xs text-gray-700"><i class="bi bi-geo-alt"></i> ${seller.municipality || 'Unknown'}</p>
               <p class="text-xs text-gray-700"><i class="bi bi-shop"></i> ${seller.farm_type || 'Farm'}</p>
             </div>
-            <button class="btn btn-sm btn-primary w-full text-xs py-2" onclick="window.viewSeller('${seller.id}')">
-              View Products
-            </button>
+            ${productContent}
           </div>
         `;
       } else {
@@ -563,7 +584,16 @@ const updateMapMarkers = () => {
         marker = L.marker([lat, lng], { icon: clusterIcon });
         
         // Create popup content for multiple sellers
-        const sellersHtml = groupSellers.map(seller => `
+        const sellersHtml = groupSellers.map(seller => {
+          const hasProducts = seller.total_products && seller.total_products > 0;
+          const productBtn = hasProducts 
+            ? `<button class="btn btn-sm btn-primary w-full text-xs py-1" onclick="window.viewSeller('${seller.id}')">
+                View Products
+              </button>`
+            : `<div class="p-2 bg-gray-100 rounded text-center text-xs text-gray-600 w-full">
+                <i class="bi bi-inbox"></i> No products yet
+              </div>`;
+          return `
           <div class="border-b border-gray-200 last:border-b-0 pb-2 mb-2 last:pb-0 last:mb-0">
             <h5 class="font-bold text-sm break-words">${seller.business_name || seller.full_name}</h5>
             <div class="mb-1">
@@ -572,11 +602,10 @@ const updateMapMarkers = () => {
             <div class="space-y-1 mb-2">
               <p class="text-xs text-gray-600"><i class="bi bi-shop"></i> ${seller.farm_type || 'Farm'}</p>
             </div>
-            <button class="btn btn-sm btn-primary w-full text-xs py-1" onclick="window.viewSeller('${seller.id}')">
-              View Products
-            </button>
+            ${productBtn}
           </div>
-        `).join('');
+        `;
+        }).join('');
         
         popupContent = `
           <div class="p-3" style="min-width: 280px; max-width: 320px; max-height: 400px; overflow-y: auto;">
@@ -676,6 +705,15 @@ const filterMapByMunicipality = (municipality) => {
           title: seller.business_name || seller.full_name
         });
         
+        const hasProducts = seller.total_products && seller.total_products > 0;
+        const productContent = hasProducts 
+          ? `<button class="btn btn-sm btn-primary w-full text-xs py-2" onclick="window.viewSeller('${seller.id}')">
+              View Products
+            </button>`
+          : `<div class="p-2 bg-gray-100 rounded text-center text-xs text-gray-600 w-full">
+              <i class="bi bi-inbox"></i> No products yet
+            </div>`;
+        
         popupContent = `
           <div class="p-3" style="min-width: 240px; max-width: 300px;">
             <h4 class="font-bold text-sm mb-2 break-words">${seller.business_name || seller.full_name}</h4>
@@ -686,9 +724,7 @@ const filterMapByMunicipality = (municipality) => {
               <p class="text-xs text-gray-700"><i class="bi bi-geo-alt"></i> ${seller.municipality || 'Unknown'}</p>
               <p class="text-xs text-gray-700"><i class="bi bi-shop"></i> ${seller.farm_type || 'Farm'}</p>
             </div>
-            <button class="btn btn-sm btn-primary w-full text-xs py-2" onclick="window.viewSeller('${seller.id}')">
-              View Products
-            </button>
+            ${productContent}
           </div>
         `;
       } else {
@@ -706,7 +742,16 @@ const filterMapByMunicipality = (municipality) => {
         marker = L.marker([lat, lng], { icon: clusterIcon });
         
         // Create popup content for multiple sellers
-        const sellersHtml = groupSellers.map(seller => `
+        const sellersHtml = groupSellers.map(seller => {
+          const hasProducts = seller.total_products && seller.total_products > 0;
+          const productBtn = hasProducts 
+            ? `<button class="btn btn-sm btn-primary w-full text-xs py-1" onclick="window.viewSeller('${seller.id}')">
+                View Products
+              </button>`
+            : `<div class="p-2 bg-gray-100 rounded text-center text-xs text-gray-600 w-full">
+                <i class="bi bi-inbox"></i> No products yet
+              </div>`;
+          return `
           <div class="border-b border-gray-200 last:border-b-0 pb-2 mb-2 last:pb-0 last:mb-0">
             <h5 class="font-bold text-sm break-words">${seller.business_name || seller.full_name}</h5>
             <div class="mb-1">
@@ -715,11 +760,10 @@ const filterMapByMunicipality = (municipality) => {
             <div class="space-y-1 mb-2">
               <p class="text-xs text-gray-600"><i class="bi bi-shop"></i> ${seller.farm_type || 'Farm'}</p>
             </div>
-            <button class="btn btn-sm btn-primary w-full text-xs py-1" onclick="window.viewSeller('${seller.id}')">
-              View Products
-            </button>
+            ${productBtn}
           </div>
-        `).join('');
+        `;
+        }).join('');
         
         popupContent = `
           <div class="p-3" style="min-width: 280px; max-width: 320px; max-height: 400px; overflow-y: auto;">
@@ -899,11 +943,23 @@ window.viewProduct = (productId) => {
   const isAuth = isAuthenticated();
   const canBuy = isAuth && isBuyer();
   
+  // Prepare photos array
+  const photos = product.photos && product.photos.length > 0 
+    ? product.photos 
+    : (product.photo_path ? [product.photo_path] : []);
+  
+  // Create carousel HTML
+  const carouselHtml = createCarousel(photos, product.name, {
+    height: '400px',
+    objectFit: 'cover',
+    showIndicators: photos.length > 1,
+    showArrows: photos.length > 1,
+    autoPlay: false
+  });
+  
   const modalContent = `
     <div class="space-y-4">
-      <img src="${product.photo_path || product.photos?.[0] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22800%22 height=%22400%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22800%22 height=%22400%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2240%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'}" 
-           alt="${product.name}" 
-           class="w-full h-64 object-cover rounded-lg">
+      ${carouselHtml}
       
       <div>
         <div class="flex items-start justify-between mb-2">

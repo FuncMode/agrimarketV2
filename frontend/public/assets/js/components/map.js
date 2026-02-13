@@ -68,18 +68,25 @@ const addMarkers = (sellers, onMarkerClick = null) => {
 };
 
 const createPopupContent = (seller) => {
+  const hasProducts = seller.total_products && seller.total_products > 0;
+  const productContent = hasProducts 
+    ? `<button 
+        class="btn btn-sm btn-primary mt-2 w-full"
+        onclick="window.viewSeller('${seller.id}')"
+      >
+        View Products
+      </button>`
+    : `<div class="p-2 bg-gray-100 rounded text-center text-sm text-gray-600 w-full mt-2">
+        <i class="bi bi-inbox"></i> No products yet
+      </div>`;
+  
   return `
     <div class="p-2">
       <h4 class="font-bold text-lg">${seller.business_name || seller.full_name}</h4>
       ${seller.verified ? '<span class="verified-badge"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
       <p class="text-sm mt-2"><i class="bi bi-geo-alt"></i> ${seller.municipality}</p>
       <p class="text-sm"><i class="bi bi-shop"></i> ${seller.farm_type || 'Farm'}</p>
-      <button 
-        class="btn btn-sm btn-primary mt-2 w-full"
-        onclick="window.viewSeller('${seller.id}')"
-      >
-        View Products
-      </button>
+      ${productContent}
     </div>
   `;
 };

@@ -147,6 +147,30 @@ const uploadOptional = (fieldName) => {
   };
 };
 
+const uploadOptionalMultiple = (fieldName, maxCount = 3) => {
+  return (req, res, next) => {
+    const uploadHandler = upload.array(fieldName, maxCount);
+    
+    uploadHandler(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return next(new AppError(`File too large. Maximum size is 5MB per file. (Max ${maxCount} files)`, 413));
+        }
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return next(new AppError(`Too many files. Maximum is ${maxCount}.`, 400));
+        }
+        return next(new AppError(err.message, 400));
+      }
+      
+      if (err) {
+        return next(err);
+      }
+
+      next();
+    });
+  };
+};
+
 const validateImageDimensions = async (buffer, requirements = {}) => {
 
   return true;
@@ -166,7 +190,8 @@ module.exports = {
   uploadSingle,          
   uploadMultiple,        
   uploadFields,            
-  uploadOptional,         
+  uploadOptional,
+  uploadOptionalMultiple,         
   validateImageDimensions, 
   generateFilename         
 };

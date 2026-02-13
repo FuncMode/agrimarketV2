@@ -203,7 +203,7 @@ exports.getVerifiedSellers = async (filters = {}) => {
 
   const { data, error, count } = await query;
 
-  const formattedData = data.map(seller => {
+  const formattedData = await Promise.all(data.map(async (seller) => {
     
     // Use seller's coordinates, or fallback to municipality coordinates
     let latitude = seller.latitude ? parseFloat(seller.latitude) : null;
@@ -218,6 +218,13 @@ exports.getVerifiedSellers = async (filters = {}) => {
       }
     }
     
+    // Get product count for this seller (active products only)
+    const { count: productCount, error: prodError } = await supabase
+      .from('products')
+      .select('id', { count: 'exact', head: true })
+      .eq('seller_id', seller.id)
+      .eq('status', 'active');
+    
     const formatted = {
       id: seller.id,
       full_name: seller.users?.full_name || '',
@@ -229,11 +236,12 @@ exports.getVerifiedSellers = async (filters = {}) => {
       verified: seller.users?.status === 'verified',
       rating: parseFloat(seller.rating) || 0,
       total_sales: parseFloat(seller.total_sales) || 0,
-      total_orders: seller.total_orders || 0
+      total_orders: seller.total_orders || 0,
+      total_products: !prodError && productCount ? productCount : 0
     };
     
     return formatted;
-  });
+  }));
 
   return { 
     data: formattedData, 

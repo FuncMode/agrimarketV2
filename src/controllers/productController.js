@@ -28,20 +28,32 @@ exports.createProduct = asyncHandler(async (req, res, next) => {
     throw new AppError('Seller profile not found.', 404);
   }
 
-  let photoPath = null;
-  if (req.file) {
-    const uploadResult = await uploadProductPhoto(
-      sellerProfile.id,
-      req.file.buffer,
-      req.file.originalname,
-      req.file.mimetype
-    );
+  // Handle multiple photos (up to 3)
+  let photoUrls = [];
+  let photoPath = null; // Keep for backward compatibility
 
-    if (!uploadResult.success) {
-      throw new AppError('Failed to upload product photo.', 500);
+  if (req.files && req.files.length > 0) {
+    // Limit to 3 photos
+    const filesToUpload = req.files.slice(0, 3);
+    
+    for (const file of filesToUpload) {
+      const uploadResult = await uploadProductPhoto(
+        sellerProfile.id,
+        file.buffer,
+        file.originalname,
+        file.mimetype
+      );
+
+      if (uploadResult.success) {
+        photoUrls.push(uploadResult.data.publicUrl);
+      } else {
+        console.error('Failed to upload photo:', uploadResult.error);
+        throw new AppError('Failed to upload one or more photos.', 500);
+      }
     }
 
-    photoPath = uploadResult.data.publicUrl;
+    // Set photoPath to first image for backward compatibility
+    photoPath = photoUrls[0] || null;
   }
 
   const { data: product, error } = await productModel.createProduct({
@@ -54,6 +66,7 @@ exports.createProduct = asyncHandler(async (req, res, next) => {
     available_quantity: parseInt(available_quantity),
     municipality: sellerProfile.municipality,
     photo_path: photoPath,
+    photos: photoUrls,
     status
   });
 
@@ -246,7 +259,7 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
   if (available_quantity !== undefined) updates.available_quantity = parseInt(available_quantity);
   if (status !== undefined) updates.status = status;
 
-  if (req.file) {
+  if (req.files && req.files.length > 0) {
     const { data: sellerProfile } = await supabase
       .from('seller_profiles')
       .select('id')
@@ -254,29 +267,44 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
       .single();
 
     const { data: oldProduct } = await productModel.getProductById(productId);
-    const oldPhotoPath = oldProduct?.photo_path;
+    const oldPhotos = oldProduct?.photos || [];
 
-    const uploadResult = await uploadProductPhoto(
-      sellerProfile.id,
-      req.file.buffer,
-      req.file.originalname,
-      req.file.mimetype
-    );
+    // Upload new photos (limit to 3)
+    let photoUrls = [];
+    const filesToUpload = req.files.slice(0, 3);
+    
+    for (const file of filesToUpload) {
+      const uploadResult = await uploadProductPhoto(
+        sellerProfile.id,
+        file.buffer,
+        file.originalname,
+        file.mimetype
+      );
 
-    if (!uploadResult.success) {
-      throw new AppError('Failed to upload product photo.', 500);
+      if (uploadResult.success) {
+        photoUrls.push(uploadResult.data.publicUrl);
+      } else {
+        console.error('Failed to upload photo:', uploadResult.error);
+        throw new AppError('Failed to upload one or more photos.', 500);
+      }
     }
 
-    updates.photo_path = uploadResult.data.publicUrl;
+    updates.photos = photoUrls;
+    updates.photo_path = photoUrls[0] || oldProduct?.photo_path || null;
 
-    if (oldPhotoPath && uploadResult.success) {
-      const pathToDelete = oldPhotoPath.includes('product-photos/') 
-        ? oldPhotoPath.split('product-photos/')[1] 
-        : oldPhotoPath;
-      
-      deleteFile(BUCKETS.PRODUCT_PHOTOS, pathToDelete).catch(err =>
-        console.error('Failed to delete old photo:', err)
-      );
+    // Delete old photos
+    if (oldPhotos.length > 0) {
+      for (const oldPhoto of oldPhotos) {
+        if (oldPhoto && !photoUrls.includes(oldPhoto)) {
+          const pathToDelete = oldPhoto.includes('product-photos/') 
+            ? oldPhoto.split('product-photos/')[1] 
+            : oldPhoto;
+          
+          deleteFile(BUCKETS.PRODUCT_PHOTOS, pathToDelete).catch(err =>
+            console.error('Failed to delete old photo:', err)
+          );
+        }
+      }
     }
   }
 
