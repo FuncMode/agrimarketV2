@@ -1007,6 +1007,7 @@ select.form-control:hover {
     right: 0;
     width: 320px;
     height: 100vh;
+    max-height: 100vh;
     background: white;
     box-shadow: var(--shadow-xl);
     border-radius: var(--radius-lg) 0 0 var(--radius-lg);
@@ -1015,8 +1016,31 @@ select.form-control:hover {
     visibility: hidden;
     transition: all 0.3s ease;
     z-index: 1000;
-    overflow-y: auto;
+    overflow-y: scroll !important;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-gray-400) var(--color-gray-100);
     padding-top: 80px;
+    padding-bottom: 100px;
+  }
+
+  .navbar-nav::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .navbar-nav::-webkit-scrollbar-track {
+    background: var(--color-gray-100);
+    border-radius: 4px;
+  }
+
+  .navbar-nav::-webkit-scrollbar-thumb {
+    background: var(--color-gray-400);
+    border-radius: 4px;
+  }
+
+  .navbar-nav::-webkit-scrollbar-thumb:hover {
+    background: var(--color-gray-500);
   }
 
   .navbar-nav.mobile-menu-open {
@@ -1029,7 +1053,9 @@ select.form-control:hover {
     flex-direction: column;
     gap: 0;
     padding: var(--spacing-md);
+    padding-bottom: 100px;
     width: 100%;
+    min-height: min-content;
   }
 
   .navbar-menu li {

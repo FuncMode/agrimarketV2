@@ -1063,12 +1063,25 @@ window.showLoginModal = (preferredRole = 'buyer') => {
     `,
     footer: `
       <button class="btn btn-outline" onclick="document.querySelector('.modal-backdrop').remove()">Cancel</button>
-      <a href="/index.html?login=${preferredRole}" class="btn btn-primary">
+      <button class="btn btn-primary" id="btn-show-login-form">
         <i class="bi bi-box-arrow-in-right"></i> Login as ${preferredRole.charAt(0).toUpperCase() + preferredRole.slice(1)}
-      </a>
+      </button>
     `,
     size: 'md'
   });
+  
+  // Add event listener to the "Login as Buyer" button
+  const btnShowLoginForm = document.getElementById('btn-show-login-form');
+  if (btnShowLoginForm) {
+    btnShowLoginForm.addEventListener('click', async () => {
+      // Close the "Login Required" modal first
+      document.querySelector('.modal-backdrop')?.remove();
+      
+      // Import and show the actual login form modal
+      const { showLoginModal: showAuthLoginModal } = await import('../features/auth/login.js');
+      showAuthLoginModal();
+    });
+  }
 };
 
 // ============ Initialize on Load ============
