@@ -1007,7 +1007,9 @@ select.form-control:hover {
     right: 0;
     width: 320px;
     height: 100vh;
-    max-height: 100vh;
+    /* Fallback for browsers that don't support dvh */
+    height: 100dvh;
+    max-height: 100dvh;
     background: white;
     box-shadow: var(--shadow-xl);
     border-radius: var(--radius-lg) 0 0 var(--radius-lg);
@@ -1016,13 +1018,15 @@ select.form-control:hover {
     visibility: hidden;
     transition: all 0.3s ease;
     z-index: 1000;
-    overflow-y: scroll !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
     scrollbar-color: var(--color-gray-400) var(--color-gray-100);
     padding-top: 80px;
-    padding-bottom: 100px;
+    padding-bottom: 150px;
+    /* Increased padding to ensure bottom items are visible */
   }
 
   .navbar-nav::-webkit-scrollbar {
@@ -2622,6 +2626,7 @@ select.form-control:hover {
 
 /* Responsive carousel adjustments */
 @media (max-width: 640px) {
+
   .carousel-prev,
   .carousel-next {
     width: 36px;
