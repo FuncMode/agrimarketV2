@@ -1027,6 +1027,14 @@ select.form-control:hover {
     padding-top: 80px;
     padding-bottom: 150px;
     /* Increased padding to ensure bottom items are visible */
+    touch-action: pan-y;
+  }
+
+  /* Fix for sidebar context - prevent backdrop-filter from trapping fixed position */
+  #main-navbar {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transform: none !important;
   }
 
   .navbar-nav::-webkit-scrollbar {
