@@ -8,6 +8,7 @@ import { showToast, showError, showSuccess } from '../components/toast.js';
 import { requireAuth } from '../core/auth.js';
 import { validateFile } from '../utils/validators.js';
 import { submitVerification, getVerificationStatus } from '../services/verification.service.js';
+import { get } from '../core/http.js';
 
 let idFile = null;
 let selfieFile = null;
@@ -252,6 +253,20 @@ const handleSubmit = async (e) => {
     
     if (response.success) {
       showSuccess('Verification submitted! You will be notified once reviewed.');
+      
+      // Update user status in localStorage to verification_pending
+      try {
+        const profileResponse = await get('/users/profile');
+        const updatedUser = profileResponse.data?.user || profileResponse.user || profileResponse.data;
+        if (updatedUser) {
+          localStorage.setItem('agrimarket_user', JSON.stringify(updatedUser));
+          // Re-render navbar to show the "Pending" button instead of "Verify Account"
+          renderNavbar();
+        }
+      } catch (profileError) {
+        console.log('Could not refresh user profile, navbar will update on next page load');
+      }
+      
       // Hide form and show pending message
       setTimeout(() => {
         hideFormShowPendingMessage();

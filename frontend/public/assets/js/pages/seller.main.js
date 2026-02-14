@@ -1657,13 +1657,6 @@ const loadTopProductsChart = async () => {
   try {
     // First try to get products by sales
     let response = await getTopProducts(10, 'sales');
-    console.log('Full top products response:', response); // Debug log
-    console.log('Response structure:', {
-      hasData: !!response.data,
-      hasChartData: !!response.data?.chartData,
-      hasAnalytics: !!response.data?.analytics,
-      responseKeys: response ? Object.keys(response) : 'no response'
-    });
     
     // Check if response has the expected structure
     if (!response || !response.success) {
@@ -1693,7 +1686,6 @@ const loadTopProductsChart = async () => {
         (chartData.datasets && chartData.datasets[0] && chartData.datasets[0].data && 
          chartData.datasets[0].data.length > 0 && chartData.datasets[0].data.every(val => val === 0))) {
       
-      console.log('No sales data, trying views...');
       // Try by views
       response = await getTopProducts(5, 'views');
       if (response && response.success && response.data && response.data.chartData && 
@@ -1701,7 +1693,6 @@ const loadTopProductsChart = async () => {
         chartData = response.data.chartData;
         chartTitle = 'Top Products by Views';
       } else {
-        console.log('No views data, trying orders...');
         // Try by orders as last resort
         response = await getTopProducts(5, 'orders');
         if (response && response.success && response.data && response.data.chartData && 
@@ -1731,8 +1722,6 @@ const loadTopProductsChart = async () => {
       console.error('Canvas element not found!');
       return;
     }
-    
-    console.log('Creating chart with data:', chartData);
     
     topProductsChart = new Chart(ctx, {
       type: 'doughnut',
@@ -1771,11 +1760,8 @@ const loadTopProductsChart = async () => {
       }
     });
     
-    console.log('Chart created successfully');
-    
   } catch (error) {
     console.error('Detailed error loading top products chart:', error);
-    console.log('Error stack:', error.stack);
     
     // Show fallback message
     const chartContainer = document.getElementById('products-chart')?.parentElement;
@@ -2218,7 +2204,6 @@ const initializeRealTime = async () => {
     
     // Register callback to reload orders on real-time updates
     onUpdate((data) => {
-      console.log('Order updated, reloading orders...', data);
       if (typeof loadOrders === 'function') {
         loadOrders();
       }

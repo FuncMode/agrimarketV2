@@ -69,7 +69,7 @@ export const MESSAGES = {
     LOGIN_SUCCESS: 'Logged in successfully',
     SIGNUP_SUCCESS: 'Account created successfully',
     LOGOUT_SUCCESS: 'Logged out successfully',
-    PASSWORD_RESET: 'Password reset email sent',
+    PASSWORD_RESET: 'Password reset link sent to your email! If you don\'t see it, check your spam or junk folder. If your email is correct, you will receive the email.',
     PASSWORD_UPDATED: 'Password updated successfully',
     
     // Products

@@ -55,7 +55,8 @@ const handleForgotPassword = async (e) => {
     const response = await post(ENDPOINTS.AUTH.FORGOT_PASSWORD, { email });
     
     if (response.success) {
-      showToast('Password reset link sent to your email!', 'success');
+      const message = response.message || "Password reset link sent to your email! If you don't see it, check your spam or junk folder. If your email is correct, you will receive the email.";
+      showToast(message, 'success');
       setTimeout(() => {
         window.location.href = '/index.html';
       }, 2000);

@@ -161,10 +161,10 @@
               required
             >
               <option value="">Select your government-issued ID</option>
-              <option value="drivers_license">🚗 Driver's License</option>
-              <option value="philid">🆔 Philippine ID (PhilID)</option>
-              <option value="passport">✈️ Passport</option>
-              <option value="nbi_clearance">📋 NBI Clearance</option>
+              <option value="drivers_license">Driver's License</option>
+              <option value="philid">Philippine ID (PhilID)</option>
+              <option value="passport">Passport</option>
+              <option value="nbi_clearance">NBI Clearance</option>
             </select>
             <div class="invalid-feedback"></div>
           </div>
@@ -176,46 +176,48 @@
                 type="file" 
                 id="id-document" 
                 accept="image/jpeg,image/jpg,image/png"
-                class="form-control"
+                class="form-control hidden"
                 required
               >
               
-              <div class="text-center">
-                <div class="upload-icon">
-                  <i class="bi bi-card-text"></i>
+              <label for="id-document" class="block cursor-pointer">
+                <div class="text-center">
+                  <div class="upload-icon">
+                    <i class="bi bi-card-text"></i>
+                  </div>
+                  <h3 class="text-xl font-bold mb-2 text-gray-800">
+                    Upload Government ID
+                    <span class="text-danger ml-1">*</span>
+                  </h3>
+                  <p class="text-gray-600 mb-4">
+                    Take a clear photo of your government-issued ID
+                  </p>
+                  
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm text-gray-500 mb-4">
+                    <div class="flex items-center gap-2">
+                      <i class="bi bi-check-circle text-success"></i>
+                      National ID
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <i class="bi bi-check-circle text-success"></i>
+                      Driver's License
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <i class="bi bi-check-circle text-success"></i>
+                      Passport
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <i class="bi bi-check-circle text-success"></i>
+                      Voter's ID
+                    </div>
+                  </div>
+                  
+                  <div class="btn btn-outline-primary btn-lg">
+                    <i class="bi bi-cloud-upload"></i>
+                    Click to upload or drag & drop
+                  </div>
                 </div>
-                <h3 class="text-xl font-bold mb-2 text-gray-800">
-                  Upload Government ID
-                  <span class="text-danger ml-1">*</span>
-                </h3>
-                <p class="text-gray-600 mb-4">
-                  Take a clear photo of your government-issued ID
-                </p>
-                
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm text-gray-500 mb-4">
-                  <div class="flex items-center gap-2">
-                    <i class="bi bi-check-circle text-success"></i>
-                    National ID
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <i class="bi bi-check-circle text-success"></i>
-                    Driver's License
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <i class="bi bi-check-circle text-success"></i>
-                    Passport
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <i class="bi bi-check-circle text-success"></i>
-                    Voter's ID
-                  </div>
-                </div>
-                
-                <div class="btn btn-outline-primary btn-lg">
-                  <i class="bi bi-cloud-upload"></i>
-                  Click to upload or drag & drop
-                </div>
-              </div>
+              </label>
             </div>
             
             <div class="invalid-feedback"></div>
@@ -242,32 +244,34 @@
                 type="file" 
                 id="selfie-photo" 
                 accept="image/jpeg,image/jpg,image/png"
-                class="form-control"
+                class="form-control hidden"
                 required
               >
               
-              <div class="text-center">
-                <div class="upload-icon" style="background: var(--color-secondary);">
-                  <i class="bi bi-camera"></i>
+              <label for="selfie-photo" class="block cursor-pointer">
+                <div class="text-center">
+                  <div class="upload-icon" style="background: var(--color-secondary);">
+                    <i class="bi bi-camera"></i>
+                  </div>
+                  <h3 class="text-xl font-bold mb-2 text-gray-800">
+                    Upload Selfie with ID
+                    <span class="text-danger ml-1">*</span>
+                  </h3>
+                  <p class="text-gray-600 mb-4">
+                    Take a selfie while holding your ID next to your face
+                  </p>
+                  
+                  <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4 text-sm text-yellow-800">
+                    <i class="bi bi-lightbulb text-yellow-600"></i>
+                    <strong>Pro tip:</strong> Make sure both your face and ID details are clearly visible
+                  </div>
+                  
+                  <div class="btn btn-outline-secondary btn-lg">
+                    <i class="bi bi-camera"></i>
+                    Take selfie or upload photo
+                  </div>
                 </div>
-                <h3 class="text-xl font-bold mb-2 text-gray-800">
-                  Upload Selfie with ID
-                  <span class="text-danger ml-1">*</span>
-                </h3>
-                <p class="text-gray-600 mb-4">
-                  Take a selfie while holding your ID next to your face
-                </p>
-                
-                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4 text-sm text-yellow-800">
-                  <i class="bi bi-lightbulb text-yellow-600"></i>
-                  <strong>Pro tip:</strong> Make sure both your face and ID details are clearly visible
-                </div>
-                
-                <div class="btn btn-outline-secondary btn-lg">
-                  <i class="bi bi-camera"></i>
-                  Take selfie or upload photo
-                </div>
-              </div>
+              </label>
             </div>
             
             <div class="invalid-feedback"></div>

@@ -30,8 +30,6 @@ const initSocket = () => {
   try {
     const wsUrl = ENV.WS_URL || 'wss://agrimarketv2-production.up.railway.app';
     
-    console.log('Connecting to WebSocket:', wsUrl);
-    
     socket = io(wsUrl, {
       auth: {
         token: token
@@ -59,8 +57,6 @@ const setupSocketListeners = () => {
     isConnected = true;
     reconnectAttempts = 0;
     
-    console.log('Socket connected:', socket.id);
-    
     if (userId) {
       socket.emit('user:join', { userId });
     }
@@ -76,7 +72,6 @@ const setupSocketListeners = () => {
   });
   
   socket.on('disconnect', (reason) => {
-    console.log('Socket disconnected:', reason);
     isConnected = false;
     
     // Emit connection state change
@@ -110,7 +105,6 @@ const setupSocketListeners = () => {
   });
   
   socket.on('reconnect', (attemptNumber) => {
-    console.log('Socket reconnected after', attemptNumber, 'attempts');
     showToast('Connection restored', 'success');
   });
   
@@ -138,39 +132,30 @@ const setupSocketListeners = () => {
   });
   
   socket.on('user:online', (data) => {
-    console.log('[Socket] user:online event received:', data);
   });
   
   socket.on('user:offline', (data) => {
-    console.log('[Socket] user:offline event received:', data);
   });
   
   socket.on('message_received', (data) => {
-    console.log('[Socket] message_received event received:', data);
   });
   
   socket.on('message_read_receipt', (data) => {
-    console.log('[Socket] message_read_receipt event received:', data);
   });
   
   socket.on('notification', (data) => {
-    console.log('[Socket] notification event received:', data);
   });
   
   socket.on('notification:new', (data) => {
-    console.log('[Socket] notification:new event received:', data);
   });
   
   socket.on('order:updated', (data) => {
-    console.log('[Socket] order:updated event received:', data);
   });
   
   socket.on('order:new', (data) => {
-    console.log('[Socket] order:new event received:', data);
   });
   
   socket.on('order:cancelled', (data) => {
-    console.log('[Socket] order:cancelled event received:', data);
   });
   
   socket.on('error', (error) => {
@@ -179,7 +164,6 @@ const setupSocketListeners = () => {
   });
   
   socket.on('users:online:initial', (data) => {
-    console.log('[Socket] users:online:initial event received:', data);
   });
 };
 
@@ -253,8 +237,6 @@ const flushMessageQueue = () => {
   if (!socket || !isConnected || messageQueue.length === 0) {
     return;
   }
-  
-  console.log(`Flushing ${messageQueue.length} queued messages`);
   
   const queue = [...messageQueue];
   messageQueue = [];
@@ -370,11 +352,9 @@ const onTypingStatus = (callback) => {
 
 const onUserOnline = (callback) => {
   if (!socket) {
-    console.warn('[Socket] Cannot register onUserOnline - socket is null');
     return null;
   }
   
-  console.log('[Socket] Registering user:online listener');
   socket.on('user:online', callback);
   
   return () => {
@@ -384,11 +364,9 @@ const onUserOnline = (callback) => {
 
 const onUserOffline = (callback) => {
   if (!socket) {
-    console.warn('[Socket] Cannot register onUserOffline - socket is null');
     return null;
   }
   
-  console.log('[Socket] Registering user:offline listener');
   socket.on('user:offline', callback);
   
   return () => {
@@ -398,11 +376,9 @@ const onUserOffline = (callback) => {
 
 const onInitialOnlineUsers = (callback) => {
   if (!socket) {
-    console.warn('[Socket] Cannot register onInitialOnlineUsers - socket is null');
     return null;
   }
   
-  console.log('[Socket] Registering users:online:initial listener');
   socket.on('users:online:initial', callback);
   
   return () => {
@@ -414,11 +390,9 @@ const onInitialOnlineUsers = (callback) => {
 
 const onOrderUpdate = (callback) => {
   if (!socket) {
-    console.warn('[Socket] Cannot register onOrderUpdate - socket is null');
     return null;
   }
   
-  console.log('[Socket] Registering order:updated listener');
   socket.on('order:updated', callback);
   
   return () => {
@@ -428,11 +402,9 @@ const onOrderUpdate = (callback) => {
 
 const onNewOrder = (callback) => {
   if (!socket) {
-    console.warn('[Socket] Cannot register onNewOrder - socket is null');
     return null;
   }
   
-  console.log('[Socket] Registering order:new listener');
   socket.on('order:new', callback);
   
   return () => {
@@ -442,11 +414,9 @@ const onNewOrder = (callback) => {
 
 const onOrderCancelled = (callback) => {
   if (!socket) {
-    console.warn('[Socket] Cannot register onOrderCancelled - socket is null');
     return null;
   }
   
-  console.log('[Socket] Registering order:cancelled listener');
   socket.on('order:cancelled', callback);
   
   return () => {
@@ -458,11 +428,9 @@ const onOrderCancelled = (callback) => {
 
 const onNotification = (callback) => {
   if (!socket) {
-    console.warn('[Socket] Cannot register onNotification - socket is null');
     return null;
   }
   
-  console.log('[Socket] Registering notification listener (both notification and notification:new events)');
   // Listen to both 'notification' and 'notification:new' events
   socket.on('notification', callback);
   socket.on('notification:new', callback);
@@ -477,32 +445,26 @@ const onNotification = (callback) => {
 
 const on = (event, callback) => {
   if (!socket) {
-    console.warn('[Socket] Socket not initialized. Event listener not registered for:', event);
     return null;
   }
   
-  console.log('[Socket] Registering listener for event:', event);
   socket.on(event, callback);
   
   return () => {
-    console.log('[Socket] Unregistering listener for event:', event);
     socket.off(event, callback);
   };
 };
 
 const emit = (event, data) => {
   if (!socket) {
-    console.warn('[Socket] Socket not initialized. Cannot emit event:', event, data);
     return false;
   }
   
   if (!isConnected) {
-    console.warn('[Socket] Socket not connected. Cannot emit event:', event, 'Queueing...', data);
     messageQueue.push({ event, data });
     return false;
   }
   
-  console.log('[Socket] Emitting event:', event, data);
   socket.emit(event, data);
   return true;
 };

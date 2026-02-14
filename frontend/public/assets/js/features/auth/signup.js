@@ -260,7 +260,7 @@ const showSignupModal = () => {
   
   // Handle form submission
   const form = modal.body.querySelector('#signup-form');
-  form.addEventListener('submit', handleSignup);
+  form.addEventListener('submit', (e) => handleSignup(e, modal));
   
   // Attach password toggles for both password fields
   modal.body.querySelectorAll('.password-toggle').forEach(btn => {
@@ -320,7 +320,7 @@ const showSignupModal = () => {
   });
 };
 
-const handleSignup = async (e) => {
+const handleSignup = async (e, signupModal) => {
   e.preventDefault();
   
   const municipalitySelect = document.getElementById('signup-municipality');
@@ -380,16 +380,13 @@ const handleSignup = async (e) => {
       login(token, user);
       showToast('Account created successfully!', 'success');
       
-      // Show verification prompt for sellers
-      if (user.role === 'seller') {
-        setTimeout(() => {
-          showVerificationPrompt();
-        }, 1000);
-      } else {
-        setTimeout(() => {
-          redirectToDashboard();
-        }, 1000);
+      // Close the signup modal
+      if (signupModal && signupModal.close) {
+        signupModal.close();
       }
+      
+      // Show verification prompt for BOTH buyer and seller
+      showVerificationPrompt();
     }
   } catch (error) {
     showError(error.message || 'Signup failed');
@@ -404,7 +401,7 @@ const showVerificationPrompt = () => {
       </div>
       <h3 class="text-2xl font-bold text-gray-900 mb-3">Verify Your Account</h3>
       <p class="text-gray-600 mb-6 max-w-md mx-auto leading-relaxed">
-        Get verified to unlock all seller features and build trust with buyers. 
+        Get verified to build trust in the community and unlock full marketplace features. 
         Upload your ID and selfie - it only takes 2 minutes!
       </p>
       
@@ -440,24 +437,30 @@ const showVerificationPrompt = () => {
   const modal = createModal({
     title: 'Account Verification',
     content: modalContent,
-    showCloseButton: true,
+    showCloseButton: false,
     closeOnBackdrop: false,
     size: 'md'
   });
 
-  // Event listeners
-  const btnVerifyNow = modal.body.querySelector('#btn-verify-now');
-  const btnSkip = modal.body.querySelector('#btn-skip-verification');
+  // Attach click handlers to buttons
+  setTimeout(() => {
+    const btnVerifyNow = modal.body.querySelector('#btn-verify-now');
+    const btnSkip = modal.body.querySelector('#btn-skip-verification');
 
-  btnVerifyNow.addEventListener('click', () => {
-    modal.close();
-    window.location.href = '/verification.html';
-  });
+    if (btnVerifyNow) {
+      btnVerifyNow.addEventListener('click', () => {
+        modal.close();
+        window.location.href = '/verification.html';
+      });
+    }
 
-  btnSkip.addEventListener('click', () => {
-    modal.close();
-    redirectToDashboard();
-  });
+    if (btnSkip) {
+      btnSkip.addEventListener('click', () => {
+        modal.close();
+        redirectToDashboard();
+      });
+    }
+  }, 50);
 };
 
 export { showSignupModal, handleSignup };

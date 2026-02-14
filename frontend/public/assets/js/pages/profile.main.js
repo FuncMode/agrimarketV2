@@ -235,26 +235,39 @@ async function loadVerificationStatus(user) {
 
     const verificationSection = document.getElementById('verification-section');
     const verificationIcon = document.getElementById('verification-icon');
+    const verificationTitle = document.getElementById('verification-title');
     const verificationText = document.getElementById('verification-text');
     const actionBtn = document.getElementById('verification-action-btn');
 
-    if (status.user_status === 'verified') {
+    // Check user status first
+    if (user.status === 'verification_pending') {
+      // User account is pending verification
+      verificationSection.className = 'bg-blue-50 border border-blue-200 rounded-lg p-6';
+      verificationIcon.className = 'bi bi-hourglass-split text-blue-600 text-xl';
+      verificationTitle.textContent = 'Verification Pending';
+      verificationText.textContent = 'Your verification is under review. You\'ll be notified when it\'s approved.';
+      actionBtn.style.display = 'none';
+    } else if (user.status === 'verified') {
+      // User is fully verified
       verificationSection.style.display = 'none';
     } else if (status.has_verification && status.verification?.status === 'pending') {
-      verificationSection.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4';
+      verificationSection.className = 'bg-blue-50 border border-blue-200 rounded-lg p-6';
       verificationIcon.className = 'bi bi-hourglass-split text-blue-600 text-xl';
+      verificationTitle.textContent = 'Verification Pending';
       verificationText.textContent = 'Your verification is under review. You\'ll be notified when it\'s approved.';
       actionBtn.style.display = 'none';
     } else if (status.has_verification && status.verification?.status === 'rejected') {
-      verificationSection.className = 'bg-red-50 border border-red-200 rounded-lg p-4';
+      verificationSection.className = 'bg-red-50 border border-red-200 rounded-lg p-6';
       verificationIcon.className = 'bi bi-x-circle text-red-600 text-xl';
+      verificationTitle.textContent = 'Verification Rejected';
       verificationText.textContent = status.verification?.admin_notes || 'Your verification was rejected. Please resubmit.';
       actionBtn.style.display = 'block';
       actionBtn.textContent = 'Resubmit';
       actionBtn.onclick = () => window.location.href = '/verification.html';
     } else {
-      verificationSection.className = 'bg-yellow-50 border border-yellow-200 rounded-lg p-4';
+      verificationSection.className = 'bg-yellow-50 border border-yellow-200 rounded-lg p-6';
       verificationIcon.className = 'bi bi-exclamation-circle text-yellow-600 text-xl';
+      verificationTitle.textContent = 'Verification Required';
       verificationText.textContent = 'Your account needs verification to access seller features.';
       actionBtn.style.display = 'block';
       actionBtn.textContent = 'Verify Now';
@@ -1070,7 +1083,7 @@ async function performDeleteAccount() {
 
     await del('/users/account');
 
-    hideSpinner();
+    hidePageLoader();
     modal.close();
 
     createToast('Account deleted successfully', 'success');

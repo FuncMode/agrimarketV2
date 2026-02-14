@@ -344,7 +344,7 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    message: 'Password reset instructions sent to your email.',
+    message: 'Password reset link sent to your email! If you don\'t see it, check your spam or junk folder. If your email is correct, you will receive the email.',
     dev_reset_url: process.env.NODE_ENV === 'development' ? resetUrl : undefined
   });
 });

@@ -184,13 +184,13 @@ exports.sendOrderStatusEmail = async (order, user, status) => {
 exports.sendNewMessageEmail = async (recipient, sender, orderNumber) => {
   const emailData = {
     to: recipient.email,
-    subject: `New Message - Order ${orderNumber}`,
+    subject: `New Message from ${sender.full_name} - Order ${orderNumber}`,
     body: `
       Dear ${recipient.full_name},
       
-      You have received a new message from ${sender.full_name} regarding order ${orderNumber}.
+      ${sender.full_name} sent you a message on Order ${orderNumber}.
       
-      Please log in to your account to view and respond to the message.
+      Log in to your account to read and reply to the message.
       
       Best regards,
       AgriMarket Team
@@ -220,7 +220,7 @@ exports.sendPasswordResetEmail = async (user, resetUrl) => {
     <body>
       <div class="container">
         <div class="header">
-          <h1>🔐 Password Reset Request</h1>
+          <h1>Password Reset Request</h1>
         </div>
         <div class="content">
           <p>Dear ${user.full_name},</p>
@@ -235,7 +235,7 @@ exports.sendPasswordResetEmail = async (user, resetUrl) => {
           <p style="word-break: break-all; color: #28a745;">${resetUrl}</p>
           
           <div class="warning">
-            <strong>⚠️ Important:</strong> This link will expire in 24 hours for security reasons.
+            <strong>Important:</strong> This link will expire in 24 hours for security reasons.
           </div>
           
           <p>If you didn't request a password reset, please ignore this email. Your password will remain unchanged.</p>
@@ -451,7 +451,7 @@ exports.sendAccountStatusChangeEmail = async (user, newStatus, reason) => {
 
 exports.sendProductStatusChangeEmail = async (user, product, status) => {
   const statusMessage = status === 'active' ? 'is now available' : 'has been paused';
-  const subject = status === 'active' ? 'Product Available' : '⏸Product Paused';
+  const subject = status === 'active' ? 'Product Available' : 'Product Paused';
 
   const emailData = {
     to: user.email,
@@ -562,22 +562,20 @@ exports.sendTestNotificationEmail = async (user, notificationData) => {
     body: `
       Dear ${user.full_name},
       
-      This is a TEST NOTIFICATION from AgriMarket.
+      This is a test email from AgriMarket.
       
       Notification Details:
-      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       Title: ${notificationData.title}
       Message: ${notificationData.message}
       Type: ${notificationData.type}
-      Created At: ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' })}
-      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      Date and Time: ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' })}
       
-      If you received this email, it means:
-      Email service is working correctly
-      Notification system is functioning
-      Your email is properly configured
+      This means:
+      - Email service is working correctly
+      - Notification system is functioning
+      - Your email is properly configured
       
-      This is just a test - you can safely ignore this notification.
+      You can safely ignore this test notification.
       
       Best regards,
       AgriMarket Team

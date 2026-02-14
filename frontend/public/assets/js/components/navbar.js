@@ -2,6 +2,7 @@ import {
   isAuthenticated, 
   getUser, 
   getRole, 
+  getStatus,
   isVerified,
   logout,
   redirectToLogin,
@@ -69,6 +70,9 @@ const renderMenuItems = (authenticated, role, verified, user) => {
       </li>
     `;
   }
+  
+  // Get user status for verification button
+  const userStatus = getStatus();
   
   const dashboards = {
     buyer: '/buyer.html',
@@ -157,7 +161,11 @@ const renderMenuItems = (authenticated, role, verified, user) => {
           <a href="/profile.html" class="dropdown-item">
             <i class="bi bi-person"></i> Profile
           </a>
-          ${!verified ? `
+          ${userStatus === 'verification_pending' ? `
+            <a href="#" class="dropdown-item" style="opacity: 0.6; cursor: not-allowed; pointer-events: none;">
+              <i class="bi bi-hourglass-split text-warning"></i> Pending
+            </a>
+          ` : !verified ? `
             <a href="/verification.html" class="dropdown-item">
               <i class="bi bi-shield-check"></i> Verify Account
             </a>
