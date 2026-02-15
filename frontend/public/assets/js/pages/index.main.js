@@ -441,83 +441,6 @@ const createProductCard = (product) => {
 
 // ============ Map ============
 
-// Highlight Rizal Province boundaries on the map
-const highlightRizalArea = () => {
-  if (!map) {
-    console.warn('Map not initialized');
-    return;
-  }
-  
-  // More accurate boundary coordinates of Rizal Province
-  // Tracing the actual provincial outline (approximately)
-  const rizalBoundary = [
-    // Northern part (Rodriguez area)
-    [14.7603, 121.1164],  // Rodriguez (NW)
-    [14.7400, 121.0900],  // Northwest extension
-    [14.7200, 121.1200],  // North
-    [14.6978, 121.1225],  // San Mateo area
-    
-    // Eastern part (going down)
-    [14.6500, 121.1500],  // East-central
-    [14.6000, 121.1800],  // Central east
-    [14.5778, 121.1222],  // Cainta
-    [14.5547, 121.1324],  // Taytay
-    [14.5267, 121.1537],  // Angono
-    [14.5000, 121.1600],  // South-central
-    
-    // Southern/Eastern part (Pililla, Jalajala area)
-    [14.4856, 121.3092],  // Pililla
-    [14.4989, 121.2858],  // Tanay
-    [14.5233, 121.2650],  // Baras
-    [14.5119, 121.2392],  // Morong
-    [14.4881, 121.2294],  // Cardona
-    [14.4647, 121.1925],  // Binangonan
-    [14.3544, 121.3242],  // Jalajala (SE)
-    
-    // Western part (going back)
-    [14.4000, 121.3000],  // Southwest
-    [14.4500, 121.2500],  // West-central
-    [14.5000, 121.2000],  // West
-    [14.5500, 121.1500],  // Northwest return
-    [14.7603, 121.1164]   // Back to start
-  ];
-  
-  // Create polygon with styling
-  L.polygon(rizalBoundary, {
-    color: '#1B7A3D',           // Primary green color
-    fillColor: '#1B7A3D',       // Same green
-    fillOpacity: 0.08,          // Light fill
-    weight: 2.5,                // Border width
-    dashArray: '5, 5',          // Dashed border
-    lineCap: 'round',
-    lineJoin: 'round',
-    className: 'rizal-boundary'
-  }).addTo(map);
-  
-  // Add a center label for Rizal Province
-  const centerLat = 14.5574;  // Approximate center
-  const centerLng = 121.2200;
-  
-  const label = L.marker([centerLat, centerLng], {
-    icon: L.divIcon({
-      className: 'province-label',
-      html: `<div style="
-        font-size: 16px; 
-        font-weight: 700; 
-        color: #1B7A3D; 
-        text-shadow: 2px 2px 4px rgba(255,255,255,0.8), -1px -1px 3px rgba(255,255,255,0.8);
-        pointer-events: none;
-        white-space: nowrap;
-      ">
-        RIZAL PROVINCE
-      </div>`,
-      iconSize: [180, 40],
-      iconAnchor: [90, 20]
-    }),
-    interactive: false
-  }).addTo(map);
-};
-
 const initMap = () => {
   const mapContainer = document.getElementById('sellers-map');
   if (!mapContainer) {
@@ -549,9 +472,6 @@ const initMap = () => {
     
     // Create markers layer
     markersLayer = L.layerGroup().addTo(map);
-    
-    // Highlight Rizal Province area
-    highlightRizalArea();
     
     // Add seller markers
     updateMapMarkers();
