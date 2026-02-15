@@ -239,6 +239,11 @@ const setupNavigation = () => {
 const showPage = (page) => {
   currentPage = page;
   
+  // Update URL hash to persist section on reload
+  if (window.location.hash.slice(1) !== page) {
+    window.location.hash = page;
+  }
+  
   // Close conversation when leaving messaging section
   if (page !== 'messaging') {
     currentConversation = null;
@@ -248,15 +253,18 @@ const showPage = (page) => {
     }
   }
   
-  // Hide all sections
-  document.querySelectorAll('section').forEach(section => {
-    section.style.display = 'none';
-  });
+  // Hide all sections by setting display: none with !important
+  const mainContent = document.querySelector('.container.mx-auto');
+  if (mainContent) {
+    mainContent.querySelectorAll('section').forEach(section => {
+      section.style.setProperty('display', 'none', 'important');
+    });
+  }
   
   // Show current section
   const section = document.getElementById(page);
   if (section) {
-    section.style.display = 'block';
+    section.style.setProperty('display', 'block', 'important');
     
     // Load page data
     switch(page) {

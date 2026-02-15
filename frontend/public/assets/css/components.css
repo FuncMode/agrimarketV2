@@ -1191,7 +1191,7 @@ select.form-control:hover {
 
   .dropdown-menu {
     position: static;
-    display: block !important;
+    display: none !important;
     box-shadow: none;
     border: 1px solid var(--color-gray-200);
     border-radius: var(--radius-md);

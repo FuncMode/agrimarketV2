@@ -119,6 +119,11 @@ const showPage = (page) => {
   // Update current page tracking
   currentPage = page;
   
+  // Update URL hash to persist section on reload
+  if (window.location.hash.slice(1) !== page) {
+    window.location.hash = page;
+  }
+  
   // Clean up charts when leaving analytics page
   if (page !== 'analytics') {
     cleanupCharts();
@@ -133,16 +138,19 @@ const showPage = (page) => {
     }
   }
   
-  // Hide all sections
-  document.querySelectorAll('section').forEach(section => {
-    section.style.display = 'none';
-  });
+  // Hide all sections by setting display: none with !important
+  const mainContent = document.querySelector('.container.mx-auto');
+  if (mainContent) {
+    mainContent.querySelectorAll('section').forEach(section => {
+      section.style.setProperty('display', 'none', 'important');
+    });
+  }
   
   // Show requested section
   const section = document.getElementById(page);
   
   if (section) {
-    section.style.display = 'block';
+    section.style.setProperty('display', 'block', 'important');
     
     // Load page-specific data
     switch(page) {

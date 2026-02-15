@@ -289,12 +289,17 @@ exports.getRoute = async (startLat, startLon, endLat, endLon) => {
     }
 
     const route = response.data.routes[0];
+    
+    // Apply traffic multiplier for urban areas (Rizal Province)
+    // OSRM calculates road-only time without traffic - multiply by 1.8x for realistic urban estimates with traffic
+    const trafficMultiplier = 1.8;
+    const durationWithTraffic = Math.round((route.duration / 60) * trafficMultiplier);
 
     return {
       success: true,
       data: {
         distance_km: parseFloat((route.distance / 1000).toFixed(2)),
-        duration_minutes: Math.round(route.duration / 60),
+        duration_minutes: durationWithTraffic,
         geometry: route.geometry,
         start: { latitude: startLat, longitude: startLon },
         end: { latitude: endLat, longitude: endLon }
@@ -305,7 +310,8 @@ exports.getRoute = async (startLat, startLon, endLat, endLon) => {
     console.error('Routing error:', error.message);
     
     const distance = exports.calculateDistance(startLat, startLon, endLat, endLon);
-    const estimatedDuration = Math.round(distance * 2); 
+    // Estimated duration: 3-3.5 minutes per km for urban/suburban (more realistic with traffic)
+    const estimatedDuration = Math.round(distance * 3.5); 
 
     return {
       success: true,
