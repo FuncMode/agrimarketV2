@@ -228,7 +228,7 @@ exports.sendPasswordResetEmail = async (user, resetUrl) => {
           <p>We received a request to reset your password for your AgriMarket account.</p>
           
           <p style="text-align: center;">
-            <a href="${resetUrl}" class="button">Reset Password</a>
+            <a href="${resetUrl}" style="display: inline-block; padding: 12px 30px; background: #28a745; color: white !important; text-decoration: none; border-radius: 5px; margin: 20px 0; font-weight: bold; font-size: 16px;">Reset Password</a>
           </p>
           
           <p>Or copy and paste this link into your browser:</p>
