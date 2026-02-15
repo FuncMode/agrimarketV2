@@ -100,3 +100,65 @@ export const retry = async (fn, retries = 3, delay = 1000) => {
     return retry(fn, retries - 1, delay);
   }
 };
+
+export const attachPasswordToggleHandler = (toggleElement, inputElement) => {
+  if (!toggleElement || !inputElement) return;
+
+  // Click to toggle visibility
+  toggleElement.addEventListener('click', (e) => {
+    e.preventDefault();
+    const isPassword = inputElement.type === 'password';
+    inputElement.type = isPassword ? 'text' : 'password';
+    
+    const icon = toggleElement.querySelector('i');
+    if (icon) {
+      icon.className = `bi bi-eye${isPassword ? '-slash' : ''} text-gray-400 hover:text-gray-600 transition-colors`;
+    }
+  });
+
+  // Show/hide toggle based on input state
+  inputElement.addEventListener('input', () => {
+    toggleElement.style.opacity = inputElement.value.length > 0 ? '1' : '0.7';
+  });
+
+  // Hover effects
+  toggleElement.addEventListener('mouseenter', function() {
+    this.style.backgroundColor = 'rgba(0, 0, 0, 0.08)';
+    this.style.transform = 'scale(1.1)';
+  });
+
+  toggleElement.addEventListener('mouseleave', function() {
+    this.style.backgroundColor = 'transparent';
+    this.style.transform = 'scale(1)';
+  });
+
+  // Focus ring for accessibility
+  toggleElement.addEventListener('focus', function() {
+    this.style.outline = '2px solid #16a34a';
+    this.style.outlineOffset = '2px';
+  });
+
+  toggleElement.addEventListener('blur', function() {
+    this.style.outline = 'none';
+  });
+};
+
+export const updateBadgeDisplay = (badgeElement, count, options = {}) => {
+  if (!badgeElement) return;
+
+  const { maxCount = 99, animate = true } = options;
+
+  if (count > 0) {
+    badgeElement.textContent = count > maxCount ? `${maxCount}+` : count;
+    badgeElement.style.display = 'block';
+
+    if (animate) {
+      badgeElement.classList.add('pulse-animation', 'badge-pulse');
+      setTimeout(() => {
+        badgeElement.classList.remove('pulse-animation', 'badge-pulse');
+      }, 1000);
+    }
+  } else {
+    badgeElement.style.display = 'none';
+  }
+};

@@ -35,11 +35,6 @@ const TOAST_ICONS = {
 
 // ============ Show Notification Toast ============
 
-/**
- * Show a notification toast
- * @param {Object} notification - Notification data
- * @param {Object} options - Display options
- */
 const showNotificationToast = (notification, options = {}) => {
   const {
     playSound = true,

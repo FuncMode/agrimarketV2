@@ -19,7 +19,6 @@ import {
   reinstateUser,
   deleteUser,
   getSystemLogs,
-  getAdminStats,
   getSocketConnections,
   getIPBlockingStats,
   getDatabaseStats

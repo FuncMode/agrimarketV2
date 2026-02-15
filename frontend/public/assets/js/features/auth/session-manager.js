@@ -2,7 +2,6 @@
 // Session Management - Token refresh, auto-logout, activity monitoring
 
 import { 
-  checkTokenExpiration, 
   logout, 
   redirectToLogin,
   getToken,

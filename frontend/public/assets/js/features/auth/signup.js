@@ -11,6 +11,7 @@ import {
   validatePhone,
   passwordsMatch 
 } from '../../utils/validators.js';
+import { attachPasswordToggleHandler } from '../../utils/helpers.js';
 import { RIZAL_MUNICIPALITIES, MUNICIPALITY_COORDINATES } from '../../utils/constants.js';
 
 const showSignupModal = () => {
@@ -264,50 +265,10 @@ const showSignupModal = () => {
   
   // Attach password toggles for both password fields
   modal.body.querySelectorAll('.password-toggle').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const targetId = btn.getAttribute('data-target');
-      const input = modal.body.querySelector(`#${targetId}`);
-      if (!input) return;
-      
-      const isPassword = input.type === 'password';
-      input.type = isPassword ? 'text' : 'password';
-      
-      const icon = btn.querySelector('i');
-      if (icon) {
-        icon.className = `bi bi-eye${isPassword ? '-slash' : ''} text-gray-400 hover:text-gray-600 transition-colors`;
-      }
-    });
-    
-    // Enhanced hover and focus effects
     const targetId = btn.getAttribute('data-target');
     const input = modal.body.querySelector(`#${targetId}`);
     if (input) {
-      // Show/hide toggle based on input state
-      input.addEventListener('input', () => {
-        btn.style.opacity = input.value.length > 0 ? '1' : '0.7';
-      });
-      
-      // Hover effects for better UX
-      btn.addEventListener('mouseenter', function() {
-        this.style.backgroundColor = 'rgba(0, 0, 0, 0.08)';
-        this.style.transform = 'scale(1.1)';
-      });
-      
-      btn.addEventListener('mouseleave', function() {
-        this.style.backgroundColor = 'transparent';
-        this.style.transform = 'scale(1)';
-      });
-      
-      // Focus ring for accessibility
-      btn.addEventListener('focus', function() {
-        this.style.outline = '2px solid #16a34a';
-        this.style.outlineOffset = '2px';
-      });
-      
-      btn.addEventListener('blur', function() {
-        this.style.outline = 'none';
-      });
+      attachPasswordToggleHandler(btn, input);
     }
   });
   

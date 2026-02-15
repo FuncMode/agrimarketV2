@@ -5,6 +5,7 @@ import { login, redirectToDashboard, setRememberedEmail, getRememberedEmail, cle
 import { createModal, closeModal } from '../../components/modal.js';
 import { showToast, showError } from '../../components/toast.js';
 import { validateEmail, validateRequired } from '../../utils/validators.js';
+import { attachPasswordToggleHandler } from '../../utils/helpers.js';
 
 const showLoginModal = () => {
   const modalContent = `
@@ -175,51 +176,9 @@ const showLoginModal = () => {
   
   // Attach password toggle
   const passwordToggle = modal.body.querySelector('.password-toggle');
-  if (passwordToggle) {
-    passwordToggle.addEventListener('click', (e) => {
-      e.preventDefault();
-      const targetId = passwordToggle.getAttribute('data-target');
-      const input = modal.body.querySelector(`#${targetId}`);
-      if (!input) return;
-      
-      const isPassword = input.type === 'password';
-      input.type = isPassword ? 'text' : 'password';
-      
-      const icon = passwordToggle.querySelector('i');
-      if (icon) {
-        icon.className = `bi bi-eye${isPassword ? '-slash' : ''} text-gray-400 hover:text-gray-600 transition-colors`;
-      }
-    });
-    
-    // Enhanced hover and focus effects
-    const passwordInput = modal.body.querySelector('#login-password');
-    if (passwordInput) {
-      // Show/hide toggle based on input state
-      passwordInput.addEventListener('input', () => {
-        passwordToggle.style.opacity = passwordInput.value.length > 0 ? '1' : '0.7';
-      });
-      
-      // Enhanced hover effects for better UX
-      passwordToggle.addEventListener('mouseenter', function() {
-        this.style.backgroundColor = 'rgba(0, 0, 0, 0.08)';
-        this.style.transform = 'scale(1.1)';
-      });
-      
-      passwordToggle.addEventListener('mouseleave', function() {
-        this.style.backgroundColor = 'transparent';
-        this.style.transform = 'scale(1)';
-      });
-      
-      // Focus ring for accessibility
-      passwordToggle.addEventListener('focus', function() {
-        this.style.outline = '2px solid #16a34a';
-        this.style.outlineOffset = '2px';
-      });
-      
-      passwordToggle.addEventListener('blur', function() {
-        this.style.outline = 'none';
-      });
-    }
+  const passwordInput = modal.body.querySelector('#login-password');
+  if (passwordToggle && passwordInput) {
+    attachPasswordToggleHandler(passwordToggle, passwordInput);
   }
   
   const switchSignup = modal.body.querySelector('#switch-to-signup');

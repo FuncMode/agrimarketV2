@@ -108,10 +108,6 @@ loadSettings();
 
 // ============ Sound Playback ============
 
-/**
- * Preload a sound file
- * @param {String} soundType - Type of sound to preload
- */
 const preloadSound = (soundType) => {
   if (SOUND_CACHE[soundType]) return;
   
@@ -128,11 +124,7 @@ const preloadSound = (soundType) => {
   }
 };
 
-/**
- * Play notification sound
- * @param {String} soundType - Type of sound to play (notification, message, success, etc.)
- * @param {Object} options - Playback options
- */
+
 const playSound = async (soundType = 'notification', options = {}) => {
   // Check if sounds are enabled
   if (!soundEnabled) {

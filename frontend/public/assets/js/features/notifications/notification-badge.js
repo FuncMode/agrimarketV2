@@ -1,12 +1,8 @@
 // assets/js/components/notification-badge.js
 // Notification Badge Component - Reusable badge for any element
 
-/**
- * Create and attach a notification badge to an element
- * @param {String|HTMLElement} target - Target element or selector
- * @param {Number} count - Number to display in badge
- * @param {Object} options - Configuration options
- */
+import { updateBadgeDisplay } from '../../utils/helpers.js';
+
 const createBadge = (target, count = 0, options = {}) => {
   const {
     maxCount = 99,
@@ -60,49 +56,26 @@ const createBadge = (target, count = 0, options = {}) => {
   return badge;
 };
 
-/**
- * Update existing badge count
- * @param {String|HTMLElement} target - Target element or selector
- * @param {Number} count - New count to display
- */
+
 const updateBadge = (target, count, options = {}) => {
   const element = typeof target === 'string' ? document.querySelector(target) : target;
   
   if (!element) return null;
   
-  const badge = element.querySelector('.notification-badge');
+  let badge = element.querySelector('.notification-badge');
   
   if (!badge) {
     // Create new badge if doesn't exist
     return createBadge(target, count, options);
   }
   
-  const { maxCount = 99, pulse = false } = options;
-  const displayCount = count > maxCount ? `${maxCount}+` : count;
-  
-  badge.textContent = displayCount;
-  
-  // Show/hide based on count
-  if (count > 0) {
-    badge.style.display = 'block';
-    
-    if (pulse) {
-      badge.classList.add('badge-pulse');
-      setTimeout(() => {
-        badge.classList.remove('badge-pulse');
-      }, 1000);
-    }
-  } else {
-    badge.style.display = 'none';
-  }
+  const { pulse = false } = options;
+  updateBadgeDisplay(badge, count, { ...options, animate: pulse });
   
   return badge;
 };
 
-/**
- * Remove badge from element
- * @param {String|HTMLElement} target - Target element or selector
- */
+
 const removeBadge = (target) => {
   const element = typeof target === 'string' ? document.querySelector(target) : target;
   
@@ -114,10 +87,7 @@ const removeBadge = (target) => {
   }
 };
 
-/**
- * Show badge
- * @param {String|HTMLElement} target - Target element or selector
- */
+
 const showBadge = (target) => {
   const element = typeof target === 'string' ? document.querySelector(target) : target;
   
@@ -129,10 +99,6 @@ const showBadge = (target) => {
   }
 };
 
-/**
- * Hide badge
- * @param {String|HTMLElement} target - Target element or selector
- */
 const hideBadge = (target) => {
   const element = typeof target === 'string' ? document.querySelector(target) : target;
   
@@ -144,10 +110,7 @@ const hideBadge = (target) => {
   }
 };
 
-/**
- * Get badge count
- * @param {String|HTMLElement} target - Target element or selector
- */
+
 const getBadgeCount = (target) => {
   const element = typeof target === 'string' ? document.querySelector(target) : target;
   

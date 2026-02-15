@@ -56,7 +56,7 @@ const ENV = {
 const hasBothSupabaseVars = Boolean(ENV.SUPABASE_URL && ENV.SUPABASE_ANON_KEY);
 
 if (!hasBothSupabaseVars && !isBrowser) {
-  console.warn('⚠️  Warning: SUPABASE_URL and SUPABASE_ANON_KEY are required in environment variables');
+  console.warn('Warning: SUPABASE_URL and SUPABASE_ANON_KEY are required in environment variables');
 }
 
 // Log environment in development

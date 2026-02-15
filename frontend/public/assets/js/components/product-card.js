@@ -1,12 +1,6 @@
 import { formatCurrency } from '../utils/formatters.js';
 import { isAuthenticated, isBuyer } from '../core/auth.js';
 
-/**
- * Create a product card HTML element
- * @param {Object} product - Product data
- * @param {Object} options - Display options
- * @returns {HTMLElement} Product card element
- */
 const createProductCard = (product, options = {}) => {
   const {
     showActions = true,
@@ -173,12 +167,7 @@ const createProductCard = (product, options = {}) => {
   return card;
 };
 
-/**
- * Render multiple product cards in a container
- * @param {Array} products - Array of product data
- * @param {String|HTMLElement} container - Container selector or element
- * @param {Object} options - Display options
- */
+
 const renderProductCards = (products, container, options = {}) => {
   if (typeof container === 'string') {
     container = document.querySelector(container);

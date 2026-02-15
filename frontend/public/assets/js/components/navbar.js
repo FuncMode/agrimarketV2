@@ -4,11 +4,8 @@ import {
   getRole, 
   getStatus,
   isVerified,
-  logout,
-  redirectToLogin,
-  redirectToDashboard 
+  logout
 } from '../core/auth.js';
-import { getUnreadCount } from '../core/state.js';
 import { createModal, closeModal } from './modal.js';
 import { initNotificationBell, updateUnreadCount as updateNotificationBellCount } from './notification-bell.js';
 
@@ -79,9 +76,7 @@ const renderMenuItems = (authenticated, role, verified, user) => {
     seller: '/seller.html',
     admin: '/admin.html'
   };
-  
-  const dashboardUrl = dashboards[role] || '/index.html';
-  
+    
   let menuItems = ``;
   
   if (role === 'buyer') {
@@ -265,14 +260,6 @@ const showSignupModal = () => {
   import('../features/auth/signup.js').then(module => {
     if (module.showSignupModal) {
       module.showSignupModal();
-    }
-  });
-};
-
-const showNotificationPanel = () => {
-  import('../features/notifications/notification-center.js').then(module => {
-    if (module.showNotificationCenter) {
-      module.showNotificationCenter();
     }
   });
 };

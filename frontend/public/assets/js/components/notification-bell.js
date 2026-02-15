@@ -5,6 +5,7 @@ import { getUnreadCount } from '../services/notification.service.js';
 import { showNotificationCenter } from '../features/notifications/notification-center.js';
 import { onNotification } from '../services/socket.service.js';
 import notificationStore from '../store/notification.store.js';
+import { updateBadgeDisplay } from '../utils/helpers.js';
 
 let bellElement = null;
 let badgeElement = null;
@@ -63,23 +64,9 @@ const updateUnreadCount = async () => {
 };
 
 const setUnreadCount = (count) => {
-  if (!badgeElement) return;
-  
-  if (count > 0) {
-    badgeElement.textContent = count > 99 ? '99+' : count;
-    badgeElement.style.display = 'block';
-    
-    // Add pulsing animation for new notifications
-    badgeElement.classList.add('pulse-animation');
-    setTimeout(() => {
-      badgeElement.classList.remove('pulse-animation');
-    }, 1000);
-  } else {
-    badgeElement.style.display = 'none';
+  if (badgeElement) {
+    updateBadgeDisplay(badgeElement, count, { maxCount: 99, animate: true });
   }
-  
-  // Note: Store will be updated when full notifications are fetched
-  // The unread count is automatically calculated from notifications array
 };
 
 // ============ Handle Bell Click ============
@@ -155,10 +142,6 @@ const cleanup = () => {
     unsubscribeSocket = null;
   }
 };
-
-// ============ Add CSS Animations ============
-// Styles are now handling in components.css
-// Keeping this comment block to indicate removal of duplicate styles
 
 // ============ Exports ============
 

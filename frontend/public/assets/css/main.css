@@ -569,21 +569,6 @@ html {
 }
 
 
-*:focus {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-
-button:focus,
-a:focus {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-
-
-
-
-
 .text-primary {
   color: var(--color-primary);
 }
