@@ -22,7 +22,7 @@ const renderNavbar = () => {
     <div class="navbar-container">
       <!-- Brand -->
       <a href="/index.html" class="navbar-brand">
-        <i class="bi bi-basket2-fill"></i>
+        <img src="/assets/images/logo.png" alt="AgriMarket" class="h-12 w-auto" style="filter: brightness(0) saturate(100%) invert(45%) sepia(71%) saturate(348%) hue-rotate(89deg) brightness(102%) contrast(103%);">
         AgriMarket
       </a>
       

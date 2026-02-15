@@ -52,9 +52,10 @@ const showLoginModal = () => {
               class="form-control pl-10 pr-12"
               placeholder="Enter your password"
               required
+              style="padding-right: 2.5rem;"
             >
-            <button type="button" class="password-toggle absolute inset-y-0 right-0 pr-3 flex items-center" data-target="login-password">
-              <i class="bi bi-eye text-gray-400 hover:text-gray-600 transition-colors"></i>
+            <button type="button" class="password-toggle" data-target="login-password">
+              <i class="bi bi-eye"></i>
             </button>
           </div>
           <div class="invalid-feedback"></div>
@@ -107,24 +108,6 @@ const showLoginModal = () => {
         box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1) !important;
       }
       
-      .password-toggle {
-        background: none !important;
-        border: none !important;
-        cursor: pointer !important;
-        padding: 0.5rem !important;
-        border-radius: 0.375rem !important;
-        transition: all 150ms ease !important;
-      }
-      
-      .password-toggle:hover {
-        background-color: rgba(0, 0, 0, 0.05) !important;
-      }
-      
-      .password-toggle:focus {
-        outline: 2px solid #16a34a !important;
-        outline-offset: 2px !important;
-      }
-      
       .form-check-input:checked {
         background-color: #16a34a !important;
         border-color: #16a34a !important;
@@ -134,17 +117,14 @@ const showLoginModal = () => {
         box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1) !important;
       }
       
-      /* Smooth focus transitions */
       .form-control, .form-select {
         transition: border-color 150ms ease, box-shadow 150ms ease !important;
       }
       
-      /* Enhanced hover states */
       a:hover {
         text-decoration: none !important;
       }
       
-      /* Button enhancement */
       .btn:active {
         transform: scale(0.98) !important;
       }

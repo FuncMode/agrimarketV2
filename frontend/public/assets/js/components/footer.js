@@ -8,7 +8,7 @@ const renderFooter = () => {
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
         <div class="sm:col-span-2 lg:col-span-1">
           <div class="flex items-center gap-2 mb-4">
-            <i class="bi bi-basket2-fill"></i>
+            <img src="/assets/images/logo.png" alt="AgriMarket" class="h-8 w-auto">
             <h3 class="text-2xl font-bold font-display">AgriMarket</h3>
           </div>
           <p class="text-green-100 leading-relaxed mb-4">

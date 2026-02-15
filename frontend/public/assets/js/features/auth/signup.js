@@ -33,8 +33,8 @@ const showSignupModal = () => {
           <label class="relative cursor-pointer group">
             <input type="radio" name="role" value="buyer" checked class="absolute opacity-0">
             <div class="role-card border-2 border-gray-200 rounded-xl p-4 text-center transition-all duration-200 hover:border-green-300 hover:bg-green-50 group-focuses:ring-2 group-focus:ring-green-500 group-focus:ring-offset-2">
-              <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-2 group-hover:bg-blue-200 transition-colors">
-                <i class="bi bi-cart3 text-xl text-blue-600"></i>
+              <div class="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-2 bg-transparent">
+                <img src="/assets/images/buyer.png" alt="Buyer" class="w-10 h-10 object-contain">
               </div>
               <span class="font-medium text-gray-900 block">Buyer</span>
               <span class="text-xs text-gray-500 mt-1 block">Buy fresh products</span>
@@ -43,8 +43,8 @@ const showSignupModal = () => {
           <label class="relative cursor-pointer group">
             <input type="radio" name="role" value="seller" class="absolute opacity-0">
             <div class="role-card border-2 border-gray-200 rounded-xl p-4 text-center transition-all duration-200 hover:border-green-300 hover:bg-green-50 group-focuses:ring-2 group-focus:ring-green-500 group-focus:ring-offset-2">
-              <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-2 group-hover:bg-green-200 transition-colors">
-                <i class="bi bi-shop text-xl text-green-600"></i>
+              <div class="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-2 bg-transparent">
+                <img src="/assets/images/seller.png" alt="Seller" class="w-10 h-10 object-contain">
               </div>
               <span class="font-medium text-gray-900 block">Seller</span>
               <span class="text-xs text-gray-500 mt-1 block">Sell your harvest</span>
@@ -136,9 +136,9 @@ const showSignupModal = () => {
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <i class="bi bi-lock text-gray-400"></i>
             </div>
-            <input type="password" id="signup-password" class="form-control pl-10 pr-12" placeholder="Create a strong password" required>
-            <button type="button" class="password-toggle absolute inset-y-0 right-0 pr-3 flex items-center" data-target="signup-password">
-              <i class="bi bi-eye text-gray-400 hover:text-gray-600 transition-colors"></i>
+            <input type="password" id="signup-password" class="form-control pl-10 pr-12" placeholder="Create a strong password" required style="padding-right: 2.5rem;">
+            <button type="button" class="password-toggle" data-target="signup-password">
+              <i class="bi bi-eye"></i>
             </button>
           </div>
           <div class="invalid-feedback"></div>
@@ -153,9 +153,9 @@ const showSignupModal = () => {
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <i class="bi bi-shield-check text-gray-400"></i>
             </div>
-            <input type="password" id="signup-confirm-password" class="form-control pl-10 pr-12" placeholder="Confirm your password" required>
-            <button type="button" class="password-toggle absolute inset-y-0 right-0 pr-3 flex items-center" data-target="signup-confirm-password">
-              <i class="bi bi-eye text-gray-400 hover:text-gray-600 transition-colors"></i>
+            <input type="password" id="signup-confirm-password" class="form-control pl-10 pr-12" placeholder="Confirm your password" required style="padding-right: 2.5rem;">
+            <button type="button" class="password-toggle" data-target="signup-confirm-password">
+              <i class="bi bi-eye"></i>
             </button>
           </div>
           <div class="invalid-feedback"></div>
@@ -193,18 +193,18 @@ const showSignupModal = () => {
     </form>
     
     <style>
-      .role-card input:checked + div {
+      input[name="role"]:checked + .role-card {
         border-color: #16a34a !important;
         background-color: #f0fdf4 !important;
-        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1) !important;
       }
       
-      .role-card input:checked + div .bg-blue-100,
-      .role-card input:checked + div .bg-green-100 {
+      input[name="role"]:checked + .role-card .bg-blue-100,
+      input[name="role"]:checked + .role-card .bg-green-100 {
         background-color: #dcfce7 !important;
       }
       
-      .role-card input:checked + div i {
+      input[name="role"]:checked + .role-card i {
         color: #16a34a !important;
       }
       

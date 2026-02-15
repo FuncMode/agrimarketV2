@@ -121,17 +121,6 @@ export const attachPasswordToggleHandler = (toggleElement, inputElement) => {
     toggleElement.style.opacity = inputElement.value.length > 0 ? '1' : '0.7';
   });
 
-  // Hover effects
-  toggleElement.addEventListener('mouseenter', function() {
-    this.style.backgroundColor = 'rgba(0, 0, 0, 0.08)';
-    this.style.transform = 'scale(1.1)';
-  });
-
-  toggleElement.addEventListener('mouseleave', function() {
-    this.style.backgroundColor = 'transparent';
-    this.style.transform = 'scale(1)';
-  });
-
   // Focus ring for accessibility
   toggleElement.addEventListener('focus', function() {
     this.style.outline = '2px solid #16a34a';
