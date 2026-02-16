@@ -232,6 +232,10 @@ const setupNavigation = () => {
 };
 
 const showPage = (page) => {
+  // Define valid sections for buyer dashboard
+  const validSections = ['browse', 'cart', 'orders', 'messaging', 'my-issues'];
+  
+  // Update current page tracking
   currentPage = page;
   
   // Update URL hash to persist section on reload
@@ -256,12 +260,13 @@ const showPage = (page) => {
     });
   }
   
-  // Show current section
+  // Show requested section
   const section = document.getElementById(page);
-  if (section) {
+  
+  if (section && validSections.includes(page)) {
     section.style.setProperty('display', 'block', 'important');
     
-    // Load page data
+    // Load page-specific data
     switch(page) {
       case 'browse':
         loadBrowseProducts();
@@ -290,6 +295,9 @@ const showPage = (page) => {
         loadMyIssues();
         break;
     }
+  } else {
+    // Section not found or invalid route - redirect to 404 page
+    window.location.href = '/404.html';
   }
 };
 
