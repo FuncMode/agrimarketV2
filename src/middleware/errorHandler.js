@@ -145,15 +145,15 @@ const notFoundHandler = (req, res, next) => {
       // Not logged in - show login/signup/home links
       helpLinksHtml = `
         <li><a href="/" class="text-green-600 hover:underline"><i class="bi bi-house-fill"></i> Back to Home</a></li>
-        <li><a href="/index.html" class="text-green-600 hover:underline"><i class="bi bi-box-arrow-in-right"></i> Login</a></li>
-        <li><a href="/index.html" class="text-green-600 hover:underline"><i class="bi bi-person-plus-fill"></i> Sign Up</a></li>
+        <li><a href="/index.html#login" class="text-green-600 hover:underline"><i class="bi bi-box-arrow-in-right"></i> Login</a></li>
+        <li><a href="/index.html#signup" class="text-green-600 hover:underline"><i class="bi bi-person-plus-fill"></i> Sign Up</a></li>
       `;
       mainButtonsHtml = `
         <a href="/" class="inline-block px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
           <i class="bi bi-house-fill"></i> Back to Home
         </a>
-        <a href="/index.html" class="inline-block px-8 py-3 border border-green-600 text-green-600 rounded-lg hover:bg-green-50 transition">
-          <i class="bi bi-box-arrow-in-right"></i> Login or Sign Up
+        <a href="/index.html#signup" class="inline-block px-8 py-3 border border-green-600 text-green-600 rounded-lg hover:bg-green-50 transition">
+          <i class="bi bi-person-plus-fill"></i> Sign Up
         </a>
       `;
     } else if (userRole === 'buyer') {
@@ -235,7 +235,7 @@ const notFoundHandler = (req, res, next) => {
         <nav class="bg-white shadow-sm sticky top-0 z-50">
           <div class="container mx-auto px-4 py-4 flex items-center justify-between">
             <a href="/" class="flex items-center gap-2 text-2xl font-bold text-green-600">
-              <span>🛒</span>
+              <img src="/assets/images/logo.png" alt="AgriMarket" class="h-12 w-auto" style="filter: brightness(0) saturate(100%) invert(45%) sepia(71%) saturate(348%) hue-rotate(89deg) brightness(102%) contrast(103%);">
               <span>AgriMarket</span>
             </a>
           </div>

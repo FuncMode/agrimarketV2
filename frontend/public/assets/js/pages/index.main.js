@@ -160,6 +160,41 @@ const init = async () => {
   
   // Attach event listeners
   attachEventListeners();
+
+  // Check if we should show signup modal (from become-seller page redirect)
+  // This runs at the very end after everything is loaded
+  const showSignupOnLoad = localStorage.getItem('showSignupModalOnLoad');
+  if (showSignupOnLoad) {
+    localStorage.removeItem('showSignupModalOnLoad');
+    try {
+      const { showSignupModal } = await import('../features/auth/signup.js');
+      showSignupModal();
+    } catch (error) {
+      console.error('Error loading signup modal:', error);
+    }
+  }
+
+  // Check if coming from 404 page with hash indicating which modal to show
+  const hash = window.location.hash.slice(1); // Remove the '#' character
+  if (hash === 'login') {
+    try {
+      const { showLoginModal: showAuthLoginModal } = await import('../features/auth/login.js');
+      showAuthLoginModal();
+      // Clear the hash after showing modal
+      window.history.replaceState(null, null, '/index.html');
+    } catch (error) {
+      console.error('Error loading login modal:', error);
+    }
+  } else if (hash === 'signup') {
+    try {
+      const { showSignupModal } = await import('../features/auth/signup.js');
+      showSignupModal();
+      // Clear the hash after showing modal
+      window.history.replaceState(null, null, '/index.html');
+    } catch (error) {
+      console.error('Error loading signup modal:', error);
+    }
+  }
   
 
 };
