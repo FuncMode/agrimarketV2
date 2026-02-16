@@ -208,8 +208,7 @@ const init = async () => {
   // Populate municipality filter
   populateMunicipalityFilter();
   
-  // Load initial data
-  await loadBrowseProducts();
+  // Load initial data (products will be loaded by showPage via navigation)
   await updateCartUI();
   await updateMessageBadge();
   
@@ -228,12 +227,8 @@ const setupNavigation = () => {
   
   window.addEventListener('hashchange', handleHashChange);
   
-  // Wait for DOM to be fully loaded before initial navigation
-  if (document.readyState === 'complete') {
-    handleHashChange();
-  } else {
-    window.addEventListener('load', handleHashChange);
-  }
+  // Call initial navigation immediately (DOM is ready since init() is called after DOMContentLoaded)
+  handleHashChange();
 };
 
 const showPage = (page) => {
