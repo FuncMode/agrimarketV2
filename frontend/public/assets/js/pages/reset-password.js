@@ -148,7 +148,7 @@ const handleResetPassword = async (e) => {
       // Redirect to login after 2 seconds
       setTimeout(() => {
         window.location.href = '/index.html';
-      }, 2000);
+      }, 1000);
     }
   } catch (error) {
     console.error('Error resetting password:', error);

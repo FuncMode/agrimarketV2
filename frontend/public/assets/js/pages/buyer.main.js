@@ -742,7 +742,7 @@ const viewProductDetails = async (product) => {
     // If modal doesn't exist, create it using the modal component
     if (!modal || !titleEl || !infoSection) {
       const dynamicModal = createModal({
-        title: product.name || 'Product Details',
+        title: `Product Name: ${product.name}` || 'Product Details',
         content: `
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <!-- Map Section -->
@@ -820,7 +820,7 @@ const renderProductInfo = (product, container) => {
       objectFit: 'cover',
       showIndicators: photos.length > 1,
       showArrows: photos.length > 1,
-      autoPlay: false
+      autoPlay: true
     });
     
     container.innerHTML = `

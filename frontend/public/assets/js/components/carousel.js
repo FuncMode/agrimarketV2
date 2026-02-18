@@ -10,7 +10,7 @@ export const createCarousel = (photos = [], alt = 'Product', options = {}) => {
     objectFit = 'cover',
     showIndicators = true,
     showArrows = true,
-    autoPlay = false,
+    autoPlay = true,
     autoPlayInterval = 5000
   } = options;
 
@@ -177,6 +177,6 @@ export const createSimpleCarousel = (photos = [], alt = 'Product') => {
     height: '400px',
     showIndicators: true,
     showArrows: true,
-    autoPlay: false
+    autoPlay: true
   });
 };
