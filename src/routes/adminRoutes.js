@@ -152,4 +152,85 @@ router.get('/security/ip-blocking', adminController.getIPBlockingStats);
 
 router.get('/database/stats', adminController.getDatabaseStats);
 
+// ============ Order and Message Logs for Dispute Resolution ============
+
+router.get(
+  '/dispute/orders',
+  [
+    query('status')
+      .optional()
+      .isIn(['pending', 'completed', 'cancelled', 'disputed'])
+      .withMessage('Invalid order status'),
+    
+    query('buyer_search')
+      .optional()
+      .trim()
+      .isLength({ max: 100 }).withMessage('Buyer search query too long'),
+    
+    query('seller_search')
+      .optional()
+      .trim()
+      .isLength({ max: 100 }).withMessage('Seller search query too long'),
+    
+    query('search')
+      .optional()
+      .trim()
+      .isLength({ max: 200 }).withMessage('Search query too long'),
+    
+    query('page')
+      .optional()
+      .isInt({ min: 1 }).withMessage('Page must be positive')
+      .toInt(),
+    
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100')
+      .toInt(),
+    
+    validate
+  ],
+  adminController.getOrdersForDispute
+);
+
+router.get(
+  '/dispute/orders/:orderId',
+  validateUUID('orderId'),
+  adminController.getOrderDetails
+);
+
+router.get(
+  '/dispute/messages',
+  [
+    query('buyer_id')
+      .optional()
+      .isUUID(4).withMessage('Invalid buyer ID'),
+    
+    query('seller_id')
+      .optional()
+      .isUUID(4).withMessage('Invalid seller ID'),
+    
+    query('order_id')
+      .optional()
+      .isUUID(4).withMessage('Invalid order ID'),
+    
+    query('search')
+      .optional()
+      .trim()
+      .isLength({ max: 200 }).withMessage('Search query too long'),
+    
+    query('page')
+      .optional()
+      .isInt({ min: 1 }).withMessage('Page must be positive')
+      .toInt(),
+    
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100')
+      .toInt(),
+    
+    validate
+  ],
+  adminController.getMessagesForDispute
+);
+
 module.exports = router;

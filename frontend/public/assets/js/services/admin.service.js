@@ -144,6 +144,60 @@ const getDatabaseStats = async () => {
   }
 };
 
+// Get orders for dispute resolution
+const getOrdersForDispute = async (filters = {}) => {
+  try {
+    const params = new URLSearchParams();
+    if (filters.buyer_id) params.append('buyer_id', filters.buyer_id);
+    if (filters.seller_id) params.append('seller_id', filters.seller_id);
+    if (filters.buyer_search) params.append('buyer_search', filters.buyer_search);
+    if (filters.seller_search) params.append('seller_search', filters.seller_search);
+    if (filters.status) params.append('status', filters.status);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
+    
+    const queryString = params.toString();
+    const url = queryString ? `${ENDPOINTS.ADMIN.DISPUTE_ORDERS}?${queryString}` : ENDPOINTS.ADMIN.DISPUTE_ORDERS;
+    
+    const response = await get(url);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Get order details with messages for dispute resolution
+const getOrderDetails = async (orderId) => {
+  try {
+    const response = await get(`${ENDPOINTS.ADMIN.DISPUTE_ORDERS}/${orderId}`);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Get messages for dispute resolution
+const getMessagesForDispute = async (filters = {}) => {
+  try {
+    const params = new URLSearchParams();
+    if (filters.buyer_id) params.append('buyer_id', filters.buyer_id);
+    if (filters.seller_id) params.append('seller_id', filters.seller_id);
+    if (filters.order_id) params.append('order_id', filters.order_id);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
+    
+    const queryString = params.toString();
+    const url = queryString ? `${ENDPOINTS.ADMIN.DISPUTE_MESSAGES}?${queryString}` : ENDPOINTS.ADMIN.DISPUTE_MESSAGES;
+    
+    const response = await get(url);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
 export {
   getDashboardStats,
   getAllUsers,
@@ -156,5 +210,8 @@ export {
   getAdminStats,
   getSocketConnections,
   getIPBlockingStats,
-  getDatabaseStats
+  getDatabaseStats,
+  getOrdersForDispute,
+  getOrderDetails,
+  getMessagesForDispute
 };

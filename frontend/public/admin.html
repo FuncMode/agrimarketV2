@@ -268,6 +268,63 @@
         </div>
       </div>
     </section>
+
+    <!-- Transaction & Message Logs for Dispute Resolution -->
+    <section id="dispute-logs" class="mb-8 sm:mb-12">
+      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Transaction & Message Logs</h2>
+      <p class="text-gray-600 mb-4">View order history and messages for dispute resolution</p>
+      
+      <!-- Orders Tab -->
+      <div class="card mb-6">
+        <div class="card-body">
+          <h3 class="text-lg font-semibold mb-4">Order History</h3>
+          
+          <!-- Filters -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <input type="text" id="dispute-search-buyer" class="form-control" placeholder="Search buyer name/email...">
+            <input type="text" id="dispute-search-seller" class="form-control" placeholder="Search seller name/email...">
+            <select id="dispute-order-status" class="form-select">
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="disputed">Disputed</option>
+            </select>
+            <div class="flex gap-2">
+              <button id="btn-search-disputes" class="btn btn-primary flex-1">
+                <i class="bi bi-search"></i> Search
+              </button>
+              <button id="btn-clear-disputes" class="btn btn-outline" title="Clear filters">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Orders List -->
+          <div class="overflow-x-auto">
+            <table class="table w-full min-w-[100%] hidden sm:table">
+              <thead>
+                <tr>
+                  <th class="text-left">Order ID</th>
+                  <th class="text-left">Buyer</th>
+                  <th class="text-left">Seller</th>
+                  <th class="text-left">Amount</th>
+                  <th class="text-left">Status</th>
+                  <th class="text-left">Date</th>
+                  <th class="text-left">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="dispute-orders-table"></tbody>
+            </table>
+            <!-- Mobile view -->
+            <div class="block sm:hidden" id="dispute-orders-mobile"></div>
+          </div>
+          
+          <!-- Pagination -->
+          <div id="dispute-orders-pagination" class="flex justify-center gap-2 mt-6"></div>
+        </div>
+      </div>
+    </section>
     
   </div>
   

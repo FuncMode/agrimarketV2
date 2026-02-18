@@ -152,6 +152,8 @@ exports.getUserDetails = asyncHandler(async (req, res, next) => {
   const { data: logs } = await adminLogModel.getUserLogs(userId, { limit: 10 });
 
   let orderCount = 0;
+  let totalSales = 0;
+  
   if (user.role === 'buyer') {
     const { count } = await supabase
       .from('orders')
@@ -159,11 +161,29 @@ exports.getUserDetails = asyncHandler(async (req, res, next) => {
       .eq('buyer_id', user.buyer_profile?.id);
     orderCount = count || 0;
   } else if (user.role === 'seller') {
-    const { count } = await supabase
+    // Get total order count for this seller
+    const { data: orderCountData, count } = await supabase
       .from('orders')
       .select('id', { count: 'exact', head: true })
       .eq('seller_id', user.seller_profile?.id);
     orderCount = count || 0;
+
+    // Get total sales from completed orders
+    const { data: completedOrders } = await supabase
+      .from('orders')
+      .select('total_amount')
+      .eq('seller_id', user.seller_profile?.id)
+      .eq('status', 'completed');
+    
+    if (completedOrders && completedOrders.length > 0) {
+      totalSales = completedOrders.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0);
+    }
+
+    // Update seller profile with accurate statistics
+    if (user.seller_profile) {
+      user.seller_profile.total_orders = orderCount;
+      user.seller_profile.total_sales = totalSales;
+    }
   }
 
   res.status(200).json({
@@ -537,6 +557,264 @@ exports.getDatabaseStats = asyncHandler(async (req, res, next) => {
         error_rate: errorRateVal,
         current_status: healthCheck.healthy ? 'healthy' : 'unhealthy',
         last_check_duration_ms: healthCheck.duration || 0
+      }
+    }
+  });
+});
+
+// ============ Order and Message Logs for Dispute Resolution ============
+
+exports.getOrdersForDispute = asyncHandler(async (req, res, next) => {
+  const { buyer_search, seller_search, status, search, page = 1, limit = 20 } = req.query;
+  
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  let query = supabase.from('orders').select('*', { count: 'exact' });
+  
+  if (status) {
+    query = query.eq('status', status);
+  }
+  
+  // For general search (order id or product name)
+  if (search && !buyer_search && !seller_search) {
+    query = query.or(`id.ilike.%${search}%,order_number.ilike.%${search}%`);
+  }
+  
+  const { data: orders, error, count } = await query
+    .order('created_at', { ascending: false })
+    .range(offset, offset + parseInt(limit) - 1);
+  
+  if (error) {
+    throw new AppError('Failed to fetch orders', 500);
+  }
+  
+  // Get buyer and seller details for each order
+  const enrichedOrders = await Promise.all(
+    (orders || []).map(async (order) => {
+      const [buyerResult, sellerResult] = await Promise.all([
+        supabase
+          .from('buyer_profiles')
+          .select(`
+            id,
+            users!buyer_profiles_user_id_fkey(
+              id,
+              full_name,
+              email
+            )
+          `)
+          .eq('id', order.buyer_id)
+          .single(),
+        supabase
+          .from('seller_profiles')
+          .select(`
+            id,
+            users!seller_profiles_user_id_fkey(
+              id,
+              full_name,
+              email
+            )
+          `)
+          .eq('id', order.seller_id)
+          .single()
+      ]);
+      
+      return {
+        ...order,
+        buyer: buyerResult.data?.users || null,
+        seller: sellerResult.data?.users || null
+      };
+    })
+  );
+  
+  // Filter results based on buyer_search and seller_search
+  let filteredOrders = enrichedOrders;
+  
+  if (buyer_search || seller_search) {
+    filteredOrders = enrichedOrders.filter(order => {
+      let matches = true;
+      
+      if (buyer_search) {
+        const buyerSearchLower = buyer_search.toLowerCase();
+        const buyerMatch = 
+          (order.buyer?.full_name?.toLowerCase().includes(buyerSearchLower)) ||
+          (order.buyer?.email?.toLowerCase().includes(buyerSearchLower));
+        matches = matches && buyerMatch;
+      }
+      
+      if (seller_search) {
+        const sellerSearchLower = seller_search.toLowerCase();
+        const sellerMatch =
+          (order.seller?.full_name?.toLowerCase().includes(sellerSearchLower)) ||
+          (order.seller?.email?.toLowerCase().includes(sellerSearchLower));
+        matches = matches && sellerMatch;
+      }
+      
+      return matches;
+    });
+  }
+  
+  res.status(200).json({
+    success: true,
+    data: {
+      orders: filteredOrders,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total_pages: Math.ceil(count / parseInt(limit))
+      }
+    }
+  });
+});
+
+exports.getOrderDetails = asyncHandler(async (req, res, next) => {
+  const { orderId } = req.params;
+  
+  const { data: order, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', orderId)
+    .single();
+  
+  if (error || !order) {
+    console.error('Order fetch error:', error);
+    throw new AppError('Order not found', 404);
+  }
+  
+  // Get buyer details through buyer_profiles join
+  const buyerResult = await supabase
+    .from('buyer_profiles')
+    .select(`
+      id,
+      delivery_address,
+      municipality,
+      users!buyer_profiles_user_id_fkey(
+        id,
+        full_name,
+        email,
+        phone_number
+      )
+    `)
+    .eq('id', order.buyer_id)
+    .single();
+  
+  // Get seller details through seller_profiles join
+  const sellerResult = await supabase
+    .from('seller_profiles')
+    .select(`
+      id,
+      municipality,
+      users!seller_profiles_user_id_fkey(
+        id,
+        full_name,
+        email,
+        phone_number
+      )
+    `)
+    .eq('id', order.seller_id)
+    .single();
+  
+  if (buyerResult.error) {
+    console.error('Buyer fetch error:', buyerResult.error);
+    throw new AppError('Failed to fetch buyer details', 500);
+  }
+  if (sellerResult.error) {
+    console.error('Seller fetch error:', sellerResult.error);
+    throw new AppError('Failed to fetch seller details', 500);
+  }
+  
+  // Combine user data with profile data
+  const buyer = buyerResult.data?.users ? {
+    ...buyerResult.data.users,
+    delivery_address: buyerResult.data.delivery_address,
+    municipality: buyerResult.data.municipality
+  } : null;
+  
+  const seller = sellerResult.data?.users ? {
+    ...sellerResult.data.users,
+    municipality: sellerResult.data.municipality
+  } : null;
+  
+  // Fetch messages
+  const messagesResult = await supabase
+    .from('messages')
+    .select('*')
+    .eq('order_id', order.id)
+    .order('created_at', { ascending: true });
+  
+  // Enrich messages with sender details
+  const enrichedMessages = await Promise.all(
+    (messagesResult.data || []).map(async (msg) => {
+      const { data: sender } = await supabase
+        .from('users')
+        .select('id, full_name, email')
+        .eq('id', msg.sender_id)
+        .single();
+      
+      return {
+        ...msg,
+        sender: sender
+      };
+    })
+  );
+  
+  res.status(200).json({
+    success: true,
+    data: {
+      order,
+      buyer,
+      seller,
+      messages: enrichedMessages
+    }
+  });
+});
+
+exports.getMessagesForDispute = asyncHandler(async (req, res, next) => {
+  const { buyer_id, seller_id, order_id, search, page = 1, limit = 50 } = req.query;
+  
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  let query = supabase.from('messages').select('*', { count: 'exact' });
+  
+  if (order_id) {
+    query = query.eq('order_id', order_id);
+  }
+  
+  if (search) {
+    query = query.ilike('message_text', `%${search}%`);
+  }
+  
+  const { data: messages, error, count } = await query
+    .order('created_at', { ascending: false })
+    .range(offset, offset + parseInt(limit) - 1);
+  
+  if (error) {
+    throw new AppError('Failed to fetch messages', 500);
+  }
+  
+  // Get sender details for each message
+  const enrichedMessages = await Promise.all(
+    (messages || []).map(async (msg) => {
+      const { data: sender } = await supabase
+        .from('users')
+        .select('id, full_name, email')
+        .eq('id', msg.sender_id)
+        .single();
+      
+      return {
+        ...msg,
+        sender: sender
+      };
+    })
+  );
+  
+  res.status(200).json({
+    success: true,
+    data: {
+      messages: enrichedMessages,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total_pages: Math.ceil(count / parseInt(limit))
       }
     }
   });

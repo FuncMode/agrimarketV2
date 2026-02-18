@@ -9,7 +9,6 @@ import { requireAuth } from '../core/auth.js';
 import { formatDate, formatCurrency } from '../utils/formatters.js';
 import { initNotificationSounds } from '../features/notifications/notification-sound.js';
 
-// Services
 import {
   getDashboardStats,
   getAllUsers,
@@ -21,7 +20,9 @@ import {
   getSystemLogs,
   getSocketConnections,
   getIPBlockingStats,
-  getDatabaseStats
+  getDatabaseStats,
+  getOrdersForDispute,
+  getOrderDetails
 } from '../services/admin.service.js';
 
 // ============ State ============
@@ -33,6 +34,8 @@ let currentIssues = [];
 let currentLogs = [];
 let currentUserPage = 1;
 let currentUserFilters = {};
+let currentDisputeOrdersPage = 1;
+let currentDisputeOrdersFilters = {};
 
 // ============ Initialization ============
 
@@ -62,7 +65,8 @@ const init = async () => {
     loadPendingVerifications(),
     loadOpenIssues(),
     loadUsers(),
-    loadSystemMonitoring()
+    loadSystemMonitoring(),
+    loadDisputeLogs()
   ]);
   
   // Attach event listeners
@@ -812,7 +816,6 @@ window.viewUserDetails = async (userId) => {
             <p class="text-sm"><strong>Joined:</strong> ${formatDate(user.created_at)}</p>
             <p class="text-sm"><strong>Last Updated:</strong> ${user.updated_at ? formatDate(user.updated_at) : 'N/A'}</p>
             <p class="text-sm"><strong>Verified:</strong> ${user.verified_at ? formatDate(user.verified_at) : 'Not verified'}</p>
-            <p class="text-sm"><strong>Total Orders:</strong> ${orderCount}</p>
             <p class="text-sm"><strong>Agreed to Terms:</strong> ${user.agreed_to_terms ? '✅ Yes' : '❌ No'}</p>
             ${user.agreed_at ? `<p class="text-sm"><strong>Terms Agreed At:</strong> ${formatDate(user.agreed_at)}</p>` : ''}
           </div>
@@ -1067,6 +1070,239 @@ window.deleteUserAction = async (userId) => {
   }
 };
 
+// ============ Dispute Logs (Orders & Messages) ============
+
+const loadDisputeLogs = async () => {
+  await Promise.all([
+    loadDisputeOrders()
+  ]);
+};
+
+const loadDisputeOrders = async (page = 1) => {
+  const tbody = document.getElementById('dispute-orders-table');
+  const mobileView = document.getElementById('dispute-orders-mobile');
+  
+  if (!tbody && !mobileView) return;
+  
+  try {
+    const filters = {
+      ...currentDisputeOrdersFilters,
+      page,
+      limit: 20
+    };
+    
+    const response = await getOrdersForDispute(filters);
+    const orders = response.data?.orders || [];
+    currentDisputeOrdersPage = page;
+    
+    if (!orders || orders.length === 0) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-500">No orders found</td></tr>';
+      if (mobileView) mobileView.innerHTML = '<p class="text-center text-gray-500 py-8">No orders found</p>';
+      return;
+    }
+    
+    // Desktop table view
+    if (tbody) {
+      tbody.innerHTML = orders.map(order => `
+        <tr>
+          <td class="font-mono text-sm">${order.id?.substring(0, 8) || 'N/A'}...</td>
+          <td class="text-sm">${order.buyer?.full_name || 'N/A'}</td>
+          <td class="text-sm">${order.seller?.full_name || 'N/A'}</td>
+          <td class="font-semibold">${formatCurrency(order.total_amount || 0)}</td>
+          <td><span class="badge ${getOrderStatusBadge(order.status)}">${order.status}</span></td>
+          <td class="text-sm">${formatDate(order.created_at)}</td>
+          <td>
+            <button class="btn btn-sm btn-primary" onclick="window.viewOrderForDispute('${order.id}')" title="View Details">
+              <i class="bi bi-eye"></i> View
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+    
+    // Mobile view
+    if (mobileView) {
+      mobileView.innerHTML = orders.map(order => `
+        <div class="card mb-4">
+          <div class="card-body">
+            <p class="font-mono text-sm text-gray-600">Order: ${order.id?.substring(0, 8) || 'N/A'}...</p>
+            <p class="font-semibold">${order.buyer?.full_name || 'N/A'} → ${order.seller?.full_name || 'N/A'}</p>
+            <p class="text-lg font-bold text-primary">${formatCurrency(order.total_amount || 0)}</p>
+            <p class="text-sm mb-2"><span class="badge ${getOrderStatusBadge(order.status)}">${order.status}</span></p>
+            <p class="text-xs text-gray-600 mb-3">${formatDate(order.created_at)}</p>
+            <button class="btn btn-sm btn-primary w-full" onclick="window.viewOrderForDispute('${order.id}')">
+              <i class="bi bi-eye"></i> View Details
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    // Pagination
+    if (response.data?.pagination) {
+      renderDisputeOrdersPagination(response.data.pagination);
+    }
+    
+  } catch (error) {
+    console.error('Error loading dispute orders:', error);
+    
+    // Handle different error types
+    let errorMessage = 'Failed to load orders';
+    if (error?.errors?.length > 0) {
+      // Validation errors
+      errorMessage = error.errors[0]?.msg || errorMessage;
+    } else if (error?.message === 'Validation failed') {
+      errorMessage = 'Invalid search parameters. Please check your input.';
+    }
+    
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8">
+        <p class="text-danger font-semibold">${errorMessage}</p>
+        <p class="text-sm text-gray-500 mt-2">Try clearing filters and search again</p>
+      </td></tr>`;
+    }
+    if (mobileView) {
+      mobileView.innerHTML = `<div class="text-center py-8">
+        <p class="text-danger font-semibold">${errorMessage}</p>
+        <p class="text-sm text-gray-500 mt-2">Try clearing filters and search again</p>
+      </div>`;
+    }
+  }
+};
+
+
+
+const renderDisputeOrdersPagination = (pagination) => {
+  const container = document.getElementById('dispute-orders-pagination');
+  if (!container) return;
+  
+  container.innerHTML = '';
+  
+  if (pagination.total_pages <= 1) return;
+  
+  // Previous button
+  if (pagination.page > 1) {
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'btn btn-sm btn-outline';
+    prevBtn.innerHTML = '<i class="bi bi-chevron-left"></i>';
+    prevBtn.onclick = () => loadDisputeOrders(pagination.page - 1);
+    container.appendChild(prevBtn);
+  }
+  
+  // Page numbers
+  for (let i = 1; i <= Math.min(pagination.total_pages, 5); i++) {
+    const pageBtn = document.createElement('button');
+    pageBtn.className = `btn btn-sm ${i === pagination.page ? 'btn-primary' : 'btn-outline'}`;
+    pageBtn.textContent = i;
+    pageBtn.onclick = () => loadDisputeOrders(i);
+    container.appendChild(pageBtn);
+  }
+  
+  // Next button
+  if (pagination.page < pagination.total_pages) {
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'btn btn-sm btn-outline';
+    nextBtn.innerHTML = '<i class="bi bi-chevron-right"></i>';
+    nextBtn.onclick = () => loadDisputeOrders(pagination.page + 1);
+    container.appendChild(nextBtn);
+  }
+};
+
+const getOrderStatusBadge = (status) => {
+  const badges = {
+    'pending': 'badge-warning',
+    'completed': 'badge-success',
+    'cancelled': 'badge-secondary',
+    'disputed': 'badge-danger'
+  };
+  return badges[status] || 'badge-info';
+};
+
+window.viewOrderForDispute = async (orderId) => {
+  showSpinner();
+  try {
+    const response = await getOrderDetails(orderId);
+    const { order, buyer, seller, messages } = response.data;
+    
+    const modal = createModal({
+      title: `Order Details - ${orderId.substring(0, 8)}...`,
+      content: `
+        <div class="space-y-6">
+          <!-- Order Info -->
+          <div class="border-b pb-4">
+            <h4 class="font-bold mb-3">Order Information</h4>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p class="text-gray-600">Order ID</p>
+                <p class="font-mono">${order.id.substring(0, 12)}...</p>
+              </div>
+              <div>
+                <p class="text-gray-600">Status</p>
+                <span class="badge ${getOrderStatusBadge(order.status)}">${order.status}</span>
+              </div>
+              <div>
+                <p class="text-gray-600">Amount</p>
+                <p class="font-bold">${formatCurrency(order.total_amount || 0)}</p>
+              </div>
+              <div>
+                <p class="text-gray-600">Date</p>
+                <p>${formatDate(order.created_at)}</p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Buyer & Seller -->
+          <div class="grid grid-cols-2 gap-4 border-b pb-4">
+            <div>
+              <h4 class="font-bold mb-2">Buyer</h4>
+              <p class="text-sm"><strong>${buyer?.full_name || 'N/A'}</strong></p>
+              <p class="text-xs text-gray-600">${buyer?.email || 'N/A'}</p>
+              ${buyer?.phone_number ? `<p class="text-xs text-gray-600">${buyer.phone_number}</p>` : ''}
+              ${buyer?.delivery_address ? `<p class="text-xs text-gray-600">${buyer.delivery_address}</p>` : ''}
+              ${buyer?.municipality ? `<p class="text-xs text-gray-600">${buyer.municipality}</p>` : ''}
+            </div>
+            <div>
+              <h4 class="font-bold mb-2">Seller</h4>
+              <p class="text-sm"><strong>${seller?.full_name || 'N/A'}</strong></p>
+              <p class="text-xs text-gray-600">${seller?.email || 'N/A'}</p>
+              ${seller?.phone_number ? `<p class="text-xs text-gray-600">${seller.phone_number}</p>` : ''}
+              ${seller?.municipality ? `<p class="text-xs text-gray-600">${seller.municipality}</p>` : ''}
+            </div>
+          </div>
+          
+          <!-- Messages -->
+          <div>
+            <h4 class="font-bold mb-3">Conversation History</h4>
+            <div class="max-h-64 overflow-y-auto space-y-2">
+              ${messages.length > 0 
+                ? messages.map(msg => `
+                  <div class="bg-gray-50 p-3 rounded text-sm">
+                    <p class="font-semibold text-xs text-gray-700">${msg.sender?.full_name || 'Unknown'}</p>
+                    <p>${msg.message_text}</p>
+                    <p class="text-xs text-gray-500 mt-1">${formatDate(msg.created_at)}</p>
+                  </div>
+                `).join('')
+                : '<p class="text-gray-500 text-center py-4">No messages</p>'
+              }
+            </div>
+          </div>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-outline" onclick="document.querySelector('.modal-backdrop').remove()">
+          <i class="bi bi-x-circle"></i> Close
+        </button>
+      `,
+      size: 'lg'
+    });
+    
+    hideSpinner();
+  } catch (error) {
+    hideSpinner();
+    showError('Failed to load order details: ' + error.message);
+  }
+};
+
 // ============ System Monitoring ============
 
 const loadSystemMonitoring = async () => {
@@ -1266,6 +1502,70 @@ const attachEventListeners = () => {
     btnRefreshDatabase.addEventListener('click', refreshHandler);
     eventListeners.push({ element: btnRefreshDatabase, event: 'click', handler: refreshHandler });
   }
+  
+  // Dispute orders search
+  const btnSearchDisputes = document.getElementById('btn-search-disputes');
+  if (btnSearchDisputes) {
+    const searchHandler = () => {
+      const buyerSearch = document.getElementById('dispute-search-buyer')?.value?.trim() || '';
+      const sellerSearch = document.getElementById('dispute-search-seller')?.value?.trim() || '';
+      const status = document.getElementById('dispute-order-status')?.value || '';
+      
+      currentDisputeOrdersFilters = {};
+      
+      // Send buyer and seller as separate filter parameters
+      if (buyerSearch) currentDisputeOrdersFilters.buyer_search = buyerSearch;
+      if (sellerSearch) currentDisputeOrdersFilters.seller_search = sellerSearch;
+      if (status) currentDisputeOrdersFilters.status = status;
+      
+      loadDisputeOrders(1);
+    };
+    btnSearchDisputes.addEventListener('click', searchHandler);
+    eventListeners.push({ element: btnSearchDisputes, event: 'click', handler: searchHandler });
+  }
+  
+  // Clear dispute filters button
+  const btnClearDisputes = document.getElementById('btn-clear-disputes');
+  if (btnClearDisputes) {
+    const clearHandler = () => {
+      const buyerInput = document.getElementById('dispute-search-buyer');
+      const sellerInput = document.getElementById('dispute-search-seller');
+      const statusSelect = document.getElementById('dispute-order-status');
+      
+      if (buyerInput) buyerInput.value = '';
+      if (sellerInput) sellerInput.value = '';
+      if (statusSelect) statusSelect.value = '';
+      
+      currentDisputeOrdersFilters = {};
+      currentDisputeOrdersPage = 1;
+      loadDisputeOrders(1);
+    };
+    btnClearDisputes.addEventListener('click', clearHandler);
+    eventListeners.push({ element: btnClearDisputes, event: 'click', handler: clearHandler });
+  }
+  
+  // Add Enter key support to dispute search inputs
+  const disputeSearchBuyer = document.getElementById('dispute-search-buyer');
+  const disputeSearchSeller = document.getElementById('dispute-search-seller');
+  const disputeOrderStatus = document.getElementById('dispute-order-status');
+  
+  [disputeSearchBuyer, disputeSearchSeller, disputeOrderStatus].forEach(element => {
+    if (element) {
+      const enterHandler = (e) => {
+        if (e.key === 'Enter') {
+          const btnSearch = document.getElementById('btn-search-disputes');
+          if (btnSearch) {
+            e.preventDefault();
+            btnSearch.click();
+          }
+        }
+      };
+      element.addEventListener('keypress', enterHandler);
+      eventListeners.push({ element, event: 'keypress', handler: enterHandler });
+    }
+  });
+  
+
 };
 
 const cleanupEventListeners = () => {

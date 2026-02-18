@@ -138,7 +138,9 @@ const ENDPOINTS = {
     LOGS: '/admin/logs',
     SOCKET_CONNECTIONS: '/admin/socket/connections',
     IP_BLOCKING: '/admin/security/ip-blocking',
-    DATABASE_STATS: '/admin/database/stats'
+    DATABASE_STATS: '/admin/database/stats',
+    DISPUTE_ORDERS: '/admin/dispute/orders',
+    DISPUTE_MESSAGES: '/admin/dispute/messages'
   },
   
   // Logging endpoints
