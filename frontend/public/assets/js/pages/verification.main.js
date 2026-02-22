@@ -31,17 +31,19 @@ const checkVerificationStatus = async () => {
     const response = await getVerificationStatus();
     const userStatus = response.data?.user_status;
     const verificationStatus = response.data?.verification?.status;
+    const adminNotes = response.data?.verification?.admin_notes;
     
     if (userStatus === 'verified') {
       showToast('Your account is already verified!', 'success');
       setTimeout(() => {
         window.location.href = '/seller.html';
       }, 2000);
-    } else if (userStatus === 'verification_pending') {
+    } else if (verificationStatus === 'more_evidence' || verificationStatus === 'rejected') {
+      const reason = adminNotes ? ` Details: ${adminNotes}` : '';
+      showToast(`Previous verification needs resubmission.${reason}`, 'warning');
+    } else if (userStatus === 'verification_pending' || verificationStatus === 'pending') {
       // Hide the form and show pending message
       hideFormShowPendingMessage();
-    } else if (verificationStatus === 'rejected') {
-      showToast('Previous verification was rejected. Please resubmit.', 'warning');
     }
   } catch (error) {
     console.error('Error checking verification status:', error);

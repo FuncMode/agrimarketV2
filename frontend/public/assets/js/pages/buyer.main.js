@@ -9,7 +9,7 @@ import { createModal, closeModal } from '../components/modal.js';
 import { createCarousel } from '../components/carousel.js';
 import { openIssueModal } from '../components/issue-modal.js';
 import { initMap, addMarkers, clearMarkers } from '../components/map.js';
-import { requireAuth, getToken } from '../core/auth.js';
+import { requireAuth, getToken, isVerified, getStatus } from '../core/auth.js';
 import { formatCurrency, formatRelativeTime } from '../utils/formatters.js';
 import { debounce } from '../utils/helpers.js';
 import { MUNICIPALITY_COORDINATES, RIZAL_MUNICIPALITIES, PRODUCT_TAGS } from '../utils/constants.js';
@@ -17,23 +17,23 @@ import { ENDPOINTS, buildUrl } from '../config/api.js';
 
 // Services
 import { listProducts, incrementViewCount } from '../services/product.service.js';
-import { 
-  getCart, 
-  addToCart as addToCartService, 
-  updateCartItem, 
-  removeFromCart, 
+import {
+  getCart,
+  addToCart as addToCartService,
+  updateCartItem,
+  removeFromCart,
   clearCart,
-  getCartCount 
+  getCartCount
 } from '../services/cart.service.js';
-import { 
-  createOrder, 
-  getOrders, 
+import {
+  createOrder,
+  getOrders,
   getOrderById,
   cancelOrder,
   confirmOrder,
-  rateOrder 
+  rateOrder
 } from '../services/order.service.js';
-import { 
+import {
   getConversations,
   getOrderMessages,
   sendMessage,
@@ -95,7 +95,7 @@ let userLocation = null;
 async function viewProductReviews(productId, productName) {
   try {
     showSpinner(null, 'md', 'primary', 'Loading reviews...');
-    
+
     const token = getToken();
     const response = await fetch(`/api/products/${productId}/reviews?page=1&limit=20`, {
       headers: {
@@ -104,21 +104,21 @@ async function viewProductReviews(productId, productName) {
       }
     });
     const result = await response.json();
-    
+
     hideSpinner();
-    
+
     if (!result.success) {
       showError(result.error || 'Failed to load reviews');
       return;
     }
-    
+
     const reviews = result.data.reviews || [];
-    
+
     if (reviews.length === 0) {
       showToast('No reviews yet for this product', 'info');
       return;
     }
-    
+
     const modalContent = `
       <div class="space-y-4">
         <div class="border-b pb-3">
@@ -132,16 +132,16 @@ async function viewProductReviews(productId, productName) {
               <div class="flex items-start justify-between mb-2">
                 <div>
                   <p class="font-semibold text-sm">${review.buyer_name || 'Anonymous'}</p>
-                  <p class="text-xs text-gray-500">${new Date(review.created_at).toLocaleDateString('en-US', { 
-                    month: 'long', 
-                    day: 'numeric', 
-                    year: 'numeric' 
-                  })}</p>
+                  <p class="text-xs text-gray-500">${new Date(review.created_at).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    })}</p>
                 </div>
                 <div class="flex gap-1 text-warning">
-                  ${[1,2,3,4,5].map(star => 
-                    `<i class="bi bi-star${star <= review.rating ? '-fill' : ''}"></i>`
-                  ).join('')}
+                  ${[1, 2, 3, 4, 5].map(star =>
+      `<i class="bi bi-star${star <= review.rating ? '-fill' : ''}"></i>`
+    ).join('')}
                 </div>
               </div>
               ${review.comment ? `
@@ -152,14 +152,14 @@ async function viewProductReviews(productId, productName) {
         </div>
       </div>
     `;
-    
+
     createModal({
       title: 'Product Reviews',
       content: modalContent,
       size: 'lg',
       footer: '<button class="btn btn-secondary" data-modal-close>Close</button>'
     });
-    
+
   } catch (error) {
     hideSpinner();
     console.error('Error loading reviews:', error);
@@ -175,26 +175,26 @@ window.viewProductReviews = viewProductReviews;
 const init = async () => {
   // Check authentication
   if (!requireAuth(['buyer'])) return;
-  
+
   // Initialize cart store
   cartStore.init();
-  
+
   // Initialize notification sounds
   initNotificationSounds();
-  
+
   // Initialize real-time features (socket) BEFORE rendering navbar
   await initializeRealTime();
-  
+
   // NOW initialize components that depend on socket
   renderNavbar();
-  
+
   // Wait for DOM to be fully ready before setting up navigation
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', setupNavigation);
   } else {
     setupNavigation();
   }
-  
+
   // Load initial cart from server
   try {
     const response = await getCart();
@@ -204,14 +204,14 @@ const init = async () => {
   } catch (error) {
     console.warn('Could not load cart:', error);
   }
-  
+
   // Populate municipality filter
   populateMunicipalityFilter();
-  
+
   // Load initial data (products will be loaded by showPage via navigation)
   await updateCartUI();
   await updateMessageBadge();
-  
+
   // Attach event listeners
   attachEventListeners();
 };
@@ -224,9 +224,9 @@ const setupNavigation = () => {
     const hash = window.location.hash.slice(1) || 'browse';
     showPage(hash);
   };
-  
+
   window.addEventListener('hashchange', handleHashChange);
-  
+
   // Call initial navigation immediately (DOM is ready since init() is called after DOMContentLoaded)
   handleHashChange();
 };
@@ -234,15 +234,15 @@ const setupNavigation = () => {
 const showPage = (page) => {
   // Define valid sections for buyer dashboard
   const validSections = ['browse', 'cart', 'orders', 'messaging', 'my-issues'];
-  
+
   // Update current page tracking
   currentPage = page;
-  
+
   // Update URL hash to persist section on reload
   if (window.location.hash.slice(1) !== page) {
     window.location.hash = page;
   }
-  
+
   // Close conversation when leaving messaging section
   if (page !== 'messaging') {
     currentConversation = null;
@@ -251,7 +251,7 @@ const showPage = (page) => {
       chatWindow.innerHTML = '<p class="text-center text-gray-500 py-12">Select a conversation to start messaging</p>';
     }
   }
-  
+
   // Hide all sections by setting display: none with !important
   const mainContent = document.querySelector('.container.mx-auto');
   if (mainContent) {
@@ -259,15 +259,15 @@ const showPage = (page) => {
       section.style.setProperty('display', 'none', 'important');
     });
   }
-  
+
   // Show requested section
   const section = document.getElementById(page);
-  
+
   if (section && validSections.includes(page)) {
     section.style.setProperty('display', 'block', 'important');
-    
+
     // Load page-specific data
-    switch(page) {
+    switch (page) {
       case 'browse':
         loadBrowseProducts();
         break;
@@ -306,9 +306,9 @@ const showPage = (page) => {
 const loadBrowseProducts = async () => {
   const container = document.getElementById('browse-products');
   if (!container) return;
-  
+
   showSpinner(container, 'md', 'primary', 'Loading products...');
-  
+
   try {
     // Prepare filters, handling tags array
     const filters = { ...browseFilters };
@@ -317,14 +317,14 @@ const loadBrowseProducts = async () => {
     } else {
       delete filters.tags;
     }
-    
+
     const response = await listProducts(filters);
     const products = response.data?.products || [];
     const total = response.total || products.length;
-    
+
     // Update products count
     updateProductsCount(total);
-    
+
     if (products.length === 0) {
       container.innerHTML = `
         <div class="text-center py-12 col-span-full">
@@ -335,7 +335,7 @@ const loadBrowseProducts = async () => {
       `;
       return;
     }
-    
+
     renderProductCards(products, container, {
       showActions: true,
       showSeller: true,
@@ -343,7 +343,7 @@ const loadBrowseProducts = async () => {
       onAddToCart: handleAddToCart,
       onViewReviews: viewProductReviews
     });
-    
+
   } catch (error) {
     console.error('Error loading products:', error);
     container.innerHTML = `
@@ -368,10 +368,10 @@ const updateProductsCount = (count) => {
 const populateMunicipalityFilter = () => {
   const municipalitySelect = document.getElementById('browse-municipality');
   if (!municipalitySelect) return;
-  
+
   const options = '<option value="">All Locations</option>' +
     RIZAL_MUNICIPALITIES.map(m => `<option value="${m}">${m}</option>`).join('');
-  
+
   municipalitySelect.innerHTML = options;
 };
 
@@ -388,25 +388,25 @@ const clearAllFilters = () => {
     page: 1,
     limit: 12
   };
-  
+
   // Reset UI
   const searchInput = document.getElementById('browse-search');
   if (searchInput) searchInput.value = '';
-  
+
   const categorySelect = document.getElementById('browse-category');
   if (categorySelect) categorySelect.value = '';
-  
+
   const municipalitySelect = document.getElementById('browse-municipality');
   if (municipalitySelect) municipalitySelect.value = '';
-  
+
   const sortSelect = document.getElementById('browse-sort');
   if (sortSelect) sortSelect.value = 'created_at:desc';
-  
+
   // Uncheck all tag checkboxes
   document.querySelectorAll('.product-tag-checkbox').forEach(checkbox => {
     checkbox.checked = false;
   });
-  
+
   // Reload products
   loadBrowseProducts();
 };
@@ -414,12 +414,12 @@ const clearAllFilters = () => {
 // Toggle between grid and map view
 const toggleView = (view) => {
   currentView = view;
-  
+
   const gridContainer = document.getElementById('browse-products');
   const mapContainer = document.getElementById('browse-map-container');
   const gridBtn = document.getElementById('view-grid');
   const mapBtn = document.getElementById('view-map');
-  
+
   if (view === 'grid') {
     gridContainer?.classList.remove('hidden');
     mapContainer?.classList.add('hidden');
@@ -430,7 +430,7 @@ const toggleView = (view) => {
     mapContainer?.classList.remove('hidden');
     gridBtn?.classList.remove('active');
     mapBtn?.classList.add('active');
-    
+
     // Initialize map if not already done
     if (!browseMap) {
       initBrowseMap();
@@ -442,23 +442,23 @@ const toggleView = (view) => {
 const initBrowseMap = () => {
   const mapContainer = document.getElementById('browse-map');
   if (!mapContainer || typeof L === 'undefined') return;
-  
+
   try {
     // Initialize map centered on Rizal
     browseMap = L.map('browse-map').setView([14.6037, 121.3084], 11);
-    
+
     // Add tile layer with error handling
     const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       maxZoom: 18,
       errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
     }).addTo(browseMap);
-    
+
     // Suppress tile loading errors
-    tileLayer.on('tileerror', function(error, tile) {
+    tileLayer.on('tileerror', function (error, tile) {
       // Silently handle tile errors
     });
-    
+
     // Load and display products on map
     loadProductsOnMap();
   } catch (error) {
@@ -469,7 +469,7 @@ const initBrowseMap = () => {
 // Load products on map
 const loadProductsOnMap = async () => {
   if (!browseMap) return;
-  
+
   try {
     // Get current products
     const filters = { ...browseFilters };
@@ -481,7 +481,7 @@ const loadProductsOnMap = async () => {
 
     const response = await listProducts({ ...filters, limit: 100 });
     const products = response.data?.products || [];
-    
+
     // Clear existing markers
     browseMap.eachLayer((layer) => {
       if (layer instanceof L.Marker) {
@@ -494,10 +494,10 @@ const loadProductsOnMap = async () => {
     products.forEach(product => {
       const coords = MUNICIPALITY_COORDINATES[product.municipality];
       if (!coords) return;
-      
+
       const sellerId = product.seller?.id || product.seller_name;
       const key = `${sellerId}_${product.municipality}`;
-      
+
       if (!sellerGroups[key]) {
         sellerGroups[key] = {
           seller_name: product.seller_name || 'Unknown Seller',
@@ -507,18 +507,18 @@ const loadProductsOnMap = async () => {
           products: []
         };
       }
-      
+
       sellerGroups[key].products.push(product);
     });
 
     // Add one marker per seller per location
     Object.values(sellerGroups).forEach(sellerGroup => {
       const { seller_name, seller_verified, municipality, coordinates, products } = sellerGroup;
-      
+
       const marker = L.marker([coordinates.latitude, coordinates.longitude]);
-      
+
       let popupContent;
-      
+
       if (products.length > 0) {
         // Create popup content showing all products from this seller
         const productList = products.map(product => `
@@ -536,7 +536,7 @@ const loadProductsOnMap = async () => {
             </div>
           </div>
         `).join('');
-        
+
         popupContent = `
           <div class="p-3" style="min-width: 280px; max-width: 320px;">
             <div class="flex items-center gap-2 mb-3">
@@ -587,7 +587,7 @@ const loadProductsOnMap = async () => {
           </div>
         `;
       }
-      
+
       marker.bindPopup(popupContent, {
         maxWidth: 320,
         className: 'seller-popup'
@@ -608,10 +608,10 @@ window.viewProductFromMap = async (productId) => {
     } else {
       delete filters.tags;
     }
-    
+
     const response = await listProducts(filters);
     const product = response.data?.products.find(p => p.id === productId);
-    
+
     if (product) {
       viewProductDetails(product);
     }
@@ -625,7 +625,7 @@ window.viewAllSellerProducts = async (sellerName, municipality) => {
   try {
     // Filter products to show only from this seller in this municipality
     const originalFilters = { ...browseFilters };
-    
+
     // Apply seller filter by searching for seller name
     // Since we don't have direct seller filter, we'll show a modal instead
     const filters = { ...browseFilters };
@@ -634,20 +634,20 @@ window.viewAllSellerProducts = async (sellerName, municipality) => {
     } else {
       delete filters.tags;
     }
-    
+
     const response = await listProducts({ ...filters, limit: 100 });
     const allProducts = response.data?.products || [];
-    
+
     // Filter products by seller and municipality
-    const sellerProducts = allProducts.filter(product => 
+    const sellerProducts = allProducts.filter(product =>
       product.seller_name === sellerName && product.municipality === municipality
     );
-    
+
     if (sellerProducts.length === 0) {
       showError('No products found for this seller');
       return;
     }
-    
+
     // Create modal to show all seller products
     const modal = createModal({
       title: `${sellerName} - ${municipality}`,
@@ -683,7 +683,7 @@ window.viewAllSellerProducts = async (sellerName, municipality) => {
       `,
       size: 'lg'
     });
-    
+
   } catch (error) {
     console.error('Error viewing seller products:', error);
     showError('Failed to load seller products');
@@ -695,12 +695,12 @@ window.viewProductFromModal = async (productId) => {
   try {
     const response = await listProducts({ limit: 100 });
     const product = response.data?.products.find(p => p.id === productId);
-    
+
     if (product) {
       // Close only the seller products modal, keep the product details modal intact
       const sellerModals = document.querySelectorAll('.modal-backdrop:not(#product-details-modal)');
       sellerModals.forEach(modal => modal.remove());
-      
+
       // Show product details
       viewProductDetails(product);
     }
@@ -713,14 +713,14 @@ window.addToCartFromModal = async (productId) => {
   try {
     const response = await listProducts({ limit: 100 });
     const product = response.data?.products.find(p => p.id === productId);
-    
+
     if (product) {
       await handleAddToCart(product);
-      
+
       // Close only the seller products modal, not the product details modal
       const sellerModals = document.querySelectorAll('.modal-backdrop:not(#product-details-modal)');
       sellerModals.forEach(modal => modal.remove());
-      
+
       showToast('Product added to cart!', 'success');
     }
   } catch (error) {
@@ -733,12 +733,12 @@ const viewProductDetails = async (product) => {
   try {
     // Increment view count
     incrementViewCount(product.id);
-    
+
     // Get modal elements with null checks
     let modal = document.getElementById('product-details-modal');
     let titleEl = document.getElementById('product-details-title');
     let infoSection = document.getElementById('product-info-content');
-    
+
     // If modal doesn't exist, create it using the modal component
     if (!modal || !titleEl || !infoSection) {
       const dynamicModal = createModal({
@@ -763,39 +763,39 @@ const viewProductDetails = async (product) => {
         `,
         size: 'xl'
       });
-      
+
       // Use the dynamic modal elements
       infoSection = document.getElementById('dynamic-product-info');
-      
+
       if (!infoSection) {
         showError('Unable to create product modal');
         return;
       }
-      
+
       // Render product information in dynamic modal
       renderProductInfoForDynamicModal(product, infoSection);
-      
+
       // Initialize map for dynamic modal
       setTimeout(() => {
         initDynamicProductMap(product);
       }, 100);
-      
+
       return;
     }
-    
+
     // Use existing static modal
     titleEl.textContent = product.name;
     renderProductInfo(product, infoSection);
     modal.classList.remove('hidden');
-    
+
     // Initialize map after modal is shown
     setTimeout(() => {
       initProductMap(product);
     }, 100);
-    
+
     // Set up close handler for static modal
     setupModalCloseHandlers();
-    
+
   } catch (error) {
     console.error('Error viewing product details:', error);
     showError('Failed to load product details');
@@ -807,13 +807,13 @@ const renderProductInfo = (product, container) => {
     console.error('Product info container not found');
     return;
   }
-  
+
   try {
     // Prepare photos array
-    const photos = product.photos && product.photos.length > 0 
-      ? product.photos 
+    const photos = product.photos && product.photos.length > 0
+      ? product.photos
       : (product.photo_path ? [product.photo_path] : []);
-    
+
     // Create carousel HTML
     const carouselHtml = createCarousel(photos, product.name, {
       height: '400px',
@@ -822,7 +822,7 @@ const renderProductInfo = (product, container) => {
       showArrows: photos.length > 1,
       autoPlay: true
     });
-    
+
     container.innerHTML = `
       ${carouselHtml}
       
@@ -893,13 +893,13 @@ const renderProductInfoForDynamicModal = (product, container) => {
     console.error('Product info container not found');
     return;
   }
-  
+
   try {
     // Prepare photos array
-    const photos = product.photos && product.photos.length > 0 
-      ? product.photos 
+    const photos = product.photos && product.photos.length > 0
+      ? product.photos
       : (product.photo_path ? [product.photo_path] : []);
-    
+
     // Create carousel HTML
     const carouselHtml = createCarousel(photos, product.name, {
       height: '300px',
@@ -908,7 +908,7 @@ const renderProductInfoForDynamicModal = (product, container) => {
       showArrows: photos.length > 1,
       autoPlay: false
     });
-    
+
     container.innerHTML = `
       <div class="space-y-4">
         <!-- Product Carousel -->
@@ -981,7 +981,7 @@ const renderProductInfoForDynamicModal = (product, container) => {
 const initDynamicProductMap = async (product) => {
   const mapContainer = document.getElementById('dynamic-product-map');
   if (!mapContainer || typeof L === 'undefined') return;
-  
+
   try {
     // Get seller coordinates
     let sellerCoords = null;
@@ -996,20 +996,20 @@ const initDynamicProductMap = async (product) => {
         lng: MUNICIPALITY_COORDINATES[product.municipality].longitude
       };
     }
-    
+
     if (!sellerCoords) {
       console.warn('No coordinates available for product');
       mapContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500"><i class="bi bi-geo-alt-fill mr-2"></i>Map not available</div>';
       return;
     }
-    
+
     // Initialize map
     const map = L.map('dynamic-product-map').setView([sellerCoords.lat, sellerCoords.lng], 13);
-    
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
-    
+
     // Add seller marker
     const sellerIcon = L.divIcon({
       className: 'custom-marker seller-marker',
@@ -1017,18 +1017,18 @@ const initDynamicProductMap = async (product) => {
       iconSize: [30, 40],
       iconAnchor: [15, 40]
     });
-    
+
     L.marker([sellerCoords.lat, sellerCoords.lng], { icon: sellerIcon })
       .addTo(map)
       .bindPopup(`<strong>${product.seller_name || 'Seller'}</strong><br>${product.municipality || 'Location'}`)
       .openPopup();
-      
+
     // Update distance display
     const distanceEl = document.getElementById('dynamic-distance-display');
     if (distanceEl) {
       distanceEl.innerHTML = `<i class="bi bi-geo-alt"></i> ${product.municipality || 'Unknown Location'}`;
     }
-    
+
   } catch (error) {
     console.error('Error initializing dynamic product map:', error);
     mapContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500"><i class="bi bi-exclamation-triangle mr-2"></i>Map unavailable</div>';
@@ -1038,10 +1038,10 @@ const initDynamicProductMap = async (product) => {
 // Initialize product map in modal
 const initProductMap = async (product) => {
   const mapContainer = document.getElementById('product-map');
-  
+
   try {
 
-    
+
     // Get seller coordinates (from product data or fallback to municipality)
     let sellerCoords = null;
     if (product.latitude && product.longitude) {
@@ -1059,15 +1059,15 @@ const initProductMap = async (product) => {
     } else {
       console.warn('No coordinates available for product or municipality:', product.municipality);
     }
-    
+
     // Get user location
     await getUserLocation();
 
-    
+
     // Default center (Manila area)
     let center = [14.6037, 121.3084];
     let zoom = 11;
-    
+
     // Calculate center between user and seller if both available
     if (userLocation && sellerCoords) {
       const midLat = (userLocation.latitude + sellerCoords.lat) / 2;
@@ -1084,24 +1084,24 @@ const initProductMap = async (product) => {
       zoom = 13;
 
     }
-    
+
     // Initialize map
     productDetailsMap = L.map('product-map').setView(center, zoom);
-    
+
     // Add tile layer with error handling
     const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       maxZoom: 18,
       errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
     }).addTo(productDetailsMap);
-    
+
     // Suppress tile loading errors
-    tileLayer.on('tileerror', function(error, tile) {
+    tileLayer.on('tileerror', function (error, tile) {
       // Silently handle tile errors
     });
-    
+
     const markers = [];
-    
+
     // Add seller marker with red icon
     if (sellerCoords) {
       const sellerIcon = L.divIcon({
@@ -1110,7 +1110,7 @@ const initProductMap = async (product) => {
         iconSize: [30, 40],
         iconAnchor: [15, 40]
       });
-      
+
       const sellerMarker = L.marker([sellerCoords.lat, sellerCoords.lng], { icon: sellerIcon })
         .addTo(productDetailsMap)
         .bindPopup(`
@@ -1123,11 +1123,11 @@ const initProductMap = async (product) => {
             <p class="text-sm text-gray-600">📍 Seller Location</p>
           </div>
         `);
-      
+
       markers.push(sellerMarker);
 
     }
-    
+
     // Add user marker with blue icon
     if (userLocation) {
       const userIcon = L.divIcon({
@@ -1136,7 +1136,7 @@ const initProductMap = async (product) => {
         iconSize: [30, 40],
         iconAnchor: [15, 40]
       });
-      
+
       const userMarker = L.marker([userLocation.latitude, userLocation.longitude], { icon: userIcon })
         .addTo(productDetailsMap)
         .bindPopup(`
@@ -1148,10 +1148,10 @@ const initProductMap = async (product) => {
             <p class="text-sm text-gray-600">📍 Buyer Location</p>
           </div>
         `);
-      
+
       markers.push(userMarker);
 
-      
+
       // Calculate and display distance if we have seller coordinates
       if (sellerCoords) {
         // Create a temporary product-like object with proper coordinates
@@ -1163,7 +1163,7 @@ const initProductMap = async (product) => {
         calculateProductDistance(userLocation, productWithCoords);
       }
     }
-    
+
     // Fit map to show both markers
     if (markers.length > 1) {
       const group = new L.featureGroup(markers);
@@ -1173,7 +1173,7 @@ const initProductMap = async (product) => {
       productDetailsMap.setView(markers[0].getLatLng(), 13);
 
     }
-    
+
   } catch (error) {
     console.error('Error initializing product map:', error);
     mapContainer.innerHTML = `
@@ -1193,16 +1193,16 @@ const getUserLocation = async () => {
 
     return userLocation; // Already have location
   }
-  
 
-  
+
+
   try {
     // First try to get from user profile
 
     const profileResponse = await getProfile();
     if (profileResponse.success && profileResponse.data) {
       const { latitude, longitude, address, municipality } = profileResponse.data;
-      
+
       if (latitude && longitude) {
         userLocation = {
           latitude: parseFloat(latitude),
@@ -1212,7 +1212,7 @@ const getUserLocation = async () => {
 
         return userLocation;
       }
-      
+
       // If profile has municipality but no coordinates, use municipality coordinates
       if (municipality && MUNICIPALITY_COORDINATES[municipality]) {
         userLocation = {
@@ -1224,9 +1224,9 @@ const getUserLocation = async () => {
         return userLocation;
       }
     }
-    
 
-    
+
+
     // If not in profile, try browser geolocation
     if (navigator.geolocation) {
       return new Promise((resolve, reject) => {
@@ -1251,15 +1251,15 @@ const getUserLocation = async () => {
 
             resolve(userLocation);
           },
-          { 
-            timeout: 8000, 
+          {
+            timeout: 8000,
             enableHighAccuracy: false,
             maximumAge: 300000 // Cache for 5 minutes
           }
         );
       });
     }
-    
+
     // Final fallback
     userLocation = {
       latitude: 14.6037,
@@ -1268,7 +1268,7 @@ const getUserLocation = async () => {
     };
 
     return userLocation;
-    
+
   } catch (error) {
     console.error('Error getting user location:', error);
     // Always return some location
@@ -1284,36 +1284,36 @@ const getUserLocation = async () => {
 
 const calculateProductDistance = async (userLoc, product) => {
   const distanceDisplay = document.getElementById('distance-display');
-  
+
   try {
     distanceDisplay.innerHTML = '<i class="bi bi-geo-alt"></i> Calculating distance...';
     distanceDisplay.classList.add('loading');
     distanceDisplay.classList.remove('error');
-    
+
     // Ensure we have valid coordinates
     if (!userLoc || !userLoc.latitude || !userLoc.longitude) {
       throw new Error('User location not available');
     }
-    
+
     if (!product.latitude || !product.longitude) {
       throw new Error('Product location not available');
     }
-    
+
     const response = await calculateDistance(
       userLoc.latitude,
       userLoc.longitude,
       parseFloat(product.latitude),
       parseFloat(product.longitude)
     );
-    
- 
-    
+
+
+
     if (response && response.success && response.data && typeof response.data.distance_km === 'number') {
       const distanceKm = response.data.distance_km;
-      const estimatedTime = Math.round(distanceKm * 3); 
-      
+      const estimatedTime = Math.round(distanceKm * 3);
 
-      
+
+
       distanceDisplay.innerHTML = `
         <div>
           <div><i class="bi bi-geo-alt"></i> ${distanceKm.toFixed(1)} km away</div>
@@ -1321,41 +1321,41 @@ const calculateProductDistance = async (userLoc, product) => {
         </div>
       `;
       distanceDisplay.classList.remove('loading');
-      
+
       // Try to get and display route
       await displayRoute(userLoc, product, distanceKm);
-      
+
     } else {
       console.warn('API response invalid, using fallback calculation:', response);
       throw new Error(response?.message || `Invalid API response: ${JSON.stringify(response)}`);
     }
-    
+
   } catch (error) {
     console.error('Error calculating distance via API:', error);
-    
+
     // Fallback: Calculate straight-line distance using Haversine formula
     try {
 
-      
+
       if (!userLoc || !userLoc.latitude || !userLoc.longitude) {
         throw new Error('User location not available for fallback calculation');
       }
-      
+
       if (!product.latitude || !product.longitude) {
         throw new Error('Product location not available for fallback calculation');
       }
-      
+
       const fallbackDistance = haversineDistance(
         userLoc.latitude,
         userLoc.longitude,
         parseFloat(product.latitude),
         parseFloat(product.longitude)
       );
-      
-      const estimatedTime = Math.round(fallbackDistance * 4); // More conservative for straight-line
-      
 
-      
+      const estimatedTime = Math.round(fallbackDistance * 4); // More conservative for straight-line
+
+
+
       distanceDisplay.innerHTML = `
         <div>
           <div><i class="bi bi-geo-alt"></i> ~${fallbackDistance.toFixed(1)} km away</div>
@@ -1364,10 +1364,10 @@ const calculateProductDistance = async (userLoc, product) => {
         </div>
       `;
       distanceDisplay.classList.remove('loading');
-      
+
       // Try to display a simple straight line route
       await displayStraightLineRoute(userLoc, product);
-      
+
     } catch (fallbackError) {
       console.error('Fallback distance calculation also failed:', fallbackError);
       distanceDisplay.innerHTML = `
@@ -1386,25 +1386,25 @@ const calculateProductDistance = async (userLoc, product) => {
 const displayStraightLineRoute = async (userLoc, product) => {
   try {
     if (!productDetailsMap) return;
-    
+
     const routeCoordinates = [
       [userLoc.latitude, userLoc.longitude],
       [parseFloat(product.latitude), parseFloat(product.longitude)]
     ];
-    
+
     const routeLine = L.polyline(routeCoordinates, {
       color: '#28a745',
       weight: 3,
       opacity: 0.7,
       dashArray: '10, 5'
     }).addTo(productDetailsMap);
-    
+
     // Store route line for cleanup
     if (!productDetailsMap.routeLayers) {
       productDetailsMap.routeLayers = [];
     }
     productDetailsMap.routeLayers.push(routeLine);
-    
+
 
   } catch (error) {
     console.warn('Could not display straight-line route:', error);
@@ -1416,11 +1416,11 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371; // Earth's radius in kilometers
   const dLat = toRadians(lat2 - lat1);
   const dLon = toRadians(lon2 - lon1);
-  
+
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  
+
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 };
@@ -1431,19 +1431,19 @@ const displayRoute = async (userLoc, product, distance) => {
   try {
     // Only show route for reasonable distances (< 50km to avoid cluttering)
     if (distance > 50 || !productDetailsMap) return;
-    
+
     const routeResponse = await getRoute(
       userLoc.latitude,
       userLoc.longitude,
       parseFloat(product.latitude),
       parseFloat(product.longitude)
     );
-    
 
-    
+
+
     if (routeResponse.success && routeResponse.data) {
       let routeCoordinates = [];
-      
+
       // Check if we have geometry data
       if (routeResponse.data.geometry && routeResponse.data.geometry.coordinates) {
         // Handle GeoJSON LineString format from OSRM
@@ -1458,7 +1458,7 @@ const displayRoute = async (userLoc, product, distance) => {
           [parseFloat(product.latitude), parseFloat(product.longitude)]
         ];
       }
-      
+
       // Add route line to map
       const routeLine = L.polyline(routeCoordinates, {
         color: '#28a745',
@@ -1466,13 +1466,13 @@ const displayRoute = async (userLoc, product, distance) => {
         opacity: 0.8,
         dashArray: '5, 10'
       }).addTo(productDetailsMap);
-      
+
       // Store route line for cleanup
       if (!productDetailsMap.routeLayers) {
         productDetailsMap.routeLayers = [];
       }
       productDetailsMap.routeLayers.push(routeLine);
-      
+
       // Update distance display with route info if available
       if (routeResponse.data.duration_minutes) {
         const distanceDisplay = document.getElementById('distance-display');
@@ -1484,7 +1484,7 @@ const displayRoute = async (userLoc, product, distance) => {
           </div>
         `;
       }
-      
+
       // Fit map to route, but don't zoom in too much
       const bounds = routeLine.getBounds();
       productDetailsMap.fitBounds(bounds.pad(0.1), { maxZoom: 14 });
@@ -1499,22 +1499,22 @@ const setupModalCloseHandlers = () => {
   try {
     const modal = document.getElementById('product-details-modal');
     const closeBtn = document.getElementById('close-product-modal');
-    
+
     if (!modal || !closeBtn) {
       console.warn('Modal or close button not found, skipping close handlers setup');
       return;
     }
-    
+
     // Close button handler
     closeBtn.onclick = closeProductDetailsModal;
-    
+
     // Click outside modal to close
     modal.onclick = (e) => {
       if (e.target === modal) {
         closeProductDetailsModal();
       }
     };
-    
+
     // ESC key to close
     const escKeyHandler = (e) => {
       if (e.key === 'Escape') {
@@ -1535,9 +1535,9 @@ const closeProductDetailsModal = () => {
       console.warn('Product details modal not found');
       return;
     }
-    
+
     modal.classList.add('hidden');
-    
+
     // Clean up map and route layers
     if (productDetailsMap) {
       // Clean up route layers
@@ -1547,7 +1547,7 @@ const closeProductDetailsModal = () => {
         });
         productDetailsMap.routeLayers = [];
       }
-      
+
       productDetailsMap.remove();
       productDetailsMap = null;
     }
@@ -1560,13 +1560,13 @@ const handleAddToCart = async (product, quantity = 1) => {
   try {
     await addToCartService(product.id, quantity);
     showSuccess('Added to cart!');
-    
+
     // Update cart count
     await updateCartUI();
-    
+
     // Update cart store
     cartStore.add(product, quantity);
-    
+
   } catch (error) {
     console.error('Error adding to cart:', error);
     showError(error.message || 'Failed to add to cart');
@@ -1578,15 +1578,15 @@ const handleAddToCart = async (product, quantity = 1) => {
 const loadCart = async () => {
   const container = document.getElementById('cart-items');
   if (!container) return;
-  
+
   showSpinner(container, 'md', 'primary', 'Loading cart...');
-  
+
   try {
     const response = await getCart();
     currentCart = response.data?.cart || { items: [], total: 0 };
-    
+
     renderCart();
-    
+
   } catch (error) {
     console.error('Error loading cart:', error);
     showError('Failed to load cart');
@@ -1597,7 +1597,7 @@ const renderCart = () => {
   const container = document.getElementById('cart-items');
   const subtotalEl = document.getElementById('cart-subtotal');
   const totalEl = document.getElementById('cart-total');
-  
+
   if (!currentCart || currentCart.items.length === 0) {
     container.innerHTML = `
       <div class="text-center py-12">
@@ -1613,7 +1613,7 @@ const renderCart = () => {
     attachCheckoutListener();
     return;
   }
-  
+
   container.innerHTML = currentCart.items.map(item => `
     <div class="card" data-item-id="${item.id}">
       <div class="card-body">
@@ -1654,16 +1654,16 @@ const renderCart = () => {
       </div>
     </div>
   `).join('');
-  
+
   // Calculate totals
   const subtotal = currentCart.items.reduce((sum, item) => {
     const itemTotal = (item.product?.price_per_unit || 0) * item.quantity;
     return sum + itemTotal;
   }, 0);
-  
+
   subtotalEl.textContent = formatCurrency(subtotal);
   totalEl.textContent = formatCurrency(subtotal);
-  
+
   // Attach checkout button listener
   attachCheckoutListener();
 };
@@ -1672,11 +1672,11 @@ const renderCart = () => {
 const attachCheckoutListener = () => {
   const btnCheckout = document.getElementById('btn-checkout');
   if (!btnCheckout) return;
-  
+
   // Remove old listeners by cloning
   const newBtn = btnCheckout.cloneNode(true);
   btnCheckout.parentNode.replaceChild(newBtn, btnCheckout);
-  
+
   // Add new listener
   newBtn.addEventListener('click', handleCheckout);
 };
@@ -1695,7 +1695,7 @@ const updateCartUI = async () => {
 window.updateCartQuantity = async (itemId, quantity) => {
   quantity = parseInt(quantity);
   if (quantity < 1) return;
-  
+
   try {
     await updateCartItem(itemId, quantity);
     await loadCart();
@@ -1723,7 +1723,7 @@ window.removeCartItem = async (itemId) => {
     `,
     size: 'sm'
   });
-  
+
   // Cancel button handler
   const cancelBtn = modalInstance.modal.querySelector('[data-dismiss-modal]');
   if (cancelBtn) {
@@ -1731,19 +1731,19 @@ window.removeCartItem = async (itemId) => {
       modalInstance.close();
     });
   }
-  
+
   const confirmBtn = document.getElementById('btn-confirm-remove');
   if (confirmBtn) {
     confirmBtn.addEventListener('click', async () => {
       confirmBtn.disabled = true;
       confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Removing...';
-      
+
       try {
         await removeFromCart(itemId);
-        
+
         // Close modal first
         modalInstance.close();
-        
+
         // Then reload cart and show success
         await loadCart();
         await updateCartUI();
@@ -1761,19 +1761,40 @@ window.removeCartItem = async (itemId) => {
 // ============ Checkout ============
 
 const handleCheckout = async () => {
+  // Cart state should be validated first so users get the correct message.
   if (!currentCart || currentCart.items.length === 0) {
     showError('Your cart is empty');
     return;
   }
-  
+
   // Get unique sellers in cart
   const uniqueSellers = [...new Set(currentCart.items.map(item => item.seller_id))];
-  
+
   if (uniqueSellers.length === 0) {
     showError('No items in cart');
     return;
   }
-  
+
+  // Check if buyer is verified before allowing checkout
+  if (!isVerified()) {
+    const status = getStatus();
+    let message = 'Kailangang maging verified buyer ka muna bago makapag-checkout. Mangyaring kumpletohin ang iyong verification.';
+
+    if (status === 'verification_pending' || status === 'pending') {
+      message = 'Ang iyong account verification ay kasalukuyang pino-process. Mangyaring maghintay para sa approval bago makapag-checkout.';
+    } else if (status === 'rejected') {
+      message = 'Ang iyong verification ay na-reject. Mangyaring mag-resubmit ng iyong mga documents sa profile section.';
+    }
+
+    showError(message);
+
+    // Delay redirect slightly so the user sees the message
+    setTimeout(() => {
+      window.location.href = '/verification.html';
+    }, 3000);
+    return;
+  }
+
   // If only one seller, proceed directly
   if (uniqueSellers.length === 1) {
     const sellerItem = currentCart.items.find(item => item.seller_id === uniqueSellers[0]);
@@ -1781,7 +1802,7 @@ const handleCheckout = async () => {
     showCheckoutModal(uniqueSellers[0], sellerName);
     return;
   }
-  
+
   // If multiple sellers, show selection modal
   const modalContent = `
     <div class="space-y-4">
@@ -1789,11 +1810,11 @@ const handleCheckout = async () => {
       <p class="text-sm text-gray-600">Please select a seller to place an order. You can place separate orders for items from other sellers.</p>
       <div id="seller-list" class="space-y-2">
         ${uniqueSellers.map(sellerId => {
-          const sellerItem = currentCart.items.find(item => item.seller_id === sellerId);
-          const sellerName = sellerItem?.product?.seller?.user?.full_name || 'Unknown Seller';
-          const sellerItems = currentCart.items.filter(item => item.seller_id === sellerId);
-          const subtotal = sellerItems.reduce((sum, item) => sum + ((item.product?.price_per_unit || 0) * item.quantity), 0);
-          return `
+    const sellerItem = currentCart.items.find(item => item.seller_id === sellerId);
+    const sellerName = sellerItem?.product?.seller?.user?.full_name || 'Unknown Seller';
+    const sellerItems = currentCart.items.filter(item => item.seller_id === sellerId);
+    const subtotal = sellerItems.reduce((sum, item) => sum + ((item.product?.price_per_unit || 0) * item.quantity), 0);
+    return `
             <div class="border rounded-lg p-4 cursor-pointer hover:bg-gray-50" onclick="window.selectSellerForCheckout('${sellerId}', '${sellerName}')">
               <div class="flex justify-between items-center">
                 <div>
@@ -1804,15 +1825,15 @@ const handleCheckout = async () => {
               </div>
             </div>
           `;
-        }).join('')}
+  }).join('')}
       </div>
     </div>
   `;
-  
+
   const footer = `
     <button class="btn btn-outline" onclick="document.querySelector('.modal-backdrop').remove()">Cancel</button>
   `;
-  
+
   const modal = createModal({
     title: 'Select Seller',
     content: modalContent,
@@ -1830,7 +1851,7 @@ const showCheckoutModal = (sellerId, sellerName) => {
   // Filter cart items for this seller
   const sellerItems = currentCart.items.filter(item => item.seller_id === sellerId);
   const subtotal = sellerItems.reduce((sum, item) => sum + ((item.product?.price_per_unit || 0) * item.quantity), 0);
-  
+
   const modalContent = `
     <form id="checkout-form" class="space-y-4">
       <div class="alert alert-info">
@@ -1884,60 +1905,57 @@ const showCheckoutModal = (sellerId, sellerName) => {
       </div>
     </form>
   `;
-  
+
   const footer = `
     <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">Cancel</button>
     <button class="btn btn-primary" id="btn-place-order">
       <i class="bi bi-check-circle"></i> Place Order
     </button>
   `;
-  
+
   const modal = createModal({
     title: 'Checkout',
     content: modalContent,
     footer: footer,
     size: 'md'
   });
-  
+
   // Store user coordinates for order creation
   let userDeliveryCoordinates = { latitude: null, longitude: null };
-  
+
   // Load and populate user's address from profile
   const loadUserAddress = async () => {
     try {
       const response = await getProfile();
-      
+
       // Handle different response structures
       const userData = response?.data?.user || response?.user || response?.data || response;
       const addressField = document.getElementById('delivery-address');
-      
+
       if (addressField && userData) {
         // For buyers, the address is stored in buyer_profile.delivery_address
         const fullAddress = userData.buyer_profile?.delivery_address || userData.delivery_address || userData.address || '';
-        
+
         // Get coordinates from profile if available
         const profileLat = userData.buyer_profile?.delivery_latitude || userData.delivery_latitude || userData.latitude;
         const profileLng = userData.buyer_profile?.delivery_longitude || userData.delivery_longitude || userData.longitude;
-        
+
         if (profileLat && profileLng) {
           // Use coordinates from profile
           userDeliveryCoordinates.latitude = parseFloat(profileLat);
           userDeliveryCoordinates.longitude = parseFloat(profileLng);
-          console.log('Using coordinates from profile:', userDeliveryCoordinates);
         } else if (fullAddress) {
           // Try to geocode the address to get coordinates
-          console.log('Geocoding address:', fullAddress);
           const geocodeResult = await geocodeAddress(fullAddress);
-          
+
           if (geocodeResult.success && geocodeResult.data) {
             userDeliveryCoordinates.latitude = geocodeResult.data.latitude;
             userDeliveryCoordinates.longitude = geocodeResult.data.longitude;
-            console.log('Geocoded coordinates:', userDeliveryCoordinates);
           } else {
             console.warn('Could not geocode address:', geocodeResult.message);
           }
         }
-        
+
         // Set the address and disable the field
         addressField.value = fullAddress || 'No address found in profile';
         addressField.readOnly = true;
@@ -1951,10 +1969,10 @@ const showCheckoutModal = (sellerId, sellerName) => {
       }
     }
   };
-  
+
   // Load address when modal is ready
   loadUserAddress();
-  
+
   const btnPlaceOrder = document.getElementById('btn-place-order');
   btnPlaceOrder.addEventListener('click', async () => {
     const form = document.getElementById('checkout-form');
@@ -1962,10 +1980,10 @@ const showCheckoutModal = (sellerId, sellerName) => {
       form.reportValidity();
       return;
     }
-    
+
     // Get preferred time value
     const preferredTimeValue = document.getElementById('preferred-time').value;
-    
+
     const orderData = {
       seller_id: sellerId,
       delivery_option: document.getElementById('delivery-option').value,
@@ -1976,25 +1994,24 @@ const showCheckoutModal = (sellerId, sellerName) => {
       preferred_time: preferredTimeValue || null,
       order_notes: document.getElementById('order-notes').value || null
     };
-    
-    console.log('Order data being sent:', orderData);
-    
+
+
     try {
       btnPlaceOrder.disabled = true;
       btnPlaceOrder.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
-      
+
       const response = await createOrder(orderData);
-      
+
       if (response.success) {
         // Close modal using the modal's close method
         modal.close();
-        
+
         // Show success message
         showSuccess('Order placed successfully!');
-        
+
         // Reload cart and navigate to orders (don't await to avoid blocking)
         loadCart().then(() => updateCartUI()).catch(err => console.error('Error refreshing cart:', err));
-        
+
         // Navigate to orders page
         setTimeout(() => {
           window.location.hash = 'orders';
@@ -2016,7 +2033,7 @@ const showCheckoutModal = (sellerId, sellerName) => {
 const loadOrders = async () => {
   const container = document.getElementById('orders-list');
   if (!container) return;
-  
+
   // Update active filter button state
   document.querySelectorAll('.order-filter').forEach(btn => {
     btn.classList.remove('active');
@@ -2024,19 +2041,19 @@ const loadOrders = async () => {
       btn.classList.add('active');
     }
   });
-  
+
   showSpinner(container, 'md', 'primary', 'Loading orders...');
-  
+
   try {
     // Don't send status if it's 'all' - backend doesn't accept it
     const filters = { ...orderFilters };
     if (filters.status === 'all') {
       delete filters.status;
     }
-    
+
     const response = await getOrders(filters);
     currentOrders = response.data?.orders || [];
-    
+
     if (currentOrders.length === 0) {
       // Dynamic empty state message based on filter
       let emptyMessage = 'No orders yet';
@@ -2051,7 +2068,7 @@ const loadOrders = async () => {
       } else if (orderFilters.status === 'cancelled') {
         emptyMessage = 'No cancelled orders yet';
       }
-      
+
       container.innerHTML = `
         <div class="text-center py-12">
           <i class="bi bi-inbox text-6xl text-gray-400"></i>
@@ -2063,12 +2080,12 @@ const loadOrders = async () => {
       attachOrderFilterListeners();
       return;
     }
-    
+
     container.innerHTML = currentOrders.map(order => createOrderCard(order)).join('');
-    
+
     // Attach filter listeners after rendering
     attachOrderFilterListeners();
-    
+
   } catch (error) {
     console.error('Error loading orders:', error);
     showError('Failed to load orders');
@@ -2083,21 +2100,16 @@ const createOrderCard = (order) => {
     completed: 'success',
     cancelled: 'danger'
   };
-  
+
   const statusColor = statusColors[order.status] || 'secondary';
   const sellerName = order.seller?.user?.full_name || 'Seller';
   const isCompleted = order.status === 'completed';
   const hasRating = order.buyer_rating && order.buyer_rating > 0;
-  
+
   // Debug log for completed orders
   if (isCompleted) {
-    console.log('Completed Order:', order.order_number, {
-      status: order.status,
-      buyer_rating: order.buyer_rating,
-      hasRating: hasRating
-    });
   }
-  
+
   return `
     <div class="card" data-order-id="${order.id}">
       <div class="card-body">
@@ -2222,12 +2234,12 @@ window.viewOrderDetails = async (orderId) => {
   try {
     const response = await getOrderById(orderId);
     const order = response.data?.order;
-    
+
     if (!order) {
       showError('Order not found');
       return;
     }
-    
+
     const modalContent = `
       <div class="space-y-4">
         <div class="flex justify-between items-center">
@@ -2244,9 +2256,9 @@ window.viewOrderDetails = async (orderId) => {
           ${order.seller?.rating && order.seller.rating > 0 ? `
             <div class="flex items-center gap-2 mt-2">
               <div class="flex gap-1 text-warning text-sm">
-                ${[1,2,3,4,5].map(star => 
-                  `<i class="bi bi-star${star <= Math.round(order.seller.rating) ? '-fill' : ''}"></i>`
-                ).join('')}
+                ${[1, 2, 3, 4, 5].map(star =>
+      `<i class="bi bi-star${star <= Math.round(order.seller.rating) ? '-fill' : ''}"></i>`
+    ).join('')}
               </div>
               <span class="text-sm font-semibold">${order.seller.rating.toFixed(1)} / 5.0</span>
               <button class="btn btn-sm btn-outline text-xs" onclick="window.viewSellerReviews('${order.seller.id}', '${order.seller.user.full_name}')">
@@ -2308,9 +2320,9 @@ window.viewOrderDetails = async (orderId) => {
             <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
               <div class="flex items-center gap-2 mb-2">
                 <div class="flex gap-1 text-warning">
-                  ${[1,2,3,4,5].map(star => 
-                    `<i class="bi bi-star${star <= order.buyer_rating ? '-fill' : ''}"></i>`
-                  ).join('')}
+                  ${[1, 2, 3, 4, 5].map(star =>
+      `<i class="bi bi-star${star <= order.buyer_rating ? '-fill' : ''}"></i>`
+    ).join('')}
                 </div>
                 <span class="font-semibold">${order.buyer_rating}/5</span>
               </div>
@@ -2359,13 +2371,13 @@ window.viewOrderDetails = async (orderId) => {
         ` : ''}
       </div>
     `;
-    
+
     createModal({
       title: 'Order Details',
       content: modalContent,
       size: 'md'
     });
-    
+
   } catch (error) {
     console.error('Error loading order details:', error);
     showError(error.message || 'Failed to load order details');
@@ -2379,21 +2391,21 @@ window.cancelOrder = async (orderId) => {
       <textarea id="cancel-reason" class="form-control" rows="3" placeholder="Enter cancellation reason..." required></textarea>
     </div>
   `;
-  
+
   const footer = `
     <button class="btn btn-outline" onclick="document.querySelector('.modal-backdrop').remove()">Cancel</button>
     <button class="btn btn-danger" id="btn-confirm-cancel">
       <i class="bi bi-x-circle"></i> Cancel Order
     </button>
   `;
-  
+
   const modal = createModal({
     title: 'Cancel Order',
     content: modalContent,
     footer: footer,
     size: 'sm'
   });
-  
+
   const confirmBtn = document.getElementById('btn-confirm-cancel');
   if (confirmBtn) {
     confirmBtn.addEventListener('click', async () => {
@@ -2402,19 +2414,19 @@ window.cancelOrder = async (orderId) => {
         showError('Please provide a reason for cancellation');
         return;
       }
-      
+
       confirmBtn.disabled = true;
       confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Cancelling...';
-      
+
       try {
         await cancelOrder(orderId, reason);
-        
+
         // Close modal immediately after success
         modal.close();
-        
+
         // Show success message
         showSuccess('Order cancelled successfully');
-        
+
         // Reload orders (don't await to avoid blocking)
         loadOrders().catch(err => console.error('Error reloading orders:', err));
       } catch (error) {
@@ -2433,7 +2445,7 @@ window.confirmOrderReceived = async (orderId) => {
     // Fetch fresh order data to get latest delivery proof
     const response = await getOrderById(orderId);
     const order = response.data?.order;
-    
+
     if (!order) {
       showError('Order not found');
       return;
@@ -2501,11 +2513,11 @@ window.confirmOrderReceived = async (orderId) => {
       `,
       size: 'md'
     });
-    
+
     // Handle image preview
     const fileInput = document.getElementById('receipt-proof');
     const imagePreview = document.getElementById('image-preview-receipt');
-    
+
     if (fileInput && imagePreview) {
       fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
@@ -2520,23 +2532,23 @@ window.confirmOrderReceived = async (orderId) => {
         }
       });
     }
-    
+
     const btnConfirm = document.getElementById('btn-confirm-received');
     btnConfirm.addEventListener('click', async () => {
       const file = fileInput?.files[0];
-      
+
       try {
         btnConfirm.disabled = true;
         btnConfirm.innerHTML = '<i class="bi bi-hourglass-split"></i> Confirming...';
-        
+
         await confirmOrder(orderId, file);
-        
+
         // Close modal using the modal's close method
         modal.close();
-        
+
         // Show success message
         showSuccess('Order confirmed! Waiting for seller confirmation.');
-        
+
         // Reload orders to get updated status
         await loadOrders();
       } catch (error) {
@@ -2558,15 +2570,15 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
     // Fetch order details to get products
     const response = await getOrderById(orderId);
     const order = response.data?.order;
-    
+
     if (!order || !order.items || order.items.length === 0) {
       showError('Order details not found');
       return;
     }
-    
+
     const items = order.items;
     const productRatings = {};
-    
+
     // Create rating UI for each product
     const productsHTML = items.map((item, index) => `
       <div class="border border-gray-200 rounded-lg p-4 mb-3" data-product-id="${item.product_id}">
@@ -2593,7 +2605,7 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
         </div>
       </div>
     `).join('');
-    
+
     const modal = createModal({
       title: `⭐ Rate Products from Order #${orderNumber}`,
       content: `
@@ -2616,25 +2628,25 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
       `,
       size: 'lg'
     });
-    
+
     const btnSubmit = document.getElementById('btn-submit-rating');
     const ratingLabels = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent'];
-    
+
     // Setup rating for each product
     items.forEach((item, index) => {
       const container = document.querySelector(`[data-product-index="${index}"]`);
       if (!container) return;
-      
+
       const stars = container.querySelectorAll('i');
       const ratingText = document.querySelector(`.rating-text-${index}`);
-      
+
       let selectedRating = 0;
-      
+
       stars.forEach(star => {
         star.addEventListener('click', () => {
           selectedRating = parseInt(star.dataset.rating);
           productRatings[item.product_id] = selectedRating;
-          
+
           // Update stars
           stars.forEach((s, i) => {
             if (i < selectedRating) {
@@ -2645,13 +2657,13 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
               s.classList.add('bi-star');
             }
           });
-          
+
           ratingText.textContent = `${ratingLabels[selectedRating]} (${selectedRating}/5)`;
-          
+
           // Enable submit if at least one product rated
           btnSubmit.disabled = Object.keys(productRatings).length === 0;
         });
-        
+
         // Hover effects
         star.addEventListener('mouseenter', () => {
           const rating = parseInt(star.dataset.rating);
@@ -2659,7 +2671,7 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
             if (i < rating) s.classList.add('text-warning');
           });
         });
-        
+
         star.addEventListener('mouseleave', () => {
           stars.forEach((s, i) => {
             if (i >= selectedRating) s.classList.remove('text-warning');
@@ -2667,40 +2679,40 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
         });
       });
     });
-    
+
     // Handle submit
     btnSubmit.addEventListener('click', async () => {
       if (Object.keys(productRatings).length === 0) {
         showError('Please rate at least one product');
         return;
       }
-      
+
       try {
         btnSubmit.disabled = true;
         btnSubmit.innerHTML = '<i class="bi bi-hourglass-split"></i> Submitting...';
-        
+
         // Build reviews array
         const reviews = Object.entries(productRatings).map(([productId, rating]) => {
           const commentBox = document.querySelector(`.product-comment[data-product-index]`);
           const productIndex = items.findIndex(item => item.product_id === productId);
           const comment = document.querySelector(`.product-comment[data-product-index="${productIndex}"]`)?.value || '';
-          
+
           return {
             product_id: productId,
             rating: rating,
             comment: comment.trim()
           };
         });
-        
+
         const response = await rateOrder(orderId, reviews);
-        
+
         if (response && response.success !== false) {
           // Close modal using the modal's close method
           modal.close();
-          
+
           // Show success message
           showSuccess('Reviews submitted successfully!');
-          
+
           // Reload orders
           setTimeout(() => {
             loadOrders().catch(err => console.error('Error reloading orders:', err));
@@ -2708,7 +2720,7 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
         } else {
           throw new Error(response?.message || 'Failed to submit reviews');
         }
-        
+
       } catch (error) {
         console.error('Error submitting rating:', error);
         showError(error.message || 'Failed to submit reviews');
@@ -2716,7 +2728,7 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
         btnSubmit.innerHTML = '<i class="bi bi-star"></i> Submit Reviews';
       }
     });
-    
+
   } catch (error) {
     console.error('Error loading order for rating:', error);
     showError('Failed to load order details');
@@ -2734,14 +2746,14 @@ window.viewSellerReviews = async (sellerId, sellerName) => {
       }
     });
     const data = await response.json();
-    
+
     if (!data.success) {
       showError(data.message || 'Failed to load reviews');
       return;
     }
-    
+
     const reviews = data.data?.reviews || [];
-    
+
     const reviewsHTML = reviews.length > 0 ? reviews.map(review => `
       <div class="border border-gray-200 rounded-lg p-4 mb-3">
         <div class="flex justify-between items-start mb-2">
@@ -2749,9 +2761,9 @@ window.viewSellerReviews = async (sellerId, sellerName) => {
             <div class="flex items-center gap-2">
               <span class="font-semibold">${review.buyer_name || 'Anonymous'}</span>
               <div class="flex gap-1 text-warning text-sm">
-                ${[1,2,3,4,5].map(star => 
-                  `<i class="bi bi-star${star <= review.rating ? '-fill' : ''}"></i>`
-                ).join('')}
+                ${[1, 2, 3, 4, 5].map(star =>
+      `<i class="bi bi-star${star <= review.rating ? '-fill' : ''}"></i>`
+    ).join('')}
               </div>
             </div>
             <p class="text-xs text-gray-500">${formatRelativeTime(review.created_at)}</p>
@@ -2775,7 +2787,7 @@ window.viewSellerReviews = async (sellerId, sellerName) => {
         <p>No reviews yet</p>
       </div>
     `;
-    
+
     createModal({
       title: `Reviews for ${sellerName}`,
       content: `
@@ -2793,7 +2805,7 @@ window.viewSellerReviews = async (sellerId, sellerName) => {
       size: 'lg',
       footer: '<button class="btn btn-secondary" data-modal-close>Close</button>'
     });
-    
+
   } catch (error) {
     console.error('Error loading reviews:', error);
     showError('Failed to load reviews');
@@ -2810,7 +2822,7 @@ window.reportOrderIssue = (orderId, orderNumber) => {
 const loadMyIssues = async () => {
   const container = document.getElementById('issues-list');
   if (!container) return;
-  
+
   // Update active filter button state
   document.querySelectorAll('.issue-filter').forEach(btn => {
     btn.classList.remove('active');
@@ -2818,20 +2830,20 @@ const loadMyIssues = async () => {
       btn.classList.add('active');
     }
   });
-  
+
   showSpinner(container, 'md', 'primary', 'Loading issues...');
-  
+
   try {
     const response = await getMyIssues();
     let issues = response.data?.issues || [];
-    
+
     // Filter by status if not 'all'
     if (issueFilters.status && issueFilters.status !== 'all') {
       issues = issues.filter(issue => issue.status === issueFilters.status);
     }
-    
+
     currentIssues = issues;
-    
+
     if (currentIssues.length === 0) {
       let emptyMessage = 'No issues reported';
       if (issueFilters.status === 'under_review') {
@@ -2841,7 +2853,7 @@ const loadMyIssues = async () => {
       } else if (issueFilters.status === 'rejected') {
         emptyMessage = 'No rejected issues';
       }
-      
+
       container.innerHTML = `
         <div class="text-center py-12">
           <i class="bi bi-flag text-6xl text-gray-400"></i>
@@ -2852,7 +2864,7 @@ const loadMyIssues = async () => {
       attachIssueFilterListeners();
       return;
     }
-    
+
     container.innerHTML = currentIssues.map(issue => createIssueCard(issue)).join('');
     attachIssueFilterListeners();
   } catch (error) {
@@ -2873,13 +2885,13 @@ const createIssueCard = (issue) => {
     resolved: 'success',
     rejected: 'danger'
   };
-  
+
   const statusIcons = {
     under_review: 'hourglass-split',
     resolved: 'check-circle-fill',
     rejected: 'x-circle-fill'
   };
-  
+
   return `
     <div class="card hover:shadow-lg transition-shadow">
       <div class="card-body">
@@ -2942,18 +2954,18 @@ window.viewIssueDetails = async (issueId) => {
   try {
     const response = await getIssue(issueId);
     const issue = response.data?.issue;
-    
+
     if (!issue) {
       showError('Issue not found');
       return;
     }
-    
+
     const statusColors = {
       under_review: 'warning',
       resolved: 'success',
       rejected: 'danger'
     };
-    
+
     const modal = createModal({
       title: 'Issue Details',
       content: `
@@ -2981,9 +2993,9 @@ window.viewIssueDetails = async (issueId) => {
               <h4 class="font-semibold mb-2">Evidence (${issue.evidence_urls.length})</h4>
               <div class="grid grid-cols-2 gap-2">
                 ${issue.evidence_urls.map(url => {
-                  const fullUrl = getIssueEvidenceUrl(url);
-                  return `<img src="${fullUrl}" alt="Evidence" class="w-full h-32 object-cover rounded-lg border cursor-pointer" onclick="window.open('${fullUrl}', '_blank')">`;
-                }).join('')}
+        const fullUrl = getIssueEvidenceUrl(url);
+        return `<img src="${fullUrl}" alt="Evidence" class="w-full h-32 object-cover rounded-lg border cursor-pointer" onclick="window.open('${fullUrl}', '_blank')">`;
+      }).join('')}
               </div>
             </div>
           ` : ''}
@@ -3040,10 +3052,10 @@ const updateMessageBadge = async () => {
   try {
     const response = await getConversations();
     const conversations = response.data?.conversations || [];
-    
+
     // Count total unread messages
     const totalUnread = conversations.reduce((sum, conv) => sum + (conv.unread_count || 0), 0);
-    
+
     // Use centralized navbar function for consistency
     updateMessagesCount(totalUnread);
   } catch (error) {
@@ -3057,7 +3069,7 @@ const updateOnlineStatusDisplay = () => {
   if (currentPage === 'messaging') {
     loadConversations();
   }
-  
+
   // Update chat header status using online-status module
   const headerStatus = document.getElementById('chat-status');
   if (headerStatus && headerStatus.dataset.userId) {
@@ -3073,11 +3085,11 @@ const updateOnlineStatusDisplay = () => {
 const loadConversations = async () => {
   // First, update the conversations data in the background
   await updateConversationsData();
-  
+
   // Then render if container exists
   const container = document.getElementById('conversations-list');
   if (!container) return;
-  
+
   renderConversationsList(container);
 };
 
@@ -3122,7 +3134,7 @@ const renderConversationsList = (container) => {
     </div>
   `;
   }).join('');
-  
+
   // Add status badges to conversation items
   new Promise(resolve => setTimeout(resolve, 0)).then(() => {
     document.querySelectorAll('.status-badge-container').forEach(container => {
@@ -3143,10 +3155,10 @@ const updateConversationBadge = async (orderId) => {
   try {
     // First update the cached data
     await updateConversationsData();
-    
+
     // Then find the conversation in cache
     const conversation = currentConversations.find(c => c.order_id === orderId);
-    
+
     if (conversation) {
       const badge = document.querySelector(`[data-conversation-badge="${orderId}"]`);
       if (badge) {
@@ -3157,7 +3169,7 @@ const updateConversationBadge = async (orderId) => {
           badge.style.display = 'none';
         }
       }
-      
+
       // Update last message preview
       const item = document.querySelector(`[data-order-id="${orderId}"]`);
       if (item) {
@@ -3176,16 +3188,16 @@ window.openConversation = async (orderId) => {
   // Get the user ID from the conversation element's data attribute for consistency
   const conversationItem = document.querySelector(`[data-order-id="${orderId}"]`);
   const userId = conversationItem?.dataset.userId;
-  
+
   // Store userId globally to ensure consistency in openOrderChat
   window.conversationUserId = userId;
-  
+
   window.openOrderChat(orderId, userId);
 };
 
 window.openOrderChat = async (orderId, userId) => {
   currentConversation = orderId;
-  
+
   // Join conversation room via socket for real-time updates
   try {
     const { default: socketService } = await import('../services/socket.service.js');
@@ -3193,38 +3205,38 @@ window.openOrderChat = async (orderId, userId) => {
   } catch (error) {
     console.warn('Failed to join socket conversation:', error);
   }
-  
+
   // Navigate to messaging page first
   window.location.hash = '#messaging';
-  
+
   // Wait for the messaging section to be visible, then open the chat
   setTimeout(async () => {
     const chatWindow = document.getElementById('chat-window');
-    
+
     if (!chatWindow) {
       console.error('Chat window element not found');
       return;
     }
-    
+
     try {
       // Mark messages as read immediately when opening conversation
       try {
         const markReadResponse = await markMessagesAsRead(orderId);
         updateConversationBadge(orderId);
-        
+
         // Immediately update navbar badge
         updateMessageBadge();
       } catch (error) {
         console.error('Failed to mark messages as read:', error);
       }
-      
+
       // Get fresh message data
       const response = await getOrderMessages(orderId);
       const messages = response.data?.messages || [];
       const userRole = response.data?.user_role || 'buyer';
       const orderStatus = response.data?.order_status;
       const isCancelled = orderStatus === 'cancelled';
-      
+
       chatWindow.innerHTML = `
         <div class="flex flex-col h-96">
           <div class="border-b p-4 bg-gray-50" id="chat-header">
@@ -3259,26 +3271,26 @@ window.openOrderChat = async (orderId, userId) => {
           </div>
         </div>
       `;
-      
+
       // Update chat header with seller info
       const headerName = document.getElementById('chat-user-name');
       if (headerName) {
         const sellerName = response.data?.seller_name || 'Seller';
         headerName.textContent = sellerName;
       }
-      
+
       // Auto-scroll to bottom
       const messagesContainer = document.getElementById('chat-messages');
       if (messagesContainer) {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
       }
-      
+
       // Handle send message
       const chatForm = document.getElementById('chat-form');
       if (chatForm) {
         chatForm.addEventListener('submit', handleSendMessage);
       }
-      
+
     } catch (error) {
       console.error('Error loading messages:', error);
       showError('Failed to load messages');
@@ -3290,7 +3302,7 @@ const createMessageBubble = (message, userRole) => {
   const isSender = message.sender?.role === userRole;
   const alignClass = isSender ? 'justify-end' : 'justify-start';
   const bgClass = isSender ? 'bg-primary text-white' : 'bg-gray-200';
-  
+
   return `
     <div class="flex ${alignClass}">
       <div class="${bgClass} rounded-lg px-4 py-2 max-w-xs">
@@ -3303,24 +3315,24 @@ const createMessageBubble = (message, userRole) => {
 
 const handleSendMessage = async (e) => {
   e.preventDefault();
-  
+
   const input = document.getElementById('message-input');
   const messageText = input.value.trim();
-  
+
   if (!messageText) return;
-  
+
   // Clear input immediately
   input.value = '';
-  
+
   try {
     await sendMessage({
       order_id: currentConversation,
       message_text: messageText
     });
-    
+
     // Reload messages
     await window.openOrderChat(currentConversation);
-    
+
     // Focus input for next message
     setTimeout(() => {
       const newInput = document.getElementById('message-input');
@@ -3328,7 +3340,7 @@ const handleSendMessage = async (e) => {
         newInput.focus();
       }
     }, 50);
-    
+
   } catch (error) {
     console.error('Error sending message:', error);
     showError('Failed to send message');
@@ -3342,7 +3354,7 @@ const handleSendMessage = async (e) => {
 const initializeRealTime = async () => {
   try {
     const { initSocket, on, onInitialOnlineUsers, onUserOnline, onUserOffline } = await import('../services/socket.service.js');
-    
+
     // Create a promise that resolves when initial online users are loaded
     let resolveInitialUsers;
     let hasResolved = false; // Prevent double resolution
@@ -3354,21 +3366,21 @@ const initializeRealTime = async () => {
         }
       };
     });
-    
+
     // Set a timeout to resolve the promise after 10 seconds (in case server never responds)
     const timeoutId = setTimeout(() => {
       resolveInitialUsers();
     }, 10000);
-    
+
     // Initialize socket FIRST before setting up online status listeners
     const socket = initSocket();
-    
+
     // NOW initialize the online-status module (socket exists now)
     initOnlineStatus();
-    
+
     // Initialize live order updates
     initLiveUpdates();
-    
+
     // Register callback to reload orders on real-time updates
     onUpdate((data) => {
       console.log('Order updated, reloading orders...', data);
@@ -3376,11 +3388,11 @@ const initializeRealTime = async () => {
         loadOrders();
       }
     });
-    
+
     if (socket) {
       // IMPORTANT: Register all socket listeners immediately
       // The socket will connect in the background and fire events when ready
-      
+
       // Listen for initial online users list when socket connects
       onInitialOnlineUsers((data) => {
         if (data.onlineUsers && Array.isArray(data.onlineUsers)) {
@@ -3390,32 +3402,32 @@ const initializeRealTime = async () => {
           loadConversations(); // Refresh conversations to show correct status
         }
       });
-      
+
       // CRITICAL: Use onUserOnline/onUserOffline for guaranteed listener registration
       // These functions use socket.on() directly, ensuring listeners are set before events fire
       onUserOnline((data) => {
         updateOnlineStatusDisplay();
       });
-      
+
       onUserOffline((data) => {
         updateOnlineStatusDisplay();
       });
-      
+
       // Listen for new messages from socket
       on('message_received', (data) => {
         // ALWAYS update conversations data, even if UI isn't visible
         (async () => {
           await updateConversationsData();
-          
+
           // Check if user is currently viewing this conversation
           const isViewingThisConversation = currentPage === 'messaging' && currentConversation === data.order_id;
-          
+
           // ALWAYS update the conversations list preview on the left side (real-time)
           const container = document.getElementById('conversations-list');
           if (container) {
             renderConversationsList(container);
           }
-          
+
           // Only show notification and update badge if NOT currently viewing this conversation
           if (!isViewingThisConversation) {
             // Update message badge in navbar
@@ -3430,7 +3442,7 @@ const initializeRealTime = async () => {
             if (chatMessages) {
               addMessageBubbleToChat(data);
             }
-            
+
             // Auto-mark incoming messages as read if user is viewing the conversation
             setTimeout(async () => {
               try {
@@ -3445,7 +3457,7 @@ const initializeRealTime = async () => {
           }
         })();
       });
-      
+
       // Listen for message read receipts
       on('message_read_receipt', (data) => {
         if (currentConversation === data.orderId) {
@@ -3458,7 +3470,7 @@ const initializeRealTime = async () => {
         // Always update navbar badge
         updateMessageBadge();
       });
-      
+
       // Listen for order updates
       on('order:updated', (data) => {
         showToast(`Order #${data.order_number} status: ${data.status}`, 'info');
@@ -3475,26 +3487,26 @@ const initializeRealTime = async () => {
 // Add new message bubble to chat in real-time
 const addMessageBubbleToChat = (message) => {
   const chatMessages = document.getElementById('chat-messages');
-  
+
   // Get current user from auth
   const currentUser = getCurrentUserSync();
   const currentUserId = currentUser?.id;
-  
+
   // Determine if this is a sent message
   const isSender = message.sender_id === currentUserId;
-  
+
   const alignClass = isSender ? 'justify-end' : 'justify-start';
   const bgClass = isSender ? 'bg-primary text-white' : 'bg-gray-200';
-  
+
   // Get sender name - try multiple possible field names
   const senderName = message.sender?.full_name || message.senderName || message.sender_name || (isSender ? 'You' : 'Seller');
-  
+
   // Format the time properly
   let timeText = 'now';
   if (message.created_at) {
     timeText = formatRelativeTime(message.created_at);
   }
-  
+
   const bubble = `
     <div class="flex ${alignClass}">
       <div class="${bgClass} rounded-lg px-4 py-2 max-w-xs">
@@ -3504,9 +3516,9 @@ const addMessageBubbleToChat = (message) => {
       </div>
     </div>
   `;
-  
+
   chatMessages.insertAdjacentHTML('beforeend', bubble);
-  
+
   // Auto-scroll to bottom
   chatMessages.scrollTop = chatMessages.scrollHeight;
 };
@@ -3549,7 +3561,7 @@ const attachEventListeners = () => {
     searchInput.addEventListener('input', searchHandler);
     eventListeners.push({ element: searchInput, event: 'input', handler: searchHandler });
   }
-  
+
   // Browse category filter
   const categorySelect = document.getElementById('browse-category');
   if (categorySelect) {
@@ -3561,7 +3573,7 @@ const attachEventListeners = () => {
     categorySelect.addEventListener('change', categoryHandler);
     eventListeners.push({ element: categorySelect, event: 'change', handler: categoryHandler });
   }
-  
+
   // Browse municipality filter
   const municipalitySelect = document.getElementById('browse-municipality');
   if (municipalitySelect) {
@@ -3576,7 +3588,7 @@ const attachEventListeners = () => {
     municipalitySelect.addEventListener('change', municipalityHandler);
     eventListeners.push({ element: municipalitySelect, event: 'change', handler: municipalityHandler });
   }
-  
+
   // Product tags checkboxes
   document.querySelectorAll('.product-tag-checkbox').forEach(checkbox => {
     const tagHandler = (e) => {
@@ -3597,7 +3609,7 @@ const attachEventListeners = () => {
     checkbox.addEventListener('change', tagHandler);
     eventListeners.push({ element: checkbox, event: 'change', handler: tagHandler });
   });
-  
+
   // Clear filters button
   const clearFiltersBtn = document.getElementById('clear-filters');
   if (clearFiltersBtn) {
@@ -3605,7 +3617,7 @@ const attachEventListeners = () => {
     clearFiltersBtn.addEventListener('click', clearHandler);
     eventListeners.push({ element: clearFiltersBtn, event: 'click', handler: clearHandler });
   }
-  
+
   // View toggle buttons
   const gridBtn = document.getElementById('view-grid');
   if (gridBtn) {
@@ -3613,14 +3625,14 @@ const attachEventListeners = () => {
     gridBtn.addEventListener('click', gridHandler);
     eventListeners.push({ element: gridBtn, event: 'click', handler: gridHandler });
   }
-  
+
   const mapBtn = document.getElementById('view-map');
   if (mapBtn) {
     const mapHandler = () => toggleView('map');
     mapBtn.addEventListener('click', mapHandler);
     eventListeners.push({ element: mapBtn, event: 'click', handler: mapHandler });
   }
-  
+
   // Browse sort filter
   const sortSelect = document.getElementById('browse-sort');
   if (sortSelect) {
@@ -3644,17 +3656,17 @@ const attachOrderFilterListeners = () => {
     // Remove any existing listeners by cloning the element
     const newBtn = btn.cloneNode(true);
     btn.parentNode.replaceChild(newBtn, btn);
-    
+
     // Add new listener
     newBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      
+
       // Update active state
       document.querySelectorAll('.order-filter').forEach(b => {
         b.classList.remove('active');
       });
       newBtn.classList.add('active');
-      
+
       // Update filter and reload
       orderFilters.status = newBtn.dataset.status;
       loadOrders();
@@ -3682,12 +3694,12 @@ const cleanup = () => {
     productDetailsMap.remove();
     productDetailsMap = null;
   }
-  
+
   if (browseMap) {
     browseMap.remove();
     browseMap = null;
   }
-  
+
   // Clean up online status
   cleanupOnlineStatus();
 };
@@ -3734,7 +3746,7 @@ window.handleAddToCartFromDynamicModal = async (productId) => {
   try {
     const quantityInput = document.getElementById('dynamic-product-quantity');
     const quantity = quantityInput ? parseInt(quantityInput.value) || 1 : 1;
-    
+
     // Find the product from current products list
     const filters = { ...browseFilters };
     if (filters.tags && filters.tags.length > 0) {
@@ -3742,23 +3754,23 @@ window.handleAddToCartFromDynamicModal = async (productId) => {
     } else {
       delete filters.tags;
     }
-    
+
     const response = await listProducts({ ...filters, limit: 100 });
     const product = response.data?.products.find(p => p.id === productId);
-    
+
     if (!product) {
       showError('Product not found');
       return;
     }
-    
+
     await handleAddToCart(product, quantity);
-    
+
     // Close modal after successful add to cart
     const modals = document.querySelectorAll('.modal-backdrop');
     modals.forEach(modal => modal.remove());
-    
+
     showToast('Product added to cart!', 'success');
-    
+
   } catch (error) {
     console.error('Error adding product to cart from dynamic modal:', error);
     showError('Failed to add product to cart');
@@ -3769,7 +3781,7 @@ window.handleAddToCartFromModal = async (productId) => {
   try {
     const quantityInput = document.getElementById('product-quantity');
     const quantity = quantityInput ? parseInt(quantityInput.value) || 1 : 1;
-    
+
     // Find the product from current products list
     const filters = { ...browseFilters };
     if (filters.tags && filters.tags.length > 0) {
@@ -3777,20 +3789,20 @@ window.handleAddToCartFromModal = async (productId) => {
     } else {
       delete filters.tags;
     }
-    
+
     const response = await listProducts({ ...filters, limit: 100 });
     const product = response.data?.products.find(p => p.id === productId);
-    
+
     if (!product) {
       showError('Product not found');
       return;
     }
-    
+
     await handleAddToCart(product, quantity);
-    
+
     // Close product modal after successful add to cart
     closeProductDetailsModal();
-    
+
   } catch (error) {
     console.error('Error adding product to cart from modal:', error);
     showError('Failed to add product to cart');

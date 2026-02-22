@@ -92,7 +92,7 @@ exports.getMyVerificationStatus = asyncHandler(async (req, res, next) => {
 
   const { data: verification, error } = await verificationModel.getUserVerification(userId);
 
-  if (error && error.code !== 'PGRST116') { 
+  if (error && error.code !== 'PGRST116') {
     throw new AppError('Failed to fetch verification status.', 500);
   }
 
@@ -168,7 +168,7 @@ exports.getMyVerificationStatus = asyncHandler(async (req, res, next) => {
 });
 
 exports.getPendingVerifications = asyncHandler(async (req, res, next) => {
-  const { role } = req.query; 
+  const { role } = req.query;
 
   const filters = {};
   if (role) filters.role = role;
@@ -477,6 +477,13 @@ exports.requestMoreEvidence = asyncHandler(async (req, res, next) => {
     throw new AppError('Verification not found.', 404);
   }
 
+  if (verification.submission_status !== 'pending') {
+    throw new AppError(
+      `Verification already ${verification.submission_status}.`,
+      400
+    );
+  }
+
   const { error: updateError } = await verificationModel.updateVerificationStatus(
     verificationId,
     'more_evidence',
@@ -486,6 +493,15 @@ exports.requestMoreEvidence = asyncHandler(async (req, res, next) => {
 
   if (updateError) {
     throw new AppError('Failed to request more evidence.', 500);
+  }
+
+  const { data: updatedUser, error: userError } = await verificationModel.updateUserStatus(
+    verification.users.id,
+    'rejected'
+  );
+
+  if (userError) {
+    throw new AppError('Failed to update user status.', 500);
   }
 
   await adminLogModel.createLog({
@@ -532,7 +548,8 @@ exports.requestMoreEvidence = asyncHandler(async (req, res, next) => {
     message: 'More evidence requested. User has been notified.',
     data: {
       verification_id: verificationId,
-      requested_evidence: admin_notes
+      requested_evidence: admin_notes,
+      user: updatedUser
     }
   });
 });

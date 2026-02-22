@@ -1,11 +1,11 @@
 // assets/js/components/toast.js
 // Toast Notification Component
 
-import { 
-  playNotificationSound, 
-  playSuccessSound, 
-  playWarningSound, 
-  playErrorSound 
+import {
+  playNotificationSound,
+  playSuccessSound,
+  playWarningSound,
+  playErrorSound
 } from '../features/notifications/notification-sound.js';
 
 let toastContainer = null;
@@ -36,10 +36,9 @@ const initToastContainer = () => {
 const createToast = (message, type = 'info', duration = 4000, playSound = true) => {
   const container = initToastContainer();
   const id = `toast-${++toastId}`;
-  
+
   // Play sound based on type
   if (playSound) {
-    console.log(`[Toast] Attempting to play sound. Type: ${type}`);
     try {
       switch (type) {
         case 'success':
@@ -60,16 +59,15 @@ const createToast = (message, type = 'info', duration = 4000, playSound = true) 
       console.warn('[Toast] Could not play sound:', error);
     }
   } else {
-    console.log(`[Toast] Sound disabled for this toast. Type: ${type}`);
   }
-  
+
   const icons = {
     success: '<i class="bi bi-check-circle-fill text-success"></i>',
     error: '<i class="bi bi-x-circle-fill text-danger"></i>',
     warning: '<i class="bi bi-exclamation-triangle-fill text-warning"></i>',
     info: '<i class="bi bi-info-circle-fill text-info"></i>'
   };
-  
+
   const toast = document.createElement('div');
   toast.id = id;
   toast.className = `toast toast-${type}`;
@@ -85,7 +83,7 @@ const createToast = (message, type = 'info', duration = 4000, playSound = true) 
     animation: slideInDown 0.3s ease;
     border-left: 4px solid;
   `;
-  
+
   // Set border color based on type
   const borderColors = {
     success: '#28a745',
@@ -94,7 +92,7 @@ const createToast = (message, type = 'info', duration = 4000, playSound = true) 
     info: '#17a2b8'
   };
   toast.style.borderColor = borderColors[type] || borderColors.info;
-  
+
   toast.innerHTML = `
     <div class="toast-icon" style="font-size: 1.5rem; flex-shrink: 0;">
       ${icons[type] || icons.info}
@@ -106,17 +104,17 @@ const createToast = (message, type = 'info', duration = 4000, playSound = true) 
       <i class="bi bi-x"></i>
     </button>
   `;
-  
+
   const closeBtn = toast.querySelector('.toast-close');
   closeBtn.addEventListener('click', () => removeToast(id));
-  
+
   container.appendChild(toast);
-  
+
   // Auto-remove after duration
   if (duration > 0) {
     setTimeout(() => removeToast(id), duration);
   }
-  
+
   return id;
 };
 

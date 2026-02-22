@@ -13,7 +13,7 @@
     "rizal",
     "philippines"
   ],
-  "author": "Your Name",
+  "author": "Group 9",
   "license": "MIT",
   "dependencies": {
     "@supabase/supabase-js": "^2.93.3",

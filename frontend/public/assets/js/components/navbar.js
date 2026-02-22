@@ -1,7 +1,7 @@
-import { 
-  isAuthenticated, 
-  getUser, 
-  getRole, 
+import {
+  isAuthenticated,
+  getUser,
+  getRole,
   getStatus,
   isVerified,
   logout
@@ -12,12 +12,12 @@ import { initNotificationBell, updateUnreadCount as updateNotificationBellCount 
 const renderNavbar = () => {
   const navbar = document.getElementById('main-navbar');
   if (!navbar) return;
-  
+
   const authenticated = isAuthenticated();
   const user = getUser();
   const role = getRole();
   const verified = isVerified();
-  
+
   navbar.innerHTML = `
     <div class="navbar-container">
       <!-- Brand -->
@@ -41,9 +41,9 @@ const renderNavbar = () => {
       </nav>
     </div>
   `;
-  
+
   attachNavbarEventListeners();
-  
+
   // Initialize notification bell for authenticated users
   if (authenticated) {
     setTimeout(() => {
@@ -67,18 +67,18 @@ const renderMenuItems = (authenticated, role, verified, user) => {
       </li>
     `;
   }
-  
+
   // Get user status for verification button
   const userStatus = getStatus();
-  
+
   const dashboards = {
     buyer: '/buyer.html',
     seller: '/seller.html',
     admin: '/admin.html'
   };
-    
+
   let menuItems = ``;
-  
+
   if (role === 'buyer') {
     menuItems += `
       <li><a href="/buyer.html#browse" class="navbar-link"><i class="bi bi-grid-3x3-gap"></i> Browse</a></li>
@@ -101,7 +101,7 @@ const renderMenuItems = (authenticated, role, verified, user) => {
       <li><a href="/admin.html#users" class="navbar-link"><i class="bi bi-people"></i> Users</a></li>
     `;
   }
-  
+
 
   if (role === 'buyer') {
     menuItems += `
@@ -113,7 +113,7 @@ const renderMenuItems = (authenticated, role, verified, user) => {
       </li>
     `;
   }
-  
+
   if (role === 'seller') {
     menuItems += `
       <li class='sellerOrders'>
@@ -125,7 +125,7 @@ const renderMenuItems = (authenticated, role, verified, user) => {
       <li><a href="/seller.html#my-issues" class="navbar-link"><i class="bi bi-flag"></i> My Issues</a></li>
     `;
   }
-  
+
   if (role === 'buyer') {
     menuItems += `
       <li><a href="/buyer.html#orders" class="navbar-link"><i class="bi bi-receipt"></i> Orders</a></li>  
@@ -173,7 +173,7 @@ const renderMenuItems = (authenticated, role, verified, user) => {
       </div>
     </li>
   `;
-  
+
   return menuItems;
 };
 
@@ -184,19 +184,19 @@ const attachNavbarEventListeners = () => {
       showLoginModal();
     });
   }
-  
+
   const btnSignup = document.getElementById('btn-signup');
   if (btnSignup) {
     btnSignup.addEventListener('click', () => {
       showSignupModal();
     });
   }
-  
+
   const btnLogout = document.getElementById('btn-logout');
   if (btnLogout) {
     btnLogout.addEventListener('click', handleLogout);
   }
-  
+
   const userDropdown = document.getElementById('user-dropdown');
   const userMenu = document.getElementById('user-menu');
   if (userDropdown && userMenu) {
@@ -204,13 +204,13 @@ const attachNavbarEventListeners = () => {
       e.stopPropagation();
       userMenu.classList.toggle('show');
     });
-    
+
     document.addEventListener('click', (e) => {
       if (!userDropdown.contains(e.target)) {
         userMenu.classList.remove('show');
       }
     });
-    
+
     const dropdownItems = userMenu.querySelectorAll('.dropdown-item');
     dropdownItems.forEach(item => {
       item.addEventListener('click', () => {
@@ -218,9 +218,9 @@ const attachNavbarEventListeners = () => {
       });
     });
   }
-  
+
   // Note: Notification bell click is handled by notification-bell.js component
-  
+
   const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
   const navbarNav = document.getElementById('navbar-nav');
   if (mobileMenuToggle && navbarNav) {
@@ -229,7 +229,7 @@ const attachNavbarEventListeners = () => {
       navbarNav.classList.toggle('mobile-menu-open');
       mobileMenuToggle.classList.toggle('menu-open');
     });
-    
+
     document.addEventListener('click', (e) => {
       const navbar = document.getElementById('main-navbar');
       if (navbar && !navbar.contains(e.target)) {
@@ -237,7 +237,7 @@ const attachNavbarEventListeners = () => {
         mobileMenuToggle.classList.remove('menu-open');
       }
     });
-    
+
     const navLinks = navbarNav.querySelectorAll('.navbar-link, .dropdown-item');
     navLinks.forEach(link => {
       link.addEventListener('click', () => {
@@ -283,21 +283,21 @@ const handleLogout = async () => {
     `,
     size: 'sm'
   });
-  
+
   const confirmBtn = document.getElementById('confirm-logout-btn');
   if (confirmBtn) {
     confirmBtn.addEventListener('click', async () => {
       confirmBtn.disabled = true;
       confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Logging out...';
-      
+
       try {
         const { post } = await import('../core/http.js');
         const { ENDPOINTS } = await import('../config/api.js');
-        
+
         await post(ENDPOINTS.AUTH.LOGOUT);
-        
-        logout(true); 
-        
+
+        logout(true);
+
         window.location.href = '/index.html';
       } catch (error) {
         console.error('Logout error:', error);
@@ -331,7 +331,7 @@ const updateNotificationCount = (count) => {
       notificationBadge.style.display = 'none';
     }
   }
-  
+
   // Also update notification bell if initialized
   if (updateNotificationBellCount) {
     updateNotificationBellCount();

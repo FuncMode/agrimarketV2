@@ -85,7 +85,11 @@ const loadDashboardStats = async () => {
     // Update stat cards
     document.getElementById('stat-users').textContent = currentStats.users?.total || 0;
     document.getElementById('stat-pending-verifications').textContent = currentStats.users?.pending_verification || 0;
-    document.getElementById('stat-open-issues').textContent = currentStats.issues?.total || 0;
+    document.getElementById('stat-open-issues').textContent =
+      currentStats.issues?.under_review ??
+      currentStats.issues?.total_issues ??
+      currentStats.issues?.total ??
+      0;
     document.getElementById('stat-products').textContent = currentStats.products?.total || 0;
     
   } catch (error) {

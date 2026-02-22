@@ -67,10 +67,15 @@ const restrictTo = (...roles) => {
 
 const requireVerified = (req, res, next) => {
   if (req.user.status !== 'verified') {
-    throw new AppError(
-      'Account verification required. Please complete verification first.',
-      403
-    );
+    let message = 'Account verification required. Please complete verification first.';
+
+    if (req.user.status === 'verification_pending' || req.user.status === 'pending') {
+      message = 'Your account verification is currently being processed. Please wait for approval.';
+    } else if (req.user.status === 'rejected') {
+      message = 'Your verification was rejected. Please resubmit your documents in the profile section.';
+    }
+
+    throw new AppError(message, 403);
   }
   next();
 };
@@ -119,9 +124,9 @@ const optionalAuth = async (req, res, next) => {
 };
 
 module.exports = {
-  protect,            
-  restrictTo,          
-  requireVerified,      
-  blockVerified,     
-  optionalAuth       
+  protect,
+  restrictTo,
+  requireVerified,
+  blockVerified,
+  optionalAuth
 };

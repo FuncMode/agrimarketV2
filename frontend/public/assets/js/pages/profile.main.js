@@ -16,7 +16,7 @@ async function initPage() {
     }
 
     let user = state.user;
-    
+
     if (!user) {
       const stored = localStorage.getItem('agrimarket_user');
       if (stored) {
@@ -41,7 +41,7 @@ async function initPage() {
     await loadProfile();
 
     await loadStats();
-    
+
     if (user.role === 'buyer') {
       try {
         const cartResponse = await get('/cart/count');
@@ -50,7 +50,7 @@ async function initPage() {
         console.error('Error updating cart count:', error);
       }
     }
-    
+
     if (user.role === 'seller') {
       try {
         const ordersResponse = await get('/orders');
@@ -91,7 +91,7 @@ async function loadProfile() {
     const firstName = nameParts[0] || '';
     const lastName = nameParts.slice(1).join(' ') || '';
 
-    
+
     const user = {
       ...userData,
       first_name: firstName,
@@ -115,7 +115,7 @@ async function loadProfile() {
     document.getElementById('view-last-name').textContent = lastName || '-';
     document.getElementById('view-email').textContent = user.email || '-';
     document.getElementById('view-phone').textContent = user.phone || 'Not provided';
-    
+
     let addressDisplay = 'Not provided';
     let addressLabel = 'Address';
     if (user.role === 'seller') {
@@ -133,7 +133,7 @@ async function loadProfile() {
     }
     document.getElementById('view-address').textContent = addressDisplay;
     document.getElementById('address-label').textContent = addressLabel;
-    
+
     if (user.role === 'admin') {
       const addressSection = document.getElementById('view-address').parentElement;
       if (addressSection) {
@@ -160,7 +160,7 @@ async function loadProfile() {
     document.getElementById('edit-first-name').value = user.first_name || '';
     document.getElementById('edit-last-name').value = user.last_name || '';
     document.getElementById('edit-phone').value = user.phone || '';
-    
+
     const addressField = document.getElementById('edit-address')?.parentElement;
     if (addressField) {
       if (user.role === 'seller' || user.role === 'admin') {
@@ -171,7 +171,7 @@ async function loadProfile() {
           document.getElementById('edit-address').value = user.delivery_address || '';
           document.getElementById('delivery-latitude').value = user.delivery_latitude || '';
           document.getElementById('delivery-longitude').value = user.delivery_longitude || '';
-          
+
           if (user.delivery_address) {
             document.getElementById('selected-address-display').textContent = user.delivery_address;
           }
@@ -189,13 +189,13 @@ async function loadProfile() {
       if (municipality === user.municipality) option.selected = true;
       municipalitySelect.appendChild(option);
     });
-    
+
     // Add event listener to update coordinates when municipality changes
     municipalitySelect.addEventListener('change', (e) => {
       const selectedMunicipality = e.target.value;
       if (selectedMunicipality && MUNICIPALITY_COORDINATES[selectedMunicipality]) {
         const coords = MUNICIPALITY_COORDINATES[selectedMunicipality];
-        
+
         // For buyers: update delivery coordinates if no specific address is set
         if (user.role === 'buyer') {
           const deliveryLat = document.getElementById('delivery-latitude');
@@ -206,7 +206,7 @@ async function loadProfile() {
             document.getElementById('selected-address-display').textContent = `${selectedMunicipality}, Rizal`;
           }
         }
-        
+
         createToast(`Coordinates updated for ${selectedMunicipality}`, 'success');
       }
     });
@@ -239,24 +239,33 @@ async function loadVerificationStatus(user) {
     const verificationText = document.getElementById('verification-text');
     const actionBtn = document.getElementById('verification-action-btn');
 
-    // Check user status first
-    if (user.status === 'verification_pending') {
+    const verificationStatus = status.verification?.status;
+
+    if (user.status === 'verified') {
+      // User is fully verified
+      verificationSection.style.display = 'none';
+    } else if (status.has_verification && verificationStatus === 'more_evidence') {
+      verificationSection.className = 'bg-orange-50 border border-orange-200 rounded-lg p-6';
+      verificationIcon.className = 'bi bi-exclamation-triangle text-orange-600 text-xl';
+      verificationTitle.textContent = 'More Evidence Required';
+      verificationText.textContent = status.verification?.admin_notes || 'Please submit additional verification documents as requested by admin.';
+      actionBtn.style.display = 'block';
+      actionBtn.textContent = 'Resubmit Documents';
+      actionBtn.onclick = () => window.location.href = '/verification.html';
+    } else if (user.status === 'verification_pending') {
       // User account is pending verification
       verificationSection.className = 'bg-blue-50 border border-blue-200 rounded-lg p-6';
       verificationIcon.className = 'bi bi-hourglass-split text-blue-600 text-xl';
       verificationTitle.textContent = 'Verification Pending';
       verificationText.textContent = 'Your verification is under review. You\'ll be notified when it\'s approved.';
       actionBtn.style.display = 'none';
-    } else if (user.status === 'verified') {
-      // User is fully verified
-      verificationSection.style.display = 'none';
-    } else if (status.has_verification && status.verification?.status === 'pending') {
+    } else if (status.has_verification && verificationStatus === 'pending') {
       verificationSection.className = 'bg-blue-50 border border-blue-200 rounded-lg p-6';
       verificationIcon.className = 'bi bi-hourglass-split text-blue-600 text-xl';
       verificationTitle.textContent = 'Verification Pending';
       verificationText.textContent = 'Your verification is under review. You\'ll be notified when it\'s approved.';
       actionBtn.style.display = 'none';
-    } else if (status.has_verification && status.verification?.status === 'rejected') {
+    } else if (status.has_verification && verificationStatus === 'rejected') {
       verificationSection.className = 'bg-red-50 border border-red-200 rounded-lg p-6';
       verificationIcon.className = 'bi bi-x-circle text-red-600 text-xl';
       verificationTitle.textContent = 'Verification Rejected';
@@ -283,7 +292,7 @@ async function loadStats() {
     const response = await get('/users/stats');
 
     const stats = response.data?.stats || response.stats || response.data || response;
-    
+
 
     const totalOrders = stats?.total_orders || 0;
     const completedOrders = stats?.completed_orders || 0;
@@ -299,11 +308,11 @@ async function loadStats() {
     const totalOrdersEl = document.getElementById('stat-orders');
     const completedOrdersEl = document.getElementById('stat-completed');
     const pendingOrdersEl = document.getElementById('stat-pending');
-    
+
     if (totalOrdersEl) totalOrdersEl.textContent = totalOrders;
     if (completedOrdersEl) completedOrdersEl.textContent = completedOrders;
     if (pendingOrdersEl) pendingOrdersEl.textContent = pendingOrders;
-    
+
 
   } catch (error) {
     console.error('Error loading stats:', error);
@@ -319,7 +328,7 @@ async function openLocationPickerModal() {
   try {
 
     const mapContainerId = 'location-picker-map-' + Date.now();
-    
+
     const modal = createModal({
       title: 'Select Delivery Location',
       content: `
@@ -365,30 +374,30 @@ async function openLocationPickerModal() {
       try {
 
         const map = L.map(mapContainerId).setView([14.5927, 121.1695], 11);
-        
+
         const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors',
           maxZoom: 18,
           errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
         }).addTo(map);
-        
+
         // Suppress tile loading errors
-        tileLayer.on('tileerror', function(error, tile) {
+        tileLayer.on('tileerror', function (error, tile) {
           // Silently handle tile errors
         });
 
         let selectedMarker = null;
-        
+
 
         const currentLat = document.getElementById('delivery-latitude').value;
         const currentLng = document.getElementById('delivery-longitude').value;
-        
+
         if (currentLat && currentLng) {
           const lat = parseFloat(currentLat);
           const lng = parseFloat(currentLng);
           selectedMarker = L.marker([lat, lng]).addTo(map);
           map.setView([lat, lng], 13);
-          
+
 
           document.getElementById('modal-latitude-input').value = lat;
           document.getElementById('modal-longitude-input').value = lng;
@@ -401,39 +410,39 @@ async function openLocationPickerModal() {
           if (selectedMarker) {
             map.removeLayer(selectedMarker);
           }
-          
+
 
           selectedMarker = L.marker([lat, lng]).addTo(map);
-          
+
 
           const zoomLevel = customZoom !== null ? customZoom : Math.max(map.getZoom(), 13);
           map.setView([lat, lng], zoomLevel);
-          
+
 
           document.getElementById('modal-latitude-input').value = lat.toFixed(8);
           document.getElementById('modal-longitude-input').value = lng.toFixed(8);
-          
+
 
           const response = await reverseGeocode(lat, lng);
 
-          
+
           let address = null;
-          
+
 
           if (response && response.success !== false && response.data) {
 
-            address = response.data.formatted_address || 
-                     response.data.address ||
-                     (response.data.barangay && response.data.municipality ? 
-                        `${response.data.barangay}, ${response.data.municipality}, Rizal` : null);
+            address = response.data.formatted_address ||
+              response.data.address ||
+              (response.data.barangay && response.data.municipality ?
+                `${response.data.barangay}, ${response.data.municipality}, Rizal` : null);
           }
-          
+
 
           if (!address) {
             console.warn('No address found in reverse geocode response, using coordinates');
             address = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
           }
-          
+
           document.getElementById('modal-address-input').value = address;
         };
 
@@ -446,7 +455,7 @@ async function openLocationPickerModal() {
           searchInput.addEventListener('input', async (e) => {
             clearTimeout(searchTimeout);
             const query = e.target.value.trim();
-            
+
             if (query.length < 2) {
               autocompleteDropdown.style.display = 'none';
               return;
@@ -461,22 +470,22 @@ async function openLocationPickerModal() {
                 } else if (!query.toLowerCase().includes('philippines')) {
                   searchQuery = `${query}, Philippines`;
                 }
-                
 
-                
+
+
                 const response = await geocodeAddress(searchQuery);
 
-                
+
 
                 if (!response || response.success === false) {
                   console.warn('Geocode failed:', response?.message || 'Unknown error');
-                  
+
 
                   const lowerQuery = query.toLowerCase();
-                  const matchingMunicipalities = RIZAL_MUNICIPALITIES.filter(m => 
+                  const matchingMunicipalities = RIZAL_MUNICIPALITIES.filter(m =>
                     m.toLowerCase().includes(lowerQuery) || lowerQuery.includes(m.toLowerCase().split(' ')[0])
                   );
-                  
+
                   if (matchingMunicipalities.length > 0) {
                     autocompleteDropdown.innerHTML = matchingMunicipalities.map((mun, index) => `
                       <div class="autocomplete-item" data-index="${index}" style="padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; transition: background-color 0.2s;">
@@ -484,15 +493,15 @@ async function openLocationPickerModal() {
                         <p style="margin: 4px 0 0 0; font-size: 12px; color: #666;">Municipality</p>
                       </div>
                     `).join('');
-                    
+
                     autocompleteDropdown.style.display = 'block';
-                    
+
 
                     document.querySelectorAll('.autocomplete-item').forEach((item, index) => {
                       item.addEventListener('mouseover', async () => {
                         item.style.backgroundColor = '#f5f5f5';
                         const municipality = matchingMunicipalities[index];
-                        
+
 
                         const munResponse = await geocodeAddress(`${municipality}, Rizal, Philippines`);
                         if (munResponse && munResponse.success !== false && munResponse.data) {
@@ -515,7 +524,7 @@ async function openLocationPickerModal() {
                         const municipality = matchingMunicipalities[index];
                         searchInput.value = `${municipality}, Rizal`;
                         autocompleteDropdown.style.display = 'none';
-                        
+
                         // Geocode the municipality center
                         const munResponse = await geocodeAddress(`${municipality}, Rizal, Philippines`);
                         if (munResponse && munResponse.success !== false && munResponse.data) {
@@ -533,13 +542,13 @@ async function openLocationPickerModal() {
                   }
                   return;
                 }
-                
+
                 let suggestions = [];
                 if (response.data) {
 
                   suggestions = Array.isArray(response.data) ? response.data : [response.data];
                 }
-                
+
                 if (suggestions.length > 0) {
                   autocompleteDropdown.innerHTML = suggestions.map((item, index) => `
                     <div class="autocomplete-item" data-index="${index}" style="padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; transition: background-color 0.2s;">
@@ -547,19 +556,19 @@ async function openLocationPickerModal() {
                       ${item.municipality ? `<p style="margin: 4px 0 0 0; font-size: 12px; color: #666;">${item.municipality}</p>` : ''}
                     </div>
                   `).join('');
-                  
+
                   autocompleteDropdown.style.display = 'block';
-                  
+
 
                   document.querySelectorAll('.autocomplete-item').forEach((item, index) => {
                     item.addEventListener('mouseover', () => {
                       item.style.backgroundColor = '#f5f5f5';
-                      
+
 
                       const suggestion = suggestions[index];
                       const lat = parseFloat(suggestion.latitude || suggestion.lat);
                       const lng = parseFloat(suggestion.longitude || suggestion.lon);
-                      
+
                       if (lat && lng) {
 
                         if (selectedMarker) {
@@ -576,7 +585,7 @@ async function openLocationPickerModal() {
                       const suggestion = suggestions[index];
                       const lat = parseFloat(suggestion.latitude || suggestion.lat);
                       const lng = parseFloat(suggestion.longitude || suggestion.lon);
-                      
+
                       if (lat && lng) {
                         searchInput.value = suggestion.formatted_address || suggestion.address || suggestion.display_name;
                         autocompleteDropdown.style.display = 'none';
@@ -608,10 +617,10 @@ async function openLocationPickerModal() {
         map.on('click', async (e) => {
           const lat = e.latlng.lat;
           const lng = e.latlng.lng;
-          
+
           document.getElementById('modal-address-search').value = '';
           document.getElementById('address-autocomplete-dropdown').style.display = 'none';
-          
+
           await setLocationFromCoordinates(lat, lng);
         });
 
@@ -620,18 +629,18 @@ async function openLocationPickerModal() {
           const lat = document.getElementById('modal-latitude-input').value;
           const lng = document.getElementById('modal-longitude-input').value;
           const address = document.getElementById('modal-address-input').value;
-          
+
           if (!lat || !lng || !address) {
             createToast('Please select a location on the map', 'error');
             return;
           }
-          
+
 
           document.getElementById('delivery-latitude').value = lat;
           document.getElementById('delivery-longitude').value = lng;
           document.getElementById('edit-address').value = address;
           document.getElementById('selected-address-display').textContent = address;
-          
+
           modal.close();
           createToast('Location selected successfully', 'success');
         });
@@ -648,7 +657,7 @@ async function openLocationPickerModal() {
 
 function setupAddressAutocomplete(addressField) {
   let autocompleteContainer = document.getElementById('address-autocomplete');
-  
+
   // Create autocomplete container if it doesn't exist
   if (!autocompleteContainer) {
     autocompleteContainer = document.createElement('div');
@@ -674,10 +683,10 @@ function setupAddressAutocomplete(addressField) {
   }
 
   let debounceTimer;
-  
+
   addressField.addEventListener('input', async (e) => {
     clearTimeout(debounceTimer);
-    
+
     const query = e.target.value.trim();
     if (!query || query.length < 3) {
       autocompleteContainer.style.display = 'none';
@@ -689,18 +698,18 @@ function setupAddressAutocomplete(addressField) {
 
         const municipalitySelect = document.getElementById('edit-municipality');
         const municipality = municipalitySelect ? municipalitySelect.value : '';
-        
+
         let urlParams = `q=${encodeURIComponent(query)}`;
         if (municipality) {
           urlParams += `&municipality=${encodeURIComponent(municipality)}`;
         }
-        
+
         const response = await fetch(`/api/map/search-addresses?${urlParams}`);
         const data = await response.json();
-        
+
         if (data.success && data.data && data.data.length > 0) {
           autocompleteContainer.innerHTML = '';
-          
+
           data.data.forEach((item, index) => {
             const option = document.createElement('div');
             option.style.cssText = `
@@ -714,22 +723,22 @@ function setupAddressAutocomplete(addressField) {
               <div style="font-weight: 500; color: #333;">${item.formatted_address}</div>
               ${item.municipality ? `<div style="font-size: 0.875rem; color: #666;">${item.municipality}</div>` : ''}
             `;
-            
+
             option.addEventListener('mouseenter', () => {
               option.style.backgroundColor = '#f5f5f5';
             });
             option.addEventListener('mouseleave', () => {
               option.style.backgroundColor = 'transparent';
             });
-            
+
             option.addEventListener('click', () => {
               addressField.value = item.formatted_address;
               autocompleteContainer.style.display = 'none';
             });
-            
+
             autocompleteContainer.appendChild(option);
           });
-          
+
           autocompleteContainer.style.display = 'block';
         } else {
           autocompleteContainer.style.display = 'none';
@@ -768,7 +777,7 @@ function setupRoleSections() {
       document.getElementById('edit-buyer-btn').addEventListener('click', () => {
         const modal = createModal({
           title: 'Edit Buyer Preferences',
-        content: `
+          content: `
           <div class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Favorite Categories</label>
@@ -783,21 +792,21 @@ function setupRoleSections() {
             </div>
           </div>
         `,
-        footer: `
+          footer: `
           <button class="btn btn-outline" data-modal-close>Cancel</button>
           <button id="save-buyer-btn" class="btn btn-primary">Save Changes</button>
         `,
-        size: 'sm'
-      });
-
-      document.getElementById('save-buyer-btn').addEventListener('click', async () => {
-        const favorites = Array.from(document.querySelectorAll('input[type="checkbox"]:checked')).map(el => el.value);
-        await saveBuyerProfile({
-          favorite_categories: favorites,
+          size: 'sm'
         });
-        modal.close();
+
+        document.getElementById('save-buyer-btn').addEventListener('click', async () => {
+          const favorites = Array.from(document.querySelectorAll('input[type="checkbox"]:checked')).map(el => el.value);
+          await saveBuyerProfile({
+            favorite_categories: favorites,
+          });
+          modal.close();
+        });
       });
-    });
     }
   }
 }
@@ -959,24 +968,24 @@ async function saveProfile() {
 
 
     const user = window.currentUser || state.user;
-    
+
 
     if (user.role === 'seller') {
       const municipality = document.getElementById('edit-municipality')?.value;
-      
+
       if (municipality) {
         try {
           const sellerData = {
             municipality: municipality,
             farm_type: user.farm_type || 'farm'  // Use existing farm_type or default to 'farm'
           };
-          
+
           // Add municipality coordinates when municipality is updated
           if (MUNICIPALITY_COORDINATES[municipality]) {
             sellerData.latitude = MUNICIPALITY_COORDINATES[municipality].latitude;
             sellerData.longitude = MUNICIPALITY_COORDINATES[municipality].longitude;
           }
-          
+
           await put('/users/seller-profile', sellerData);
 
         } catch (sellerError) {
@@ -984,14 +993,14 @@ async function saveProfile() {
         }
       }
     }
-    
+
 
     if (user.role === 'buyer') {
       const municipality = document.getElementById('edit-municipality')?.value;
       const address = document.getElementById('edit-address')?.value;
       const latitude = document.getElementById('delivery-latitude')?.value;
       const longitude = document.getElementById('delivery-longitude')?.value;
-      
+
       if (municipality || address || latitude || longitude) {
         try {
           const buyerData = {};
@@ -1006,7 +1015,7 @@ async function saveProfile() {
           if (address) buyerData.delivery_address = address;
           if (latitude) buyerData.delivery_latitude = parseFloat(latitude);
           if (longitude) buyerData.delivery_longitude = parseFloat(longitude);
-          
+
           await put('/users/buyer-profile', buyerData);
 
         } catch (buyerError) {
@@ -1036,7 +1045,7 @@ async function saveSellerProfile(data) {
     const response = await put('/users/seller-profile', data);
 
     window.currentUser = { ...window.currentUser, ...data };
-    
+
     hideSpinner();
     createToast('Seller profile updated successfully', 'success');
 
@@ -1056,7 +1065,7 @@ async function saveBuyerProfile(data) {
     const response = await put('/users/buyer-profile', data);
 
     window.currentUser = { ...window.currentUser, ...data };
-    
+
     hideSpinner();
     createToast('Buyer preferences updated successfully', 'success');
 
