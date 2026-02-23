@@ -36,17 +36,17 @@ const createProductCard = (product, options = {}) => {
     
     <div class="card-body">
       <div class="flex items-center justify-between mb-2">
-        <h3 class="card-title mb-0">${product.name}</h3>
+        <h3 class="card-title pc-title mb-0">${product.name}</h3>
         ${product.seller_verified ? '<span class="verified-badge"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
       </div>
       
       ${showSeller && product.seller_name ? `
-        <p class="text-sm text-gray-600 mb-2">
+        <p class="text-sm text-gray-600 pc-meta mb-2">
           <i class="bi bi-shop"></i> ${product.seller_name || 'Unknown Seller'}
         </p>
       ` : ''}
       
-      <p class="text-sm text-gray-600 mb-2">
+      <p class="text-sm text-gray-600 pc-meta mb-2">
         <i class="bi bi-geo-alt"></i> ${product.municipality}
       </p>
       
@@ -69,13 +69,13 @@ const createProductCard = (product, options = {}) => {
         </div>
       ` : ''}
       
-      <p class="card-text line-clamp-2">${product.description || 'No description available'}</p>
+      <p class="card-text pc-desc line-clamp-2">${product.description || 'No description available'}</p>
       
       <!-- Tags -->
       ${product.tags && product.tags.length > 0 ? `
-        <div class="flex gap-2 mt-2 flex-wrap">
+        <div class="product-tags flex gap-2 mt-2 flex-wrap">
           ${product.tags.map(tag => `
-            <span class="badge badge-info">
+            <span class="badge badge-info pc-tag">
               <i class="bi bi-tag"></i> ${tag.charAt(0).toUpperCase() + tag.slice(1)}
             </span>
           `).join('')}
@@ -83,7 +83,7 @@ const createProductCard = (product, options = {}) => {
       ` : ''}
       
       <!-- View Count & Order Count -->
-      <div class="flex gap-4 mt-3 text-xs text-gray-500 border-t border-gray-200 pt-2">
+      <div class="pc-metrics flex gap-4 mt-3 text-xs text-gray-500 border-t border-gray-200 pt-2">
         <div class="flex items-center gap-1">
           <i class="bi bi-eye"></i>
           <span>${product.view_count || 0} views</span>
@@ -96,13 +96,13 @@ const createProductCard = (product, options = {}) => {
       
       <div class="flex items-center justify-between mt-4">
         <div>
-          <p class="text-2xl font-bold text-primary">${formatCurrency(product.price_per_unit)}</p>
+          <p class="text-xl font-bold text-primary pc-price">${formatCurrency(product.price_per_unit)}</p>
           <p class="text-sm text-gray-500">per ${product.unit_type}</p>
         </div>
         
         <div class="text-right">
-          <p class="text-sm text-gray-600">Available</p>
-          <p class="font-semibold">${product.available_quantity}</p>
+          <p class="text-sm text-gray-600 pc-stock-label">Available</p>
+          <p class="font-semibold pc-stock-value">${product.available_quantity}</p>
         </div>
       </div>
     </div>
@@ -111,13 +111,13 @@ const createProductCard = (product, options = {}) => {
       <div class="card-footer">
         <div class="flex gap-2">
           ${showViewButton ? `
-          <button class="btn-view btn btn-outline flex-1">
+          <button class="btn-view btn btn-outline pc-action-btn flex-1">
             <i class="bi bi-eye"></i> View
           </button>
           ` : ''}
           ${canBuy ? `
-            <button class="btn-add-cart btn btn-primary flex-1">
-              <i class="bi bi-cart-plus"></i> Add to Cart
+            <button class="btn-add-cart btn btn-primary pc-action-btn flex-1">
+              <i class="bi bi-cart-plus"></i> Add Cart
             </button>
           ` : onEdit ? `
             <button class="btn-edit btn btn-secondary flex-1">

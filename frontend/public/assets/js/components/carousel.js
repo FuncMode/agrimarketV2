@@ -54,7 +54,7 @@ export const createCarousel = (photos = [], alt = 'Product', options = {}) => {
 
   return `
     <div class="carousel-wrapper relative w-full" style="height: ${height};">
-      <div class="carousel-container relative w-full h-full overflow-hidden rounded-lg">
+      <div class="carousel-container relative w-full h-full overflow-hidden rounded-lg" data-carousel-id="${carouselId}">
         <!-- Main carousel -->
         <div class="carousel-slides relative w-full h-full" id="${carouselId}-slides">
           ${validPhotos.map((photo, index) => `
@@ -71,11 +71,11 @@ export const createCarousel = (photos = [], alt = 'Product', options = {}) => {
 
         <!-- Navigation Arrows (only show if more than 1 image) -->
         ${!isSingleImage && showArrows ? `
-          <button class="carousel-prev absolute left-2 top-1/2 transform -translate-y-1/2 z-20 bg-white/70 hover:bg-white rounded-full p-2 transition"
+          <button class="carousel-prev absolute left-2 top-1/2 transform -translate-y-1/2 z-20 bg-white/70 rounded-full p-2"
                   onclick="window.carouselPrev('${carouselId}')" title="Previous image">
             <i class="bi bi-chevron-left text-gray-800"></i>
           </button>
-          <button class="carousel-next absolute right-2 top-1/2 transform -translate-y-1/2 z-20 bg-white/70 hover:bg-white rounded-full p-2 transition"
+          <button class="carousel-next absolute right-2 top-1/2 transform -translate-y-1/2 z-20 bg-white/70 rounded-full p-2"
                   onclick="window.carouselNext('${carouselId}')" title="Next image">
             <i class="bi bi-chevron-right text-gray-800"></i>
           </button>
@@ -170,6 +170,51 @@ window.startCarouselAutoPlay = function(carouselId) {
     window.carouselNext(carouselId);
   }, state.autoPlayInterval);
 };
+
+// Mobile swipe support: swipe left/right to navigate carousel
+if (!window.carouselTouchInitialized) {
+  window.carouselTouchInitialized = true;
+  window.carouselTouchState = {};
+
+  document.addEventListener('touchstart', (event) => {
+    const container = event.target.closest('.carousel-container[data-carousel-id]');
+    if (!container) return;
+
+    const touch = event.touches && event.touches[0];
+    if (!touch) return;
+
+    window.carouselTouchState[container.dataset.carouselId] = {
+      startX: touch.clientX,
+      startY: touch.clientY
+    };
+  }, { passive: true });
+
+  document.addEventListener('touchend', (event) => {
+    const container = event.target.closest('.carousel-container[data-carousel-id]');
+    if (!container) return;
+
+    const carouselId = container.dataset.carouselId;
+    const start = window.carouselTouchState[carouselId];
+    const touch = event.changedTouches && event.changedTouches[0];
+    if (!start || !touch) return;
+
+    const deltaX = touch.clientX - start.startX;
+    const deltaY = touch.clientY - start.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+
+    // Require horizontal intent and a minimum swipe distance
+    if (absX > 35 && absX > absY) {
+      if (deltaX < 0) {
+        window.carouselNext(carouselId);
+      } else {
+        window.carouselPrev(carouselId);
+      }
+    }
+
+    delete window.carouselTouchState[carouselId];
+  }, { passive: true });
+}
 
 
 export const createSimpleCarousel = (photos = [], alt = 'Product') => {

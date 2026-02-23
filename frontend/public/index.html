@@ -161,7 +161,7 @@
   </section>
   
   <!-- Features Section -->
-  <section class="py-12 sm:py-16 bg-gray-50">
+  <section class="py-12 sm:py-16 bg-white">
     <div class="container mx-auto px-4">
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
         <!-- Verified Sellers -->
@@ -213,11 +213,11 @@
   </section>
   
   <!-- Featured Products -->
-  <section class="py-12 sm:py-16">
+  <section class="py-12 sm:py-16 bg-white">
     <div class="container mx-auto px-4">
-      <div class="text-center mb-8 sm:mb-12 animate-slide-up">
-        <h2 class="text-3xl sm:text-4xl font-bold mb-4 font-display text-gray-800">Featured Products</h2>
-        <p class="text-lg text-gray-600 max-w-2xl mx-auto">
+      <div class="text-center mb-8 sm:mb-10 animate-slide-up">
+        <h2 class="text-4xl sm:text-5xl font-bold mb-3 font-display text-slate-900">Featured Products</h2>
+        <p class="text-base sm:text-lg text-slate-600 max-w-2xl mx-auto">
           Discover the freshest produce from verified local farmers and fishermen
         </p>
       </div>
@@ -231,15 +231,15 @@
               type="text" 
               id="search-input-mobile"
               placeholder="Search fresh products..." 
-              class="w-full px-4 py-3 pl-10 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary text-base bg-gray-50 focus:bg-white transition-all duration-300 hover:shadow-md focus:scale-105"
+              class="w-full h-11 px-4 pl-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary text-base bg-white"
             >
-            <i class="bi bi-search absolute left-3 top-4 text-gray-400"></i>
+            <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
           </div>
         </div>
         
         <!-- Mobile Filters -->
         <div class="block md:hidden grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <select id="filter-category-mobile" class="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary text-base bg-gray-50 focus:bg-white transition-all duration-300 hover:shadow-md focus:scale-105">
+          <select id="filter-category-mobile" class="h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary text-base bg-white text-slate-800">
             <option value="">All Categories</option>
             <option value="vegetables">Vegetables</option>
             <option value="fruits">Fruits</option>
@@ -248,11 +248,11 @@
             <option value="other">Other</option>
           </select>
           
-          <select id="filter-municipality-mobile" class="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary text-base bg-gray-50 focus:bg-white transition-all duration-300 hover:shadow-md focus:scale-105">
+          <select id="filter-municipality-mobile" class="h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary text-base bg-white text-slate-800">
             <option value="">All Municipalities</option>
           </select>
           
-          <select id="sort-by-mobile" class="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary text-base sm:col-span-2 bg-gray-50 focus:bg-white">
+          <select id="sort-by-mobile" class="h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary text-base sm:col-span-2 bg-white text-slate-800">
             <option value="created_at:desc">Newest First</option>
             <option value="price_per_unit:asc">Price: Low to High</option>
             <option value="view_count:desc">Most Viewed</option>
@@ -260,23 +260,23 @@
         </div>
         
         <!-- Desktop Layout -->
-        <div class="hidden md:flex flex-wrap gap-4 items-center justify-between">
+        <div class="hidden md:grid grid-cols-12 gap-3 items-center">
           <!-- Search -->
-          <div class="flex-1 min-w-[300px] max-w-[450px]">
+          <div class="col-span-6">
             <div class="relative">
               <input 
                 type="text" 
                 id="search-input"
                 placeholder="Search fresh products..." 
-                class="w-full px-4 py-3 pl-10 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary bg-gray-50 focus:bg-white transition-all duration-300 hover:shadow-md focus:scale-105"
+                class="w-full h-11 px-4 pl-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary bg-white text-slate-800"
               >
-              <i class="bi bi-search absolute left-3 top-4 text-gray-400"></i>
+              <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
             </div>
           </div>
           
           <!-- Filters -->
-          <div class="flex flex-wrap gap-3">
-            <select id="filter-category" class="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary min-w-[160px] bg-gray-50 focus:bg-white transition-all duration-300 hover:shadow-md focus:scale-105">
+          <div class="col-span-2">
+            <select id="filter-category" class="w-full h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary bg-white text-slate-800">
               <option value="">All Categories</option>
               <option value="vegetables">Vegetables</option>
               <option value="fruits">Fruits</option>
@@ -284,12 +284,16 @@
               <option value="meat_poultry">Meat & Poultry</option>
               <option value="other">Other</option>
             </select>
-            
-            <select id="filter-municipality" class="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary min-w-[180px] bg-gray-50 focus:bg-white transition-all duration-300 hover:shadow-md focus:scale-105">
+          </div>
+
+          <div class="col-span-2">
+            <select id="filter-municipality" class="w-full h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary bg-white text-slate-800">
               <option value="">All Municipalities</option>
             </select>
-            
-            <select id="sort-by" class="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary min-w-[160px] bg-gray-50 focus:bg-white transition-all duration-300 hover:shadow-md focus:scale-105">
+          </div>
+
+          <div class="col-span-2">
+            <select id="sort-by" class="w-full h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary bg-white text-slate-800">
               <option value="created_at:desc">Newest First</option>
               <option value="price_per_unit:asc">Price: Low to High</option>
               <option value="view_count:desc">Most Viewed</option>
@@ -318,7 +322,7 @@
   </section>
   
   <!-- Map Section -->
-  <section class="py-12 sm:py-16 bg-gradient-to-b from-green-50 to-white">
+  <section class="py-12 sm:py-16 bg-white">
     <div class="container mx-auto px-4">
       <div class="text-center mb-8 sm:mb-12 animate-slide-up">
         <h2 class="text-3xl sm:text-4xl font-bold mb-4 font-display text-gray-800">Find Sellers Near You</h2>
