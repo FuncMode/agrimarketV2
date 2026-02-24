@@ -27,11 +27,26 @@ const addNotification = (notification) => {
   
   // Add to beginning of array
   const notifications = [notification, ...current.notifications];
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  const isUnread = !notification?.is_read;
+  const unreadCount = Math.max(0, (current.unreadCount || 0) + (isUnread ? 1 : 0));
   
   state.set(STATE_KEYS.NOTIFICATIONS, {
     notifications,
     unreadCount,
+    lastFetchTime: Date.now()
+  });
+};
+
+const setUnreadCount = (count) => {
+  const current = state.get(STATE_KEYS.NOTIFICATIONS) || {
+    notifications: [],
+    unreadCount: 0,
+    lastFetchTime: null
+  };
+
+  state.set(STATE_KEYS.NOTIFICATIONS, {
+    ...current,
+    unreadCount: Number.isFinite(count) ? Math.max(0, count) : 0,
     lastFetchTime: Date.now()
   });
 };
@@ -115,6 +130,7 @@ export default {
   init: initNotificationStore,
   set: setNotifications,
   add: addNotification,
+  setUnreadCount,
   markAsRead,
   markAllAsRead,
   remove: removeNotification,

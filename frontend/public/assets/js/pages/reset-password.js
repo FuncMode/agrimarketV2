@@ -22,8 +22,8 @@ const init = () => {
   resetToken = params.token;
   userEmail = params.email;
   
-  if (!resetToken || !userEmail) {
-    showError('Invalid or missing reset link. Please request a new password reset.');
+  if (!resetToken) {
+    showError('Invalid or missing reset token. Please request a new password reset.');
     setTimeout(() => {
       window.location.href = '/index.html';
     }, 3000);
@@ -32,7 +32,7 @@ const init = () => {
   
   // Populate email field
   const emailInput = document.getElementById('email');
-  if (emailInput) {
+  if (emailInput && userEmail) {
     emailInput.value = decodeURIComponent(userEmail);
   }
   
@@ -137,9 +137,7 @@ const handleResetPassword = async (e) => {
   try {
     const response = await post(ENDPOINTS.AUTH.RESET_PASSWORD, {
       token: resetToken,
-      email: userEmail,
-      new_password: newPassword,
-      confirm_password: confirmPassword
+      new_password: newPassword
     });
     
     if (response.success) {

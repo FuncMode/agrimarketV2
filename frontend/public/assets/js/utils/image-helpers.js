@@ -17,21 +17,26 @@ export const getStorageUrl = (path, bucket = 'delivery-proof') => {
     return path;
   }
   
-  // Construct Supabase public URL
-  const supabaseUrl = ENV.SUPABASE_URL;
-  if (!supabaseUrl) {
-    console.error('SUPABASE_URL not configured. Check env-loader.js');
-    console.error('Current ENV:', ENV);
-    return path;
-  }
-  
   // Remove leading slash if present
-  const cleanPath = path.startsWith('/') ? path.slice(1) : path;
-  
-  // Build the full public URL
-  const fullUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${cleanPath}`;
-  
-  return fullUrl;
+  let cleanPath = path.startsWith('/') ? path.slice(1) : path;
+  // If callers pass "bucket/path", normalize to just "path"
+  if (cleanPath.startsWith(`${bucket}/`)) {
+    cleanPath = cleanPath.slice(bucket.length + 1);
+  }
+
+  // Construct Supabase public URL when runtime env is available
+  const supabaseUrl = ENV.SUPABASE_URL;
+  if (supabaseUrl) {
+    return `${supabaseUrl}/storage/v1/object/public/${bucket}/${cleanPath}`;
+  }
+
+  // Fallback: use backend proxy endpoint so browser doesn't need SUPABASE_URL.
+  const apiBase = (ENV.API_BASE_URL || '/api').replace(/\/+$/, '');
+  const encodedPath = cleanPath
+    .split('/')
+    .map(segment => encodeURIComponent(segment))
+    .join('/');
+  return `${apiBase}/storage/public/${bucket}/${encodedPath}`;
 };
 
 /**
@@ -60,4 +65,24 @@ export const getProductPhotoUrl = (path) => {
 export const getIssueEvidenceUrl = (path) => {
   if (!path) return '';
   return getStorageUrl(path, 'issue-evidence');
+};
+
+/**
+ * Get message attachment URL
+ * Supports both raw object paths and bucket-prefixed paths.
+ * @param {string} path - The storage path
+ * @returns {string} - Full public URL
+ */
+export const getMessageAttachmentUrl = (path) => {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+
+  let cleanPath = path.startsWith('/') ? path.slice(1) : path;
+  if (cleanPath.startsWith('message-attachments/')) {
+    cleanPath = cleanPath.slice('message-attachments/'.length);
+  }
+
+  return getStorageUrl(cleanPath, 'message-attachments');
 };

@@ -152,7 +152,7 @@ const showLoginModal = () => {
   
   // Attach event listeners
   const form = modal.body.querySelector('#login-form');
-  form.addEventListener('submit', handleLogin);
+  form.addEventListener('submit', (e) => handleLogin(e, modal.body));
   
   // Attach password toggle
   const passwordToggle = modal.body.querySelector('.password-toggle');
@@ -176,12 +176,16 @@ const showLoginModal = () => {
   });
 };
 
-const handleLogin = async (e) => {
+const handleLogin = async (e, scope = document) => {
   e.preventDefault();
   
-  const email = document.getElementById('login-email').value;
-  const password = document.getElementById('login-password').value;
-  const rememberMe = document.getElementById('remember-me').checked;
+  const emailInput = scope.querySelector('#login-email');
+  const passwordInput = scope.querySelector('#login-password');
+  const rememberInput = scope.querySelector('#remember-me');
+
+  const email = emailInput ? emailInput.value : '';
+  const password = passwordInput ? passwordInput.value : '';
+  const rememberMe = rememberInput ? rememberInput.checked : false;
   
   // Validate
   const emailValidation = validateEmail(email);

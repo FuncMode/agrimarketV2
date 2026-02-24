@@ -2,7 +2,52 @@
 
 const { supabase, supabaseService } = require('../config/database');
 
+const PRIORITY_SLA_HOURS = {
+  low: 72,
+  medium: 48,
+  high: 24,
+  critical: 8
+};
+
+const computeSlaMetadata = (issue) => {
+  const createdAt = issue?.created_at ? new Date(issue.created_at) : null;
+  const now = new Date();
+  const slaHours = Number(issue?.sla_hours) || PRIORITY_SLA_HOURS[issue?.priority] || PRIORITY_SLA_HOURS.medium;
+
+  if (!createdAt || Number.isNaN(createdAt.getTime())) {
+    return {
+      sla_due_at: null,
+      age_hours: 0,
+      overdue_hours: 0,
+      is_overdue: false
+    };
+  }
+
+  const dueAt = new Date(createdAt.getTime() + (slaHours * 60 * 60 * 1000));
+  const ageHours = Math.max(0, (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60));
+  const overdueHours = Math.max(0, (now.getTime() - dueAt.getTime()) / (1000 * 60 * 60));
+  const isOverdue = issue?.status === 'under_review' && now.getTime() > dueAt.getTime();
+
+  return {
+    sla_due_at: dueAt.toISOString(),
+    age_hours: Number(ageHours.toFixed(2)),
+    overdue_hours: Number(overdueHours.toFixed(2)),
+    is_overdue: isOverdue
+  };
+};
+
+const enrichIssueWithSla = (issue) => ({
+  ...issue,
+  ...computeSlaMetadata(issue)
+});
+
+const enrichIssuesWithSla = (issues = []) => issues.map(enrichIssueWithSla);
+
 exports.createIssue = async (issueData) => {
+  const priority = issueData.priority && PRIORITY_SLA_HOURS[issueData.priority]
+    ? issueData.priority
+    : 'medium';
+
   const { data, error } = await supabaseService
     .from('issue_reports')
     .insert([{
@@ -11,7 +56,9 @@ exports.createIssue = async (issueData) => {
       issue_type: issueData.issue_type,
       description: issueData.description,
       evidence_urls: issueData.evidence_urls || [],
-      status: 'under_review'
+      status: 'under_review',
+      priority,
+      sla_hours: PRIORITY_SLA_HOURS[priority]
     }])
     .select()
     .single();
@@ -61,7 +108,7 @@ exports.getIssueById = async (issueId) => {
     .eq('id', issueId)
     .single();
 
-  return { data, error };
+  return { data: data ? enrichIssueWithSla(data) : data, error };
 };
 
 exports.getUserIssues = async (userId, filters = {}) => {
@@ -117,7 +164,7 @@ exports.getUserIssues = async (userId, filters = {}) => {
 
     const { data, error } = await query;
 
-    return { data: data || [], error };
+    return { data: enrichIssuesWithSla(data || []), error };
   } catch (error) {
     console.error('Get user issues error:', error);
     return { data: [], error };
@@ -142,7 +189,7 @@ exports.getOrderIssues = async (orderId) => {
     .eq('order_id', orderId)
     .order('created_at', { ascending: false });
 
-  return { data: data || [], error };
+  return { data: enrichIssuesWithSla(data || []), error };
 };
 
 exports.getPendingIssues = async (filters = {}) => {
@@ -175,9 +222,18 @@ exports.getPendingIssues = async (filters = {}) => {
     query = query.eq('issue_type', filters.issue_type);
   }
 
+  if (filters.priority) {
+    query = query.eq('priority', filters.priority);
+  }
+
   const { data, error } = await query;
 
-  return { data: data || [], error };
+  const issues = enrichIssuesWithSla(data || []);
+  const filteredIssues = filters.overdue_only
+    ? issues.filter(issue => issue.is_overdue)
+    : issues;
+
+  return { data: filteredIssues, error };
 };
 
 exports.getResolvedIssues = async (filters = {}) => {
@@ -214,6 +270,10 @@ exports.getResolvedIssues = async (filters = {}) => {
     query = query.eq('issue_type', filters.issue_type);
   }
 
+  if (filters.priority) {
+    query = query.eq('priority', filters.priority);
+  }
+
   if (filters.date_from) {
     const dateFrom = typeof filters.date_from === 'string' 
       ? filters.date_from 
@@ -232,7 +292,7 @@ exports.getResolvedIssues = async (filters = {}) => {
 
   const { data, error } = await query;
 
-  return { data: data || [], error };
+  return { data: enrichIssuesWithSla(data || []), error };
 };
 
 exports.getRejectedIssues = async (filters = {}) => {
@@ -269,6 +329,10 @@ exports.getRejectedIssues = async (filters = {}) => {
     query = query.eq('issue_type', filters.issue_type);
   }
 
+  if (filters.priority) {
+    query = query.eq('priority', filters.priority);
+  }
+
   if (filters.date_from) {
     const dateFrom = typeof filters.date_from === 'string' 
       ? filters.date_from 
@@ -287,7 +351,7 @@ exports.getRejectedIssues = async (filters = {}) => {
 
   const { data, error } = await query;
 
-  return { data: data || [], error };
+  return { data: enrichIssuesWithSla(data || []), error };
 };
 
 exports.updateIssueStatus = async (issueId, status, adminId, resolution = null) => {
@@ -312,7 +376,7 @@ exports.updateIssueStatus = async (issueId, status, adminId, resolution = null) 
     .select()
     .single();
 
-  return { data, error };
+  return { data: data ? enrichIssueWithSla(data) : data, error };
 };
 
 exports.addEvidence = async (issueId, evidenceUrls) => {
@@ -340,7 +404,7 @@ exports.addEvidence = async (issueId, evidenceUrls) => {
     .select()
     .single();
 
-  return { data, error };
+  return { data: data ? enrichIssueWithSla(data) : data, error };
 };
 
 exports.canAccessIssue = async (issueId, userId) => {
@@ -378,11 +442,18 @@ exports.getIssueStats = async (filters = {}) => {
     under_review: 0,
     resolved: 0,
     rejected: 0,
-    by_type: {}
+    by_type: {},
+    by_priority: {
+      low: 0,
+      medium: 0,
+      high: 0,
+      critical: 0
+    },
+    overdue: 0
   };
 
   try {
-    let query = supabase.from('issue_reports').select('status, issue_type, created_at');
+    let query = supabase.from('issue_reports').select('status, issue_type, created_at, priority, sla_hours');
 
     if (filters.date_from) {
       const dateFrom = typeof filters.date_from === 'string' 
@@ -413,6 +484,18 @@ exports.getIssueStats = async (filters = {}) => {
           stats.by_type[issue.issue_type] = 0;
         }
         stats.by_type[issue.issue_type]++;
+
+        const priority = issue.priority || 'medium';
+        if (stats.by_priority[priority] !== undefined) {
+          stats.by_priority[priority]++;
+        } else {
+          stats.by_priority[priority] = 1;
+        }
+
+        const slaMeta = computeSlaMetadata(issue);
+        if (slaMeta.is_overdue) {
+          stats.overdue += 1;
+        }
       });
     }
 
@@ -422,6 +505,81 @@ exports.getIssueStats = async (filters = {}) => {
     console.error('Get issue stats error:', error);
     return { data: stats, error };
   }
+};
+
+exports.updateIssuePriority = async (issueId, priority, adminId) => {
+  const selectedPriority = PRIORITY_SLA_HOURS[priority] ? priority : 'medium';
+  const updates = {
+    priority: selectedPriority,
+    sla_hours: PRIORITY_SLA_HOURS[selectedPriority],
+    admin_id: adminId,
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabaseService
+    .from('issue_reports')
+    .update(updates)
+    .eq('id', issueId)
+    .select()
+    .single();
+
+  return { data: data ? enrichIssueWithSla(data) : data, error };
+};
+
+exports.updateIssueOutcome = async (issueId, outcomeData, adminId) => {
+  const updates = {
+    outcome_action: outcomeData.outcome_action,
+    outcome_amount: outcomeData.outcome_amount ?? null,
+    outcome_notes: outcomeData.outcome_notes || null,
+    admin_id: adminId,
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabaseService
+    .from('issue_reports')
+    .update(updates)
+    .eq('id', issueId)
+    .select()
+    .single();
+
+  return { data: data ? enrichIssueWithSla(data) : data, error };
+};
+
+exports.createTimelineEvent = async (eventData) => {
+  const payload = {
+    issue_id: eventData.issue_id,
+    actor_id: eventData.actor_id || null,
+    event_type: eventData.event_type,
+    from_status: eventData.from_status || null,
+    to_status: eventData.to_status || null,
+    note: eventData.note || null,
+    metadata: eventData.metadata || {}
+  };
+
+  const { data, error } = await supabaseService
+    .from('issue_timeline_events')
+    .insert([payload])
+    .select()
+    .single();
+
+  return { data, error };
+};
+
+exports.getIssueTimeline = async (issueId) => {
+  const { data, error } = await supabase
+    .from('issue_timeline_events')
+    .select(`
+      *,
+      actor:users!issue_timeline_events_actor_id_fkey (
+        id,
+        full_name,
+        role
+      )
+    `)
+    .eq('issue_id', issueId)
+    .order('created_at', { ascending: false });
+
+  return { data: data || [], error };
 };
 
 exports.deleteIssue = async (issueId) => {

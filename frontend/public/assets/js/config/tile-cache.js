@@ -28,20 +28,27 @@ const TileCacheManager = {
   initTileCaching: () => {
     // Open the tile cache
     if ('caches' in window) {
-      caches.open('agrimarket-tiles-v1').catch(err => {
+      caches.open('agrimarket-tiles-v2').catch(err => {
         console.warn('Cache API not available:', err);
       });
     }
 
-    // Add cache-busting parameter to prevent stale cache issues
+    // Avoid mutating third-party tile URLs (e.g. OpenStreetMap).
+    // Some providers may return 425/429 when query params are forced.
     if (window.L) {
       window.L.TileLayer.prototype.getTileUrl = (function(original) {
         return function(coords) {
-          let url = original.call(this, coords);
-          // Add cache buster only if not already present
-          if (!url.includes('t=')) {
-            url += '?t=' + Math.floor(Date.now() / 86400000); // Daily cache buster
+          const url = original.call(this, coords);
+          try {
+            const parsedUrl = new URL(url, window.location.origin);
+            const isOpenStreetMap = /(^|\.)tile\.openstreetmap\.org$/i.test(parsedUrl.hostname);
+            if (isOpenStreetMap) {
+              return url;
+            }
+          } catch (error) {
+            return url;
           }
+
           return url;
         };
       })(window.L.TileLayer.prototype.getTileUrl);
@@ -52,7 +59,7 @@ const TileCacheManager = {
   clearOldCaches: async () => {
     if ('caches' in window) {
       const cacheNames = await caches.keys();
-      const currentCache = 'agrimarket-tiles-v1';
+      const currentCache = 'agrimarket-tiles-v2';
       await Promise.all(
         cacheNames
           .filter(name => name !== currentCache && name.includes('agrimarket'))

@@ -3,16 +3,17 @@
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const messageModel = require('../models/messageModel');
 const orderModel = require('../models/orderModel');
-const { uploadFile, BUCKETS } = require('../config/storage');
+const { uploadMessageAttachment } = require('../config/storage');
 const notificationService = require('../services/notificationService');
-const emailService = require('../services/emailService');
 
 exports.sendMessage = asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const { order_id, message_text } = req.body;
+  const cleanMessageText = typeof message_text === 'string' ? message_text.trim() : '';
+  const hasAttachment = !!req.file;
 
-  if (!message_text || message_text.trim().length === 0) {
-    throw new AppError('Message text is required.', 400);
+  if (!cleanMessageText && !hasAttachment) {
+    throw new AppError('Message text or attachment is required.', 400);
   }
 
   const ownership = await orderModel.checkOrderOwnership(order_id, userId);
@@ -33,13 +34,10 @@ exports.sendMessage = asyncHandler(async (req, res, next) => {
   let messageType = 'text';
 
   if (req.file) {
-    const timestamp = Date.now();
-    const fileName = `${order_id}/${timestamp}_${req.file.originalname}`;
-    
-    const uploadResult = await uploadFile(
-      BUCKETS.MESSAGE_ATTACHMENTS,
-      fileName,
+    const uploadResult = await uploadMessageAttachment(
+      order_id,
       req.file.buffer,
+      req.file.originalname,
       req.file.mimetype
     );
 
@@ -47,14 +45,14 @@ exports.sendMessage = asyncHandler(async (req, res, next) => {
       throw new AppError('Failed to upload attachment.', 500);
     }
 
-    attachmentPath = uploadResult.data.fullPath;
+    attachmentPath = uploadResult.data.publicUrl || uploadResult.data.fullPath;
     messageType = req.file.mimetype.startsWith('image/') ? 'image' : 'file';
   }
 
   const { data: message, error } = await messageModel.sendMessage({
     order_id,
     sender_id: userId,
-    message_text: message_text.trim(),
+    message_text: cleanMessageText || '',
     message_type: messageType,
     attachment_path: attachmentPath
   });
@@ -65,6 +63,10 @@ exports.sendMessage = asyncHandler(async (req, res, next) => {
 
   const { data: messages } = await messageModel.getOrderMessages(order_id);
   const completeMessage = messages.find(m => m.id === message.id);
+  if (completeMessage && req.file) {
+    completeMessage.attachment_size = req.file.size;
+    completeMessage.attachment_mime = req.file.mimetype;
+  }
 
   const socketService = req.app.get('socketService');
   if (socketService) {
@@ -84,17 +86,6 @@ exports.sendMessage = asyncHandler(async (req, res, next) => {
       type: 'new_message',
       reference_id: order_id
     });
-
-    const recipientProfile = isBuyer ? order.seller : order.buyer;
-    const recipientEmail = recipientProfile?.user?.email;
-    
-    if (recipientEmail) {
-      const recipientData = {
-        full_name: recipientProfile?.user?.full_name || 'User',
-        email: recipientEmail
-      };
-      await emailService.sendNewMessageEmail(recipientData, req.user, order.order_number);
-    }
   } catch (notifError) {
     console.error('Failed to send message notification:', notifError.message);
   }

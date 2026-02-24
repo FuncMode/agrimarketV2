@@ -12,18 +12,29 @@
     ? 'http://localhost:3000/api'
     : 'https://agrimarketv2-production.up.railway.app/api'; // Production Railway backend
     
-  const socketUrl = isLocalhost
-    ? 'ws://localhost:3000'
-    : 'wss://agrimarketv2-production.up.railway.app'; // Production Railway WebSocket
-
   // Load from environment variables (injected by server)
   const envVars = window.__ENV || {};
+
+  // Resolve public runtime config from backend when not injected.
+  // We use sync XHR here because this script must finish before ES modules boot.
+  let remotePublicConfig = {};
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', `${apiBase}/public-config`, false);
+    xhr.send(null);
+
+    if (xhr.status >= 200 && xhr.status < 300) {
+      const parsed = JSON.parse(xhr.responseText || '{}');
+      remotePublicConfig = parsed?.data || {};
+    }
+  } catch (e) {
+    // Ignore and continue with injected env only.
+  }
   
   window.ENV = {
     API_BASE_URL: apiBase,
-    SUPABASE_URL: envVars.SUPABASE_URL,
-    SUPABASE_ANON_KEY: envVars.SUPABASE_ANON_KEY,
-    SOCKET_URL: socketUrl,
+    SUPABASE_URL: envVars.SUPABASE_URL || remotePublicConfig.SUPABASE_URL,
+    SUPABASE_ANON_KEY: envVars.SUPABASE_ANON_KEY || remotePublicConfig.SUPABASE_ANON_KEY,
     ENVIRONMENT: isLocalhost ? 'development' : 'production',
     DEBUG: isLocalhost
   };

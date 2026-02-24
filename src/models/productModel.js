@@ -251,6 +251,7 @@ exports.updateProduct = async (productId, updates) => {
     'unit_type',
     'available_quantity',
     'photo_path',
+    'photos',
     'status'
   ];
 

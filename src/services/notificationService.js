@@ -171,6 +171,18 @@ exports.sendIssueNotification = async (userId, issue, type, customMessage = null
     'issue_rejected': {
       title: 'Issue Rejected',
       message: customMessage || `Your issue report has been reviewed.`
+    },
+    'issue_outcome_updated': {
+      title: 'Issue Outcome Updated',
+      message: customMessage || 'The issue outcome has been updated by admin.'
+    },
+    'issue_escalated': {
+      title: 'Issue Escalated',
+      message: customMessage || 'This issue has been escalated for urgent handling.'
+    },
+    'issue_priority_updated': {
+      title: 'Issue Priority Updated',
+      message: customMessage || 'The issue priority has been updated by admin.'
     }
   };
 

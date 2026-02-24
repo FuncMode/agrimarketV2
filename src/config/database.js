@@ -60,7 +60,9 @@ const supabaseService = createClient(
 
 async function testConnection() {
   try {
-    const { data, error } = await supabaseAnon
+    // Use service client for backend health checks because API routes also use
+    // service-role access with app-level JWT auth (not Supabase Auth JWT).
+    const { data, error } = await supabaseService
       .from('users')
       .select('count')
       .limit(1);
@@ -145,7 +147,10 @@ async function validateSchema() {
 }
 
 module.exports = {
-  supabase: supabaseAnon,
+  // Default backend client: service-role.
+  // This keeps existing server queries working after enabling RLS while
+  // authorization remains enforced in app middleware/controllers.
+  supabase: supabaseService,
   supabaseAnon,
   supabaseService,
   testConnection,

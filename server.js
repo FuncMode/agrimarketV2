@@ -1,7 +1,5 @@
 // server.js  
 require('dotenv').config();
-const http = require('http');
-const { Server } = require('socket.io');
 const app = require('./src/app');
 const { testConnection, validateSchema } = require('./src/config/database');
 const { validateEnvironment } = require('./src/config/envValidation');
@@ -41,38 +39,12 @@ async function startServer() {
       console.warn('   Check your .env EMAIL_* variables and ensure credentials are correct.');
     }
 
-    const httpServer = http.createServer(app);
-
-    const socketCorsOrigins = [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'http://localhost:8080',
-      'http://127.0.0.1:8080',
-      process.env.CORS_ORIGIN,
-      process.env.FRONTEND_URL
-    ].filter(Boolean);
-
-    const io = new Server(httpServer, {
-      cors: {
-        origin: socketCorsOrigins,
-        credentials: true,
-        methods: ['GET', 'POST']
-      },
-      transports: ['websocket', 'polling']
-    });
-
-    app.set('io', io);
-
-    const socketServiceInstance = require('./src/services/socketService')(io);
-    app.set('socketService', socketServiceInstance);
-
-    const notificationService = require('./src/services/notificationService');
-    notificationService.setSocketService(socketServiceInstance);
+    // Socket.io wiring removed: realtime is handled by Supabase Realtime.
 
     const dbMonitor = require('./src/utils/dbMonitor');
     dbMonitor.startPeriodicMonitoring(5 * 60 * 1000);
 
-    httpServer.listen(PORT, '0.0.0.0', () => {
+    const server = app.listen(PORT, '0.0.0.0', () => {
       console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('AgriMarket Server is running!');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -81,13 +53,13 @@ async function startServer() {
       console.log(`API Base: http://localhost:${PORT}/api`);
       console.log(`Health Check: http://localhost:${PORT}/api/health`);
       console.log(`DB Test: http://localhost:${PORT}/api/test-db`);
-      console.log(`WebSocket: ws://localhost:${PORT}`);
+      console.log('Realtime: Supabase Realtime');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
       console.log('Press Ctrl+C to stop the server\n');
     });
 
-    process.on('SIGTERM', () => gracefulShutdown(httpServer, 'SIGTERM'));
-    process.on('SIGINT', () => gracefulShutdown(httpServer, 'SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown(server, 'SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown(server, 'SIGINT'));
 
   } catch (error) {
     console.error('\nSERVER STARTUP FAILED!');

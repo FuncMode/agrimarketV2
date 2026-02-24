@@ -5,13 +5,43 @@
 
 import { renderNavbar } from '../components/navbar.js';
 import { showToast, showError, showSuccess } from '../components/toast.js';
-import { requireAuth } from '../core/auth.js';
+import { requireAuth, getRole } from '../core/auth.js';
 import { validateFile } from '../utils/validators.js';
 import { submitVerification, getVerificationStatus } from '../services/verification.service.js';
 import { get } from '../core/http.js';
 
 let idFile = null;
 let selfieFile = null;
+
+const escapeHtml = (text) => {
+  const safeText = typeof text === 'string' ? text : String(text || '');
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return safeText.replace(/[&<>"']/g, m => map[m]);
+};
+
+const getDashboardPath = () => {
+  const role = getRole();
+  const dashboards = {
+    buyer: '/buyer.html',
+    seller: '/seller.html',
+    admin: '/admin.html'
+  };
+  return dashboards[role] || '/index.html';
+};
+
+const syncDashboardLinks = () => {
+  const dashboardPath = getDashboardPath();
+  const backLink = document.getElementById('verification-back-link');
+  if (backLink) {
+    backLink.href = dashboardPath;
+  }
+};
 
 const init = async () => {
 
@@ -21,6 +51,7 @@ const init = async () => {
   
   // Initialize
   renderNavbar();
+  syncDashboardLinks();
   checkVerificationStatus();
   attachEventListeners();
   updateProgress();
@@ -36,10 +67,10 @@ const checkVerificationStatus = async () => {
     if (userStatus === 'verified') {
       showToast('Your account is already verified!', 'success');
       setTimeout(() => {
-        window.location.href = '/seller.html';
+        window.location.href = getDashboardPath();
       }, 2000);
     } else if (verificationStatus === 'more_evidence' || verificationStatus === 'rejected') {
-      const reason = adminNotes ? ` Details: ${adminNotes}` : '';
+      const reason = adminNotes ? ` Details: ${escapeHtml(adminNotes)}` : '';
       showToast(`Previous verification needs resubmission.${reason}`, 'warning');
     } else if (userStatus === 'verification_pending' || verificationStatus === 'pending') {
       // Hide the form and show pending message
@@ -66,6 +97,7 @@ const hideFormShowPendingMessage = () => {
   const cardBody = document.querySelector('.card-body');
   
   if (cardBody) {
+    const dashboardPath = getDashboardPath();
     // Check if message already exists
     const existingMessage = document.getElementById('pending-verification-message');
     if (existingMessage) {
@@ -96,7 +128,7 @@ const hideFormShowPendingMessage = () => {
           </div>
         </div>
         <div class="mt-6">
-          <a href="/seller.html" class="btn btn-primary btn-lg px-8 py-3">
+          <a href="${dashboardPath}" class="btn btn-primary btn-lg px-8 py-3">
             <i class="bi bi-arrow-left"></i>
             Return to Dashboard
           </a>

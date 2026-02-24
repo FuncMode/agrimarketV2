@@ -123,7 +123,6 @@ exports.getUserConversations = async (userId, role) => {
     }
 
     const profileField = role === 'buyer' ? 'buyer_id' : 'seller_id';
-    const otherProfileField = role === 'buyer' ? 'seller_id' : 'buyer_id';
     const otherProfile = role === 'buyer' ? 'seller' : 'buyer';
 
     const { data: orders, error } = await supabase
@@ -155,35 +154,125 @@ exports.getUserConversations = async (userId, role) => {
     }
 
     const orderIds = orders.map(o => o.id);
-    
-    // Get only the latest message per order for performance
+
+    // Get all messages for relevant orders (newest first).
     const { data: allMessages } = await supabase
       .from('messages')
-      .select('order_id, message_text, created_at, sender_id, is_read')
+      .select('order_id, message_text, message_type, attachment_path, created_at, sender_id, is_read')
       .in('order_id', orderIds)
       .order('created_at', { ascending: false });
 
-    const conversations = orders.map(order => {
-      const orderMessages = allMessages?.filter(m => m.order_id === order.id) || [];
-      const lastMessage = orderMessages[0];
-      
-      // Calculate unread count
-      const unreadCount = orderMessages.filter(m => !m.is_read && m.sender_id !== userId).length;
+    const messagesByOrder = new Map();
+    (allMessages || []).forEach((message) => {
+      if (!messagesByOrder.has(message.order_id)) {
+        messagesByOrder.set(message.order_id, []);
+      }
+      messagesByOrder.get(message.order_id).push(message);
+    });
 
-      return {
+    const getTimestamp = (value) => {
+      if (!value) return 0;
+      const t = new Date(value).getTime();
+      return Number.isNaN(t) ? 0 : t;
+    };
+
+    // Group conversations by the other party so multiple orders map to one chat box.
+    const groupedConversations = new Map();
+
+    orders.forEach(order => {
+      const otherPartyUser = order?.[otherProfile]?.user;
+      const groupKey = otherPartyUser?.id || order.id;
+      const orderMessages = messagesByOrder.get(order.id) || [];
+      const lastMessage = orderMessages[0];
+      const unreadCount = orderMessages.filter(m => !m.is_read && m.sender_id !== userId).length;
+      const hasAttachment = !!lastMessage?.attachment_path;
+      const hasTextMessage = !!lastMessage?.message_text;
+      const lastMessagePreview = hasTextMessage
+        ? lastMessage.message_text
+        : (hasAttachment
+          ? (lastMessage.message_type === 'image' ? '[Image attachment]' : '[File attachment]')
+          : null);
+      const candidateMessageAt = lastMessage?.created_at || null;
+      const candidateActivityAt = candidateMessageAt || order.created_at;
+      const isCancelled = order.status === 'cancelled';
+
+      const candidate = {
         order_id: order.id,
         order_number: order.order_number,
         order_status: order.status,
         order_total: order.total_amount,
-        other_party: order[otherProfile].user.full_name,
-        other_party_id: order[otherProfile].user.id,
-        last_message: lastMessage?.message_text || null,
-        last_message_at: lastMessage?.created_at || order.created_at,
+        other_party: otherPartyUser?.full_name || 'Unknown User',
+        other_party_id: otherPartyUser?.id || null,
+        last_message: lastMessagePreview,
+        last_message_at: candidateMessageAt || order.created_at,
         last_message_is_mine: lastMessage?.sender_id === userId,
         unread_count: unreadCount,
-        created_at: order.created_at
+        created_at: order.created_at,
+        order_ids: new Set([order.id]),
+        order_count: 1,
+        active_order_ids: new Set(isCancelled ? [] : [order.id]),
+        active_order_count: isCancelled ? 0 : 1,
+        representative_order_id: order.id,
+        representative_order_number: order.order_number,
+        representative_order_status: order.status,
+        representative_order_total: order.total_amount,
+        representative_order_activity_at: candidateActivityAt
       };
+
+      if (!groupedConversations.has(groupKey)) {
+        groupedConversations.set(groupKey, candidate);
+        return;
+      }
+
+      const existing = groupedConversations.get(groupKey);
+      existing.order_ids.add(order.id);
+      existing.order_count += 1;
+      existing.unread_count += unreadCount;
+      if (!isCancelled) {
+        existing.active_order_ids.add(order.id);
+        existing.active_order_count += 1;
+      }
+
+      // Prefer an active (non-cancelled) order as chat representative.
+      // This prevents grouped chats from being blocked by one cancelled order.
+      const existingRepCancelled = existing.representative_order_status === 'cancelled';
+      const shouldReplaceRepresentative =
+        (!isCancelled && existingRepCancelled) ||
+        (!isCancelled && !existingRepCancelled && getTimestamp(candidateActivityAt) > getTimestamp(existing.representative_order_activity_at));
+
+      if (shouldReplaceRepresentative) {
+        existing.representative_order_id = order.id;
+        existing.representative_order_number = order.order_number;
+        existing.representative_order_status = order.status;
+        existing.representative_order_total = order.total_amount;
+        existing.representative_order_activity_at = candidateActivityAt;
+      }
+
+      // Update preview only when the candidate actually has a newer message.
+      // This prevents a newly created order (without messages) from wiping preview text.
+      const existingMessageAt = existing.last_message ? existing.last_message_at : null;
+      if (lastMessage && getTimestamp(candidateMessageAt) > getTimestamp(existingMessageAt)) {
+        existing.last_message = candidate.last_message;
+        existing.last_message_at = candidateMessageAt;
+        existing.last_message_is_mine = candidate.last_message_is_mine;
+        existing.created_at = candidate.created_at;
+      } else if (!existing.last_message && !lastMessage && getTimestamp(candidateActivityAt) > getTimestamp(existing.last_message_at)) {
+        // If no message exists in the thread yet, keep latest order timestamp for ordering.
+        existing.last_message_at = candidateActivityAt;
+        existing.created_at = candidate.created_at;
+      }
     });
+
+    const conversations = Array.from(groupedConversations.values()).map(conv => ({
+      ...conv,
+      order_id: conv.representative_order_id,
+      order_number: conv.representative_order_number,
+      order_status: conv.representative_order_status,
+      order_total: conv.representative_order_total,
+      order_ids: Array.from(conv.order_ids),
+      active_order_ids: Array.from(conv.active_order_ids),
+      active_order_count: conv.active_order_count
+    }));
 
     conversations.sort((a, b) => 
       new Date(b.last_message_at) - new Date(a.last_message_at)

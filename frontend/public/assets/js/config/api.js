@@ -112,7 +112,12 @@ const ENDPOINTS = {
     ADMIN_REJECTED: '/issues/admin/rejected',
     ADMIN_STATS: '/issues/admin/stats',
     ADMIN_RESOLVE: (id) => `/issues/admin/${id}/resolve`,
-    ADMIN_REJECT: (id) => `/issues/admin/${id}/reject`
+    ADMIN_REJECT: (id) => `/issues/admin/${id}/reject`,
+    ADMIN_TIMELINE: (id) => `/issues/admin/${id}/timeline`,
+    ADMIN_NOTE: (id) => `/issues/admin/${id}/note`,
+    ADMIN_PRIORITY: (id) => `/issues/admin/${id}/priority`,
+    ADMIN_OUTCOME: (id) => `/issues/admin/${id}/outcome`,
+    ADMIN_ESCALATE: (id) => `/issues/admin/${id}/escalate`
   },
   
   // Notification endpoints

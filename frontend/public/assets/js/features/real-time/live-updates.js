@@ -156,9 +156,17 @@ const handleNewOrder = (data) => {
 };
 
 const handleOrderCancelledSeller = (data) => {
-  const { order_number, buyer_name } = data;
-  
-  showWarning(`Order #${order_number} was cancelled by ${buyer_name}`);
+  const orderNumber = data?.order_number || 'Unknown';
+  const fallbackActor = data?.buyer_name || 'the buyer';
+  const cancelledBy = (data?.cancelled_by || '').toLowerCase();
+  const actorLabel = cancelledBy === 'buyer'
+    ? 'the buyer'
+    : cancelledBy === 'seller'
+      ? 'you'
+      : fallbackActor;
+  const reasonText = data?.reason ? ` Reason: ${data.reason}` : '';
+
+  showWarning(`Order #${orderNumber} was cancelled by ${actorLabel}.${reasonText}`);
   
   // Update UI
   updateOrderUI(data.order_id, data);

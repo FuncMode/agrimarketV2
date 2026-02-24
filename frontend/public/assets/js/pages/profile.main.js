@@ -15,7 +15,7 @@ async function initPage() {
       return;
     }
 
-    let user = state.user;
+    let user = state.get('user');
 
     if (!user) {
       const stored = localStorage.getItem('agrimarket_user');
@@ -955,19 +955,22 @@ async function saveProfile() {
     const phoneNumber = document.getElementById('edit-phone').value;
 
 
+    const currentStateUser = state.get('user') || window.currentUser || {};
     const profileData = {
-      full_name: fullName || state.user.full_name,
-      phone_number: phoneNumber || state.user.phone_number
+      full_name: fullName || currentStateUser.full_name || '',
+      phone_number: phoneNumber || currentStateUser.phone_number || ''
     };
 
 
     const response = await put('/users/profile', profileData);
     const updatedUser = response.data?.user || response.user;
-    state.set('user', { ...state.user, ...updatedUser });
-    localStorage.setItem('agrimarket_user', JSON.stringify(state.user));
+    const mergedUser = { ...currentStateUser, ...updatedUser };
+    state.set('user', mergedUser);
+    localStorage.setItem('agrimarket_user', JSON.stringify(mergedUser));
+    window.currentUser = { ...window.currentUser, ...mergedUser };
 
 
-    const user = window.currentUser || state.user;
+    const user = window.currentUser || mergedUser;
 
 
     if (user.role === 'seller') {
@@ -1046,13 +1049,14 @@ async function saveSellerProfile(data) {
 
     window.currentUser = { ...window.currentUser, ...data };
 
-    hideSpinner();
+    hidePageLoader();
     createToast('Seller profile updated successfully', 'success');
 
     // Reload to show updated data
     await loadProfile();
     setupRoleSections();
   } catch (error) {
+    hidePageLoader();
     console.error('Error saving seller profile:', error);
     createToast(error.message || 'Failed to update seller profile', 'error');
   }
@@ -1066,23 +1070,25 @@ async function saveBuyerProfile(data) {
 
     window.currentUser = { ...window.currentUser, ...data };
 
-    hideSpinner();
+    hidePageLoader();
     createToast('Buyer preferences updated successfully', 'success');
 
     // Reload to show updated data
     await loadProfile();
     setupRoleSections();
   } catch (error) {
+    hidePageLoader();
     console.error('Error saving buyer profile:', error);
     createToast(error.message || 'Failed to update buyer preferences', 'error');
   }
 }
 
 async function performDeleteAccount() {
+  let modal = null;
   try {
     showPageLoader('Deleting account...');
 
-    const modal = createModal({
+    modal = createModal({
       title: 'Deleting Account',
       content: '<p class="text-gray-700">Please wait while we delete your account...</p>',
       footer: '',
@@ -1104,6 +1110,10 @@ async function performDeleteAccount() {
       window.location.href = '/index.html';
     }, 2000);
   } catch (error) {
+    hidePageLoader();
+    if (modal?.close) {
+      modal.close();
+    }
     console.error('Error deleting account:', error);
     createToast(error.message || 'Failed to delete account', 'error');
   }

@@ -537,9 +537,11 @@ const updateMapMarkers = () => {
     let finalLat, finalLng;
     
     // Try to use seller's coordinates first
-    if (seller.latitude && seller.longitude && !isNaN(seller.latitude) && !isNaN(seller.longitude)) {
-      finalLat = parseFloat(seller.latitude);
-      finalLng = parseFloat(seller.longitude);
+    const parsedLat = Number(seller.latitude);
+    const parsedLng = Number(seller.longitude);
+    if (Number.isFinite(parsedLat) && Number.isFinite(parsedLng)) {
+      finalLat = parsedLat;
+      finalLng = parsedLng;
     } 
     // Fallback to municipality coordinates
     else if (seller.municipality && MUNICIPALITY_COORDINATES[seller.municipality]) {
@@ -654,7 +656,7 @@ const updateMapMarkers = () => {
         `;
       }
       
-      marker.bindPopup(popupContent, { maxWidth: 350 });
+      marker.bindPopup(popupContent, { maxWidth: 350, className: 'seller-popup' });
       
       // Event listeners
       marker.on('click', function() {
@@ -697,9 +699,11 @@ const filterMapByMunicipality = (municipality) => {
     let finalLat, finalLng;
     
     // Try to use seller's coordinates first
-    if (seller.latitude && seller.longitude && !isNaN(seller.latitude) && !isNaN(seller.longitude)) {
-      finalLat = parseFloat(seller.latitude);
-      finalLng = parseFloat(seller.longitude);
+    const parsedLat = Number(seller.latitude);
+    const parsedLng = Number(seller.longitude);
+    if (Number.isFinite(parsedLat) && Number.isFinite(parsedLng)) {
+      finalLat = parsedLat;
+      finalLng = parsedLng;
     } 
     // Fallback to municipality coordinates
     else if (seller.municipality && MUNICIPALITY_COORDINATES[seller.municipality]) {
@@ -812,7 +816,7 @@ const filterMapByMunicipality = (municipality) => {
         `;
       }
       
-      marker.bindPopup(popupContent, { maxWidth: 350 });
+      marker.bindPopup(popupContent, { maxWidth: 350, className: 'seller-popup' });
       markersLayer.addLayer(marker);
       filteredCount++;
       
@@ -977,6 +981,12 @@ window.viewProduct = (productId) => {
   
   const isAuth = isAuthenticated();
   const canBuy = isAuth && isBuyer();
+  const rawSellerName = product.seller_name || product.seller?.business_name || product.seller?.full_name || '';
+  const sellerName = rawSellerName && !/funcmode null/i.test(rawSellerName)
+    ? rawSellerName
+    : 'Unknown Seller';
+  const category = product.category || 'Uncategorized';
+  const location = product.municipality || 'Unknown';
   
   // Prepare photos array
   const photos = product.photos && product.photos.length > 0 
@@ -993,20 +1003,22 @@ window.viewProduct = (productId) => {
   });
   
   const modalContent = `
-    <div class="space-y-4">
+    <div class="featured-product-details space-y-4">
       ${carouselHtml}
       
-      <div>
-        <div class="flex items-start justify-between mb-2">
-          <h3 class="text-2xl font-bold">${product.name}</h3>
+      <div class="featured-product-details__content">
+        <div class="flex items-start justify-between mb-2 gap-2">
+          <h3 class="card-title pc-title mb-0">${product.name}</h3>
           ${product.seller_verified ? '<span class="verified-badge"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
         </div>
         
-        <p class="text-gray-600 mb-4">
-          <i class="bi bi-shop"></i> ${product.seller_name || 'Unknown Seller'}
+        <p class="text-sm text-gray-600 pc-meta mb-3">
+          <i class="bi bi-shop"></i> ${sellerName}
         </p>
         
-        <p class="text-gray-600 mb-4">${product.description || 'No description'}</p>
+        <p class="card-text pc-desc mb-3">
+          <i class="bi bi-file-text"></i> ${product.description || 'No description'}
+        </p>
         
         <!-- Tags -->
         ${product.tags && product.tags.length > 0 ? `
@@ -1014,41 +1026,45 @@ window.viewProduct = (productId) => {
             <p class="text-sm text-gray-600 mb-2">Tags</p>
             <div class="flex gap-2 flex-wrap">
               ${product.tags.map(tag => `
-                <span class="badge badge-info">
-                  <i class="bi bi-tag"></i> ${tag.charAt(0).toUpperCase() + tag.slice(1)}
+                <span class="badge badge-info pc-tag">
+                  <i class="bi bi-tag"></i> ${tag.replace(/_/g, ' ').charAt(0).toUpperCase() + tag.replace(/_/g, ' ').slice(1)}
                 </span>
               `).join('')}
             </div>
           </div>
         ` : ''}
         
-        <div class="grid grid-cols-2 gap-4 mb-4">
-          <div>
+        <div class="featured-product-details__grid mb-4">
+          <div class="featured-product-details__item featured-product-details__item--price">
             <p class="text-sm text-gray-600">Price</p>
-            <p class="text-2xl font-bold text-primary">${formatCurrency(product.price_per_unit)}</p>
+            <p class="pc-price">${formatCurrency(product.price_per_unit)}</p>
             <p class="text-sm text-gray-500">per ${product.unit_type}</p>
           </div>
           
-          <div>
+          <div class="featured-product-details__item">
             <p class="text-sm text-gray-600">Available Stock</p>
-            <p class="text-xl font-semibold">${product.available_quantity}</p>
+            <p class="pc-stock-value">${product.available_quantity}</p>
           </div>
           
-          <div>
+          <div class="featured-product-details__item">
             <p class="text-sm text-gray-600">Category</p>
-            <p class="font-semibold">${product.category}</p>
+            <p class="font-semibold">${category}</p>
           </div>
           
-          <div>
+          <div class="featured-product-details__item">
             <p class="text-sm text-gray-600">Location</p>
-            <p class="font-semibold">${product.municipality}</p>
+            <p class="font-semibold">${location}</p>
           </div>
         </div>
         
         ${canBuy ? `
-          <div class="form-group">
+          <div class="form-group featured-product-details__qty">
             <label class="form-label">Quantity</label>
             <input type="number" id="product-quantity" class="form-control" value="1" min="1" max="${product.available_quantity}">
+          </div>
+        ` : !isAuth ? `
+          <div class="featured-product-details__guest-note">
+            <i class="bi bi-info-circle"></i> Login as buyer to add this item to cart.
           </div>
         ` : ''}
       </div>

@@ -2,18 +2,46 @@
 
 const nodemailer = require('nodemailer');
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 let transporter = null;
+let sendGridBackoffUntil = 0;
+let sendGridBackoffReason = null;
+let sendGridBackoffLogged = false;
 
-const initializeTransporter = () => {
+const getSendGridBackoffMinutes = () => {
+  const parsed = Number.parseInt(process.env.EMAIL_SENDGRID_BACKOFF_MINUTES || '60', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 60;
+};
+
+const getSendGridErrorMessages = (error) => {
+  const errors = error?.response?.data?.errors;
+  if (!Array.isArray(errors)) return [];
+  return errors.map(item => String(item?.message || '').trim()).filter(Boolean);
+};
+
+const isSendGridCreditExceededError = (error) => {
+  const messages = getSendGridErrorMessages(error).map(msg => msg.toLowerCase());
+  return messages.some(msg => msg.includes('maximum credits exceeded'));
+};
+
+const hasSmtpCredentials = () => {
+  return Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASSWORD);
+};
+
+const initializeTransporter = (options = {}) => {
+  const { forceSmtp = false } = options;
+
   // If using SendGrid, we don't need a transporter
-  if (process.env.EMAIL_SERVICE === 'sendgrid') {
+  if (process.env.EMAIL_SERVICE === 'sendgrid' && !forceSmtp) {
     return { type: 'sendgrid' };
   }
 
   if (transporter) return transporter;
 
-  if (process.env.EMAIL_SERVICE === 'gmail') {
+  const smtpService = (process.env.EMAIL_FALLBACK_SERVICE || process.env.EMAIL_SERVICE || '').toLowerCase();
+
+  if (smtpService === 'gmail') {
     transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -150,28 +178,99 @@ exports.sendOrderConfirmationEmail = async (order, user) => {
   return sendEmail(emailData);
 };
 
-exports.sendOrderStatusEmail = async (order, user, status) => {
-  const statusMessages = {
-    placed: 'Your order has been placed successfully',
-    confirmed: 'Your order has been confirmed by the seller',
-    ready: 'Your order is ready for pickup/delivery',
-    completed: 'Your order has been completed',
-    cancelled: 'Your order has been cancelled'
+const resolveRecipientRole = (user, fallbackRole) => {
+  const role = (fallbackRole || user?.role || '').toLowerCase();
+  return role === 'seller' ? 'seller' : 'buyer';
+};
+
+const getOrderStatusEmailContent = (status, recipientRole) => {
+  const contentByStatus = {
+    placed: {
+      buyer: {
+        subjectPrefix: 'Order Placed',
+        message: 'Your order has been placed successfully.',
+        action: 'You can track order updates in your buyer dashboard.'
+      },
+      seller: {
+        subjectPrefix: 'New Order Received',
+        message: 'You received a new order from a buyer.',
+        action: 'Review and confirm this order in your seller dashboard.'
+      }
+    },
+    confirmed: {
+      buyer: {
+        subjectPrefix: 'Order Confirmed',
+        message: 'Your order has been confirmed by the seller.',
+        action: 'Wait for the seller to mark it as ready.'
+      },
+      seller: {
+        subjectPrefix: 'Order Confirmed',
+        message: 'You confirmed this order.',
+        action: 'Prepare the items and mark the order as ready when done.'
+      }
+    },
+    ready: {
+      buyer: {
+        subjectPrefix: 'Order Ready',
+        message: 'Your order is ready for pickup or delivery.',
+        action: 'Coordinate with the seller and confirm completion once received.'
+      },
+      seller: {
+        subjectPrefix: 'Order Ready',
+        message: 'This order is marked as ready.',
+        action: 'Coordinate handoff and wait for completion confirmation.'
+      }
+    },
+    completed: {
+      buyer: {
+        subjectPrefix: 'Order Completed',
+        message: 'Your order has been completed.',
+        action: 'You may leave a review in your buyer dashboard.'
+      },
+      seller: {
+        subjectPrefix: 'Order Completed',
+        message: 'This order has been completed by both parties.',
+        action: 'You can review this transaction in your seller dashboard.'
+      }
+    },
+    cancelled: {
+      buyer: {
+        subjectPrefix: 'Order Cancelled',
+        message: 'Your order has been cancelled.',
+        action: 'Check your order history for details.'
+      },
+      seller: {
+        subjectPrefix: 'Order Cancelled',
+        message: 'An order linked to your listing has been cancelled.',
+        action: 'Check your seller dashboard for details.'
+      }
+    }
   };
+
+  const safeStatus = contentByStatus[status] ? status : 'placed';
+  const roleContent = contentByStatus[safeStatus][recipientRole] || contentByStatus[safeStatus].buyer;
+  return { safeStatus, ...roleContent };
+};
+
+exports.sendOrderStatusEmail = async (order, user, status, options = {}) => {
+  const recipientRole = resolveRecipientRole(user, options.recipientRole);
+  const { safeStatus, subjectPrefix, message, action } = getOrderStatusEmailContent(status, recipientRole);
+  const deliveryOption = order.delivery_option || 'N/A';
 
   const emailData = {
     to: user.email,
-    subject: `Order Update - ${order.order_number}`,
+    subject: `${subjectPrefix} - ${order.order_number}`,
     body: `
       Dear ${user.full_name},
       
-      ${statusMessages[status]}
+      ${message}
       
       Order Number: ${order.order_number}
-      Status: ${status.toUpperCase()}
+      Status: ${safeStatus.toUpperCase()}
       Total Amount: ₱${order.total_amount}
+      Delivery Option: ${deliveryOption}
       
-      View your order details in your account dashboard.
+      ${action}
       
       Best regards,
       AgriMarket Team
@@ -181,14 +280,23 @@ exports.sendOrderStatusEmail = async (order, user, status) => {
   return sendEmail(emailData);
 };
 
-exports.sendNewMessageEmail = async (recipient, sender, orderNumber) => {
+exports.sendNewMessageEmail = async (recipient, sender, orderNumber, options = {}) => {
+  const senderName = sender?.full_name || 'A user';
+  const normalizedOrderNumber = orderNumber || 'N/A';
+  const rawPreview = typeof options.messagePreview === 'string' ? options.messagePreview.trim() : '';
+  const preview =
+    rawPreview.length > 140 ? `${rawPreview.substring(0, 140).trim()}...` : rawPreview;
+  const hasAttachment = Boolean(options.hasAttachment);
+
   const emailData = {
     to: recipient.email,
-    subject: `New Message from ${sender.full_name} - Order ${orderNumber}`,
+    subject: `New Message from ${senderName} - Order ${normalizedOrderNumber}`,
     body: `
       Dear ${recipient.full_name},
       
-      ${sender.full_name} sent you a message on Order ${orderNumber}.
+      ${senderName} sent you a new message regarding Order ${normalizedOrderNumber}.
+      ${preview ? `\nMessage preview: "${preview}"` : ''}
+      ${hasAttachment ? '\nAttachment included: Please log in to view the file.' : ''}
       
       Log in to your account to read and reply to the message.
       
@@ -345,6 +453,66 @@ exports.sendIssueResolutionEmail = async (user, issueId, resolution) => {
   return sendEmail(emailData);
 };
 
+exports.sendIssueUpdateEmail = async (user, issueId, subjectSuffix, details) => {
+  const emailData = {
+    to: user.email,
+    subject: `Issue Update - ${subjectSuffix}`,
+    body: `
+      Dear ${user.full_name},
+      
+      There is an update on your issue report.
+      
+      Issue ID: ${issueId}
+      Update: ${details}
+      
+      Please log in to your account to review the latest status.
+      
+      Best regards,
+      AgriMarket Team
+    `
+  };
+
+  return sendEmail(emailData);
+};
+
+exports.sendIssueReportedForPartyEmail = async (user, issueData = {}) => {
+  const {
+    issueId,
+    orderNumber,
+    issueType,
+    reporterRole = 'A user',
+    perspective = 'order',
+    description = ''
+  } = issueData;
+
+  const subject = perspective === 'product'
+    ? 'Issue Reported on Your Product'
+    : 'Issue Reported on Your Order';
+
+  const targetLabel = perspective === 'product' ? 'product order' : 'order';
+  const preview = description ? `\nDetails: ${String(description).substring(0, 120)}...` : '';
+
+  const emailData = {
+    to: user.email,
+    subject,
+    body: `
+      Dear ${user.full_name},
+      
+      ${reporterRole} reported an issue on your ${targetLabel} ${orderNumber || ''}.
+      
+      Issue ID: ${issueId}
+      Issue Type: ${issueType || 'N/A'}${preview}
+      
+      Our admin team has been notified and will review this issue.
+      
+      Best regards,
+      AgriMarket Team
+    `
+  };
+
+  return sendEmail(emailData);
+};
+
 exports.sendWelcomeEmail = async (user) => {
   const emailData = {
     to: user.email,
@@ -369,14 +537,21 @@ exports.sendWelcomeEmail = async (user) => {
   return sendEmail(emailData);
 };
 
-exports.sendOrderCancellationEmail = async (user, order, reason) => {
+exports.sendOrderCancellationEmail = async (user, order, reason, options = {}) => {
+  const recipientRole = resolveRecipientRole(user, options.recipientRole);
+  const cancelledByRole = (options.cancelledByRole || 'buyer').toLowerCase() === 'seller' ? 'seller' : 'buyer';
+  const actorLabel = cancelledByRole === 'seller' ? 'seller' : 'buyer';
+  const recipientMessage = recipientRole === 'seller'
+    ? `An order from a buyer was cancelled by the ${actorLabel}.`
+    : `Your order was cancelled by the ${actorLabel}.`;
+
   const emailData = {
     to: user.email,
     subject: `Order Cancelled - ${order.order_number}`,
     body: `
       Dear ${user.full_name},
       
-      Your order has been cancelled.
+      ${recipientMessage}
       
       Order Number: ${order.order_number}
       Total Amount: ₱${order.total_amount}
@@ -585,6 +760,71 @@ exports.sendTestNotificationEmail = async (user, notificationData) => {
   return sendEmail(emailData);
 };
 
+async function sendViaSmtpFallback(emailData, trigger) {
+  if (!hasSmtpCredentials()) {
+    logger.warn('SMTP fallback skipped: credentials not configured', {
+      trigger,
+      recipient: emailData.to
+    });
+
+    return {
+      success: false,
+      skipped: true,
+      reason: 'smtp_not_configured'
+    };
+  }
+
+  try {
+    const smtpTransporter = initializeTransporter({ forceSmtp: true });
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+      to: emailData.to,
+      subject: emailData.subject,
+      text: emailData.body,
+      html: emailData.html || `<pre style="font-family: Arial, sans-serif; white-space: pre-wrap;">${emailData.body}</pre>`
+    };
+
+    const sendMailTimeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Email send timeout (10s)')), 10000)
+    );
+
+    const info = await Promise.race([
+      smtpTransporter.sendMail(mailOptions),
+      sendMailTimeoutPromise
+    ]);
+
+    logger.warn('Email delivered via SMTP fallback', {
+      trigger,
+      recipient: emailData.to,
+      subject: emailData.subject,
+      messageId: info.messageId
+    });
+
+    return {
+      success: true,
+      message: 'Email sent successfully via SMTP fallback',
+      messageId: info.messageId,
+      provider: 'smtp',
+      fallback: true
+    };
+  } catch (fallbackError) {
+    logger.error('SMTP fallback failed', {
+      trigger,
+      error: fallbackError.message,
+      recipient: emailData.to,
+      subject: emailData.subject
+    });
+
+    return {
+      success: false,
+      skipped: true,
+      reason: 'smtp_fallback_failed',
+      error: fallbackError.message
+    };
+  }
+}
+
 async function sendEmail(emailData) {
   try {
     if (!emailData.to || emailData.to.trim() === '') {
@@ -612,6 +852,32 @@ async function sendEmail(emailData) {
 
     // SendGrid API
     if (process.env.EMAIL_SERVICE === 'sendgrid') {
+      if (sendGridBackoffUntil && Date.now() < sendGridBackoffUntil) {
+        if (!sendGridBackoffLogged) {
+          logger.warn('SendGrid delivery temporarily disabled due to quota limit', {
+            reason: sendGridBackoffReason || 'quota_exceeded',
+            retryAt: new Date(sendGridBackoffUntil).toISOString()
+          });
+          sendGridBackoffLogged = true;
+        }
+
+        const fallbackResult = await sendViaSmtpFallback(
+          emailData,
+          sendGridBackoffReason || 'sendgrid_quota_exceeded'
+        );
+        if (fallbackResult.success) {
+          return fallbackResult;
+        }
+
+        return {
+          success: false,
+          skipped: true,
+          reason: sendGridBackoffReason || 'sendgrid_quota_exceeded',
+          retryAt: new Date(sendGridBackoffUntil).toISOString(),
+          smtpFallback: fallbackResult.reason
+        };
+      }
+
       if (!process.env.SENDGRID_API_KEY) {
         console.warn('SendGrid API key not configured');
         return {
@@ -658,6 +924,11 @@ async function sendEmail(emailData) {
       console.log('   ✅ Email sent successfully via SendGrid');
       console.log('   To:', emailData.to);
       console.log('   Subject:', emailData.subject);
+
+      // Reset backoff after successful delivery.
+      sendGridBackoffUntil = 0;
+      sendGridBackoffReason = null;
+      sendGridBackoffLogged = false;
 
       return {
         success: true,
@@ -707,6 +978,33 @@ async function sendEmail(emailData) {
     };
 
   } catch (error) {
+    if (process.env.EMAIL_SERVICE === 'sendgrid' && isSendGridCreditExceededError(error)) {
+      const backoffMinutes = getSendGridBackoffMinutes();
+      sendGridBackoffUntil = Date.now() + (backoffMinutes * 60 * 1000);
+      sendGridBackoffReason = 'sendgrid_quota_exceeded';
+      sendGridBackoffLogged = false;
+
+      logger.warn('SendGrid credits exceeded. Email delivery paused.', {
+        recipient: emailData.to,
+        subject: emailData.subject,
+        retryAt: new Date(sendGridBackoffUntil).toISOString(),
+        backoffMinutes
+      });
+
+      const fallbackResult = await sendViaSmtpFallback(emailData, sendGridBackoffReason);
+      if (fallbackResult.success) {
+        return fallbackResult;
+      }
+
+      return {
+        success: false,
+        skipped: true,
+        reason: sendGridBackoffReason,
+        retryAt: new Date(sendGridBackoffUntil).toISOString(),
+        smtpFallback: fallbackResult.reason
+      };
+    }
+
     console.error('❌ Email send error:', error.message);
     console.error('   Error code:', error.code || error.response?.status);
     console.error('   Email service:', process.env.EMAIL_SERVICE);
@@ -717,7 +1015,6 @@ async function sendEmail(emailData) {
     }
     
     // Log to deployment logs for debugging
-    const logger = require('../utils/logger');
     logger.error('Email service failed', {
       error: error.message,
       code: error.code || error.response?.status,

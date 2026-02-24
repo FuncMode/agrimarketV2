@@ -314,6 +314,10 @@ exports.reinstateUser = asyncHandler(async (req, res, next) => {
     throw new AppError('User not found.', 404);
   }
 
+  if (user.role === 'admin') {
+    throw new AppError('Cannot reinstate admin users.', 400);
+  }
+
   if (!['suspended', 'banned'].includes(user.status)) {
     throw new AppError('User is not suspended or banned.', 400);
   }
@@ -566,22 +570,27 @@ exports.getDatabaseStats = asyncHandler(async (req, res, next) => {
 
 exports.getOrdersForDispute = asyncHandler(async (req, res, next) => {
   const { buyer_search, seller_search, status, search, page = 1, limit = 20 } = req.query;
-  
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const offset = (pageNum - 1) * limitNum;
+  const needsProfileFiltering = Boolean(buyer_search || seller_search);
+
   let query = supabase.from('orders').select('*', { count: 'exact' });
   
   if (status) {
     query = query.eq('status', status);
   }
   
-  // For general search (order id or product name)
-  if (search && !buyer_search && !seller_search) {
+  if (search) {
     query = query.or(`id.ilike.%${search}%,order_number.ilike.%${search}%`);
   }
-  
-  const { data: orders, error, count } = await query
-    .order('created_at', { ascending: false })
-    .range(offset, offset + parseInt(limit) - 1);
+
+  query = query.order('created_at', { ascending: false });
+  if (!needsProfileFiltering) {
+    query = query.range(offset, offset + limitNum - 1);
+  }
+
+  const { data: orders, error, count } = await query;
   
   if (error) {
     throw new AppError('Failed to fetch orders', 500);
@@ -651,16 +660,21 @@ exports.getOrdersForDispute = asyncHandler(async (req, res, next) => {
       return matches;
     });
   }
+
+  const total = needsProfileFiltering ? filteredOrders.length : (count || 0);
+  const paginatedOrders = needsProfileFiltering
+    ? filteredOrders.slice(offset, offset + limitNum)
+    : filteredOrders;
   
   res.status(200).json({
     success: true,
     data: {
-      orders: filteredOrders,
+      orders: paginatedOrders,
       pagination: {
-        total: count,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total_pages: Math.ceil(count / parseInt(limit))
+        total,
+        page: pageNum,
+        limit: limitNum,
+        total_pages: total ? Math.ceil(total / limitNum) : 0
       }
     }
   });
@@ -771,10 +785,68 @@ exports.getOrderDetails = asyncHandler(async (req, res, next) => {
 exports.getMessagesForDispute = asyncHandler(async (req, res, next) => {
   const { buyer_id, seller_id, order_id, search, page = 1, limit = 50 } = req.query;
   
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const offset = (pageNum - 1) * limitNum;
+  let scopedOrderIds = null;
+
+  if (buyer_id || seller_id) {
+    let ordersScopeQuery = supabase.from('orders').select('id');
+
+    if (buyer_id) {
+      ordersScopeQuery = ordersScopeQuery.eq('buyer_id', buyer_id);
+    }
+
+    if (seller_id) {
+      ordersScopeQuery = ordersScopeQuery.eq('seller_id', seller_id);
+    }
+
+    const { data: scopedOrders, error: scopedOrdersError } = await ordersScopeQuery;
+    if (scopedOrdersError) {
+      throw new AppError('Failed to scope messages by buyer/seller.', 500);
+    }
+
+    scopedOrderIds = (scopedOrders || []).map(order => order.id);
+
+    if (order_id) {
+      if (!scopedOrderIds.includes(order_id)) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            messages: [],
+            pagination: {
+              total: 0,
+              page: pageNum,
+              limit: limitNum,
+              total_pages: 0
+            }
+          }
+        });
+      }
+      scopedOrderIds = [order_id];
+    }
+
+    if (scopedOrderIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          messages: [],
+          pagination: {
+            total: 0,
+            page: pageNum,
+            limit: limitNum,
+            total_pages: 0
+          }
+        }
+      });
+    }
+  }
+
   let query = supabase.from('messages').select('*', { count: 'exact' });
   
-  if (order_id) {
+  if (scopedOrderIds) {
+    query = query.in('order_id', scopedOrderIds);
+  } else if (order_id) {
     query = query.eq('order_id', order_id);
   }
   
@@ -784,7 +856,7 @@ exports.getMessagesForDispute = asyncHandler(async (req, res, next) => {
   
   const { data: messages, error, count } = await query
     .order('created_at', { ascending: false })
-    .range(offset, offset + parseInt(limit) - 1);
+    .range(offset, offset + limitNum - 1);
   
   if (error) {
     throw new AppError('Failed to fetch messages', 500);
@@ -811,10 +883,10 @@ exports.getMessagesForDispute = asyncHandler(async (req, res, next) => {
     data: {
       messages: enrichedMessages,
       pagination: {
-        total: count,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total_pages: Math.ceil(count / parseInt(limit))
+        total: count || 0,
+        page: pageNum,
+        limit: limitNum,
+        total_pages: count ? Math.ceil(count / limitNum) : 0
       }
     }
   });

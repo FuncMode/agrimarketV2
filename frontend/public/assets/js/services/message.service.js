@@ -273,8 +273,8 @@ const validateMessage = (messageText) => {
     return { valid: false, message: 'Message cannot be empty' };
   }
   
-  if (messageText.length > 5000) {
-    return { valid: false, message: 'Message is too long (max 5000 characters)' };
+  if (messageText.length > 500) {
+    return { valid: false, message: 'Message is too long (max 500 characters)' };
   }
   
   return { valid: true };

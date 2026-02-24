@@ -4,6 +4,25 @@ const jwt = require('jsonwebtoken');
 const { supabase } = require('../config/database');
 const { AppError, asyncHandler } = require('./errorHandler');
 
+const verifyTokenWithAvailableSecrets = (token) => {
+  const secrets = [
+    process.env.SUPABASE_JWT_SECRET,
+    process.env.JWT_SECRET
+  ].filter(Boolean);
+
+  let lastError = null;
+  for (const secret of [...new Set(secrets)]) {
+    try {
+      return jwt.verify(token, secret);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  throw new Error('JWT secret is not configured');
+};
+
 const protect = asyncHandler(async (req, res, next) => {
   let token;
 
@@ -19,7 +38,7 @@ const protect = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyTokenWithAvailableSecrets(token);
 
     const { data: user, error } = await supabase
       .from('users')
@@ -103,7 +122,7 @@ const optionalAuth = async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyTokenWithAvailableSecrets(token);
 
     const { data: user } = await supabase
       .from('users')

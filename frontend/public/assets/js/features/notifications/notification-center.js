@@ -5,6 +5,13 @@ import { formatRelativeTime } from '../../utils/formatters.js';
 import { showToast } from '../../components/toast.js';
 import { updateUnreadCount } from '../../components/notification-bell.js';
 
+const escapeHtml = (value = '') => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 const showNotificationCenter = async () => {
   try {
     const response = await getMyNotifications({ limit: 20 });
@@ -148,21 +155,24 @@ const createNotificationItem = (notification) => {
   
   const icon = icons[notification.type] || 'bi-bell';
   const unreadClass = notification.is_read ? '' : 'unread bg-blue-50';
+  const title = escapeHtml(notification.title || '');
+  const message = escapeHtml(notification.message || '');
+  const notificationId = escapeHtml(notification.id || '');
   
   return `
     <div class="notification-item ${unreadClass} p-4 rounded-lg hover:bg-gray-100 transition relative"
-         data-notification-id="${notification.id}">
+         data-notification-id="${notificationId}">
       <div class="flex gap-3">
         <i class="bi ${icon} text-2xl text-primary"></i>
         <div class="flex-1 cursor-pointer notification-content">
-          <p class="font-semibold">${notification.title}</p>
-          <p class="text-sm text-gray-600">${notification.message}</p>
+          <p class="font-semibold">${title}</p>
+          <p class="text-sm text-gray-600">${message}</p>
           <p class="text-xs text-gray-400 mt-1">${formatRelativeTime(notification.created_at)}</p>
         </div>
         <div class="flex items-start gap-2">
           ${!notification.is_read ? '<span class="w-2 h-2 bg-primary rounded-full mt-2"></span>' : ''}
           <button class="btn-delete-notification text-gray-400 hover:text-red-500 transition" 
-                  data-notification-id="${notification.id}"
+                  data-notification-id="${notificationId}"
                   title="Delete notification">
             <i class="bi bi-trash text-lg"></i>
           </button>

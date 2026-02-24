@@ -11,6 +11,7 @@ require('dotenv').config();
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const sanitizeInput = require('./middleware/sanitizeMiddleware');
 const { ipBlockingMiddleware } = require('./middleware/ipBlockingMiddleware');
+const { supabaseService } = require('./config/database');
 
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -36,7 +37,9 @@ const getCSPDirectives = () => {
   const connectSrcSources = [
     "'self'",
     "https://unpkg.com",
-    "https://cdn.socket.io",
+    "https://cdn.jsdelivr.net",
+    "https://*.supabase.co",
+    "wss://*.supabase.co",
     "https://*.tile.openstreetmap.org",
     "ws:",
     "wss:"
@@ -63,10 +66,17 @@ const getCSPDirectives = () => {
     }
   }
 
+  if (process.env.SUPABASE_URL) {
+    connectSrcSources.push(process.env.SUPABASE_URL);
+    if (process.env.SUPABASE_URL.startsWith('https://')) {
+      connectSrcSources.push(process.env.SUPABASE_URL.replace('https://', 'wss://'));
+    }
+  }
+
   return {
     defaultSrc: ["'self'"],
     styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://cdn.jsdelivr.net", "https://unpkg.com"],
-    scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io", "https://cdn.tailwindcss.com", "https://unpkg.com"],
+    scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://cdn.jsdelivr.net", "https://unpkg.com"],
     scriptSrcAttr: ["'unsafe-inline'"],
     imgSrc: ["'self'", "data:", "https:"],
     connectSrc: connectSrcSources,
@@ -226,6 +236,63 @@ app.get('/forgot-password', (req, res) => {
 app.use(express.static('frontend/public'));
 app.use('/uploads', express.static('uploads'));
 
+// Public storage URL proxy fallback for frontend builds without SUPABASE_URL runtime config.
+// Uses only explicitly allowed public buckets.
+const PUBLIC_STORAGE_BUCKETS = new Set([
+  'product-photos',
+  'delivery-proof',
+  'issue-evidence',
+  'message-attachments'
+]);
+
+app.get('/api/storage/public/:bucket/*', async (req, res) => {
+  const { bucket } = req.params;
+  const rawPath = req.params[0];
+
+  if (!PUBLIC_STORAGE_BUCKETS.has(bucket)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid storage bucket'
+    });
+  }
+
+  if (!rawPath) {
+    return res.status(400).json({
+      success: false,
+      message: 'Storage path is required'
+    });
+  }
+
+  const cleanPath = String(rawPath).replace(/^\/+/, '');
+
+  try {
+    // Download via service key so this works for both public and private buckets.
+    const { data, error } = await supabaseService.storage
+      .from(bucket)
+      .download(cleanPath);
+
+    if (error || !data) {
+      return res.status(404).json({
+        success: false,
+        message: error?.message || 'File not found'
+      });
+    }
+
+    const contentType = data.type || 'application/octet-stream';
+    const arrayBuffer = await data.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.status(200).send(buffer);
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load storage file'
+    });
+  }
+});
+
 
 app.get('/api/health', async (req, res) => {
   try {
@@ -249,6 +316,18 @@ app.get('/api/health', async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
+});
+
+// Public runtime config needed by frontend-only Supabase Realtime client.
+// This only exposes non-secret values intended for browser usage.
+app.get('/api/public-config', (req, res) => {
+  res.status(200).json({
+    success: true,
+    data: {
+      SUPABASE_URL: process.env.SUPABASE_URL || null,
+      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || null
+    }
+  });
 });
 
 app.use('/api/auth/login', authLimiter);

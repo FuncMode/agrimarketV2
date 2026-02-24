@@ -26,7 +26,7 @@
     <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
 </head>
-<body class="bg-light">
+<body class="bg-white">
   
   <!-- Navbar -->
   <nav id="main-navbar" class="navbar"></nav>
@@ -141,62 +141,170 @@
     <!-- Analytics Section -->
     <section id="analytics" class="mb-8 sm:mb-12">
       <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Analytics</h2>
-      
-      <!-- Stats Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-        <div class="card">
-          <div class="card-body">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-gray-600 text-sm">Total Products</p>
-                <p id="stat-products" class="text-xl sm:text-2xl lg:text-3xl font-bold">0</p>
-              </div>
-              <i class="bi bi-box text-primary text-2xl sm:text-3xl lg:text-4xl"></i>
+
+      <div class="card mb-6">
+        <div class="card-body">
+          <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div class="form-group">
+              <label class="form-label text-sm">Date Range</label>
+              <select id="analytics-range" class="form-select">
+                <option value="last_7_days">Last 7 days</option>
+                <option value="last_30_days" selected>Last 30 days</option>
+                <option value="last_90_days">Last 90 days</option>
+                <option value="last_365_days">Last 365 days</option>
+                <option value="custom">Custom range</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label text-sm">Compare Mode</label>
+              <select id="analytics-compare-mode" class="form-select">
+                <option value="week">This week vs last week</option>
+                <option value="month">This month vs last month</option>
+              </select>
+            </div>
+            <div class="form-group" id="analytics-custom-from-wrap" style="display:none;">
+              <label class="form-label text-sm">From</label>
+              <input type="date" id="analytics-custom-from" class="form-control">
+            </div>
+            <div class="form-group" id="analytics-custom-to-wrap" style="display:none;">
+              <label class="form-label text-sm">To</label>
+              <input type="date" id="analytics-custom-to" class="form-control">
             </div>
           </div>
-        </div>
-        
-        <div class="card">
-          <div class="card-body">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-gray-600 text-sm">Pending Orders</p>
-                <p id="stat-pending" class="text-xl sm:text-2xl lg:text-3xl font-bold">0</p>
-              </div>
-              <i class="bi bi-clock text-warning text-2xl sm:text-3xl lg:text-4xl"></i>
-            </div>
-          </div>
-        </div>
-        
-        <div class="card">
-          <div class="card-body">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-gray-600 text-sm">Total Sales</p>
-                <p id="stat-sales" class="text-xl sm:text-2xl lg:text-3xl font-bold">₱0</p>
-              </div>
-              <i class="bi bi-cash text-success text-2xl sm:text-3xl lg:text-4xl"></i>
-            </div>
+          <div class="flex flex-wrap gap-2 mt-4">
+            <button id="btn-analytics-refresh" class="btn btn-primary btn-sm"><i class="bi bi-arrow-repeat"></i> Refresh</button>
+            <button id="btn-export-analytics-csv" class="btn btn-outline btn-sm"><i class="bi bi-file-earmark-spreadsheet"></i> Export CSV</button>
+            <button id="btn-export-analytics-pdf" class="btn btn-outline btn-sm"><i class="bi bi-file-earmark-pdf"></i> Export PDF</button>
           </div>
         </div>
       </div>
-      
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div class="card"><div class="card-body"><div class="flex items-center justify-between"><div><p class="text-gray-600 text-sm">Total Products</p><p id="stat-products" class="text-xl sm:text-2xl lg:text-3xl font-bold">0</p></div><i class="bi bi-box text-primary text-2xl sm:text-3xl lg:text-4xl"></i></div></div></div>
+        <div class="card"><div class="card-body"><div class="flex items-center justify-between"><div><p class="text-gray-600 text-sm">Pending Orders</p><p id="stat-pending" class="text-xl sm:text-2xl lg:text-3xl font-bold">0</p></div><i class="bi bi-clock text-warning text-2xl sm:text-3xl lg:text-4xl"></i></div></div></div>
+        <div class="card"><div class="card-body"><div class="flex items-center justify-between"><div><p class="text-gray-600 text-sm">Total Sales</p><p id="stat-sales" class="text-xl sm:text-2xl lg:text-3xl font-bold">₱0</p></div><i class="bi bi-cash text-success text-2xl sm:text-3xl lg:text-4xl"></i></div></div></div>
+      </div>
+
+      <div id="analytics-compare-summary" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"></div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
         <div class="card">
           <div class="card-body">
             <h3 class="text-lg sm:text-xl font-bold mb-4">Sales Overview</h3>
-            <div class="h-[250px] sm:h-[300px]">
-              <canvas id="sales-chart"></canvas>
-            </div>
+            <div class="h-[260px] sm:h-[320px]"><canvas id="sales-chart"></canvas></div>
           </div>
         </div>
         <div class="card">
           <div class="card-body">
             <h3 class="text-lg sm:text-xl font-bold mb-4">Top Products</h3>
-            <div class="h-[250px] sm:h-[300px]">
-              <canvas id="products-chart"></canvas>
-            </div>
+            <div class="h-[260px] sm:h-[320px]"><canvas id="products-chart"></canvas></div>
           </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
+        <div class="card">
+          <div class="card-body">
+            <h3 class="text-lg font-bold mb-3">Conversion Funnel</h3>
+            <div class="h-[260px]"><canvas id="funnel-chart"></canvas></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <h3 class="text-lg font-bold mb-3">Best Selling Time</h3>
+            <div class="h-[260px]"><canvas id="best-time-chart"></canvas></div>
+            <p class="text-xs text-gray-600 mt-2">Order count by day and time bucket.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-6">
+        <div class="card-body">
+          <h3 class="text-lg font-bold mb-3">Product Performance</h3>
+          <div class="overflow-x-auto">
+            <table class="table w-full">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Views</th>
+                  <th>Add-to-cart</th>
+                  <th>Orders</th>
+                  <th>Revenue</th>
+                  <th>Cancel Rate</th>
+                  <th>Return/Refund Rate</th>
+                </tr>
+              </thead>
+              <tbody id="product-performance-body">
+                <tr><td colspan="7" class="text-center text-gray-500 py-6">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
+        <div class="card">
+          <div class="card-body">
+            <h3 class="text-lg font-bold mb-3">Low Stock + Forecast</h3>
+            <div id="low-stock-forecast"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <h3 class="text-lg font-bold mb-3">Customer Insights</h3>
+            <div id="customer-insights"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
+        <div class="card">
+          <div class="card-body">
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <h3 class="text-lg font-bold">Profit Analytics</h3>
+              <div class="flex items-center gap-2">
+                <label for="analytics-default-margin" class="text-sm text-gray-600">Default Cost %</label>
+                <input id="analytics-default-margin" type="number" min="0" max="95" step="1" class="form-control w-24" value="30">
+              </div>
+            </div>
+            <div id="profit-analytics"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <h3 class="text-lg font-bold mb-3">Goal Tracking</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div class="form-group">
+                <label class="form-label text-sm">Monthly Sales Target (₱)</label>
+                <input id="goal-sales-target" type="number" class="form-control" min="0" step="0.01" placeholder="e.g. 50000">
+              </div>
+              <div class="form-group">
+                <label class="form-label text-sm">Monthly Orders Target</label>
+                <input id="goal-orders-target" type="number" class="form-control" min="0" step="1" placeholder="e.g. 120">
+              </div>
+            </div>
+            <button id="btn-save-goals" class="btn btn-outline btn-sm mb-3"><i class="bi bi-save"></i> Save Goals</button>
+            <div id="goal-tracking"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-6">
+        <div class="card-body">
+          <div class="flex flex-wrap items-end gap-3 mb-3">
+            <h3 class="text-lg font-bold mr-auto">Promo Impact Tracker</h3>
+            <div class="form-group mb-0">
+              <label class="form-label text-sm">Promo Start Date</label>
+              <input id="promo-start-date" type="date" class="form-control">
+            </div>
+            <div class="form-group mb-0">
+              <label class="form-label text-sm">Discount %</label>
+              <input id="promo-discount" type="number" class="form-control w-24" min="0" max="95" step="1" value="0">
+            </div>
+            <button id="btn-apply-promo-impact" class="btn btn-outline btn-sm"><i class="bi bi-graph-up-arrow"></i> Analyze</button>
+          </div>
+          <div class="h-[240px]"><canvas id="promo-impact-chart"></canvas></div>
+          <div id="promo-impact-summary" class="mt-3"></div>
         </div>
       </div>
     </section>
@@ -219,9 +327,6 @@
   
   <!-- Chart.js -->
   <script src="https://unpkg.com/chart.js" defer></script>
-  
-  <!-- Socket.io Client Library -->
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" integrity="sha384-/KNQL8Nu5gCHLqwqfQjA689Hhoqgi2S84SNUxC3roTe4EhJ9AfLkp8QiQcU8AMzI" crossorigin="anonymous" defer></script>
   
   <script src="/assets/js/config/env-loader.js"></script>
   

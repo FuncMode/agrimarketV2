@@ -24,9 +24,11 @@ router.get('/online', protect, (req, res) => {
   try {
     const socketService = req.app.get('socketService');
     if (!socketService) {
-      return res.status(500).json({
-        success: false,
-        message: 'Socket service not available'
+      return res.status(200).json({
+        success: true,
+        onlineUserIds: [],
+        count: 0,
+        message: 'Realtime presence is handled by Supabase channels'
       });
     }
     

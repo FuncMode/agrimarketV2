@@ -273,7 +273,7 @@ const showSignupModal = () => {
   });
   
   // Switch to login
-  const switchLogin = document.getElementById('switch-to-login');
+  const switchLogin = modal.body.querySelector('#switch-to-login');
   switchLogin.addEventListener('click', (e) => {
     e.preventDefault();
     modal.close();
@@ -283,25 +283,25 @@ const showSignupModal = () => {
 
 const handleSignup = async (e, signupModal) => {
   e.preventDefault();
-  
-  const municipalitySelect = document.getElementById('signup-municipality');
+  const form = e.currentTarget;
+  const municipalitySelect = form.querySelector('#signup-municipality');
   const coords = MUNICIPALITY_COORDINATES[municipalitySelect.value];
   
   // Check if user agreed to terms
-  const agreedToTerms = document.getElementById('agree-terms').checked;
+  const agreedToTerms = form.querySelector('#agree-terms').checked;
   if (!agreedToTerms) {
     showError('Please agree to the Terms of Service and Privacy Policy to continue.');
     return;
   }
   
   const formData = {
-    role: document.querySelector('input[name="role"]:checked').value,
-    full_name: document.getElementById('signup-name').value,
-    email: document.getElementById('signup-email').value,
-    phone_number: document.getElementById('signup-phone').value,
+    role: form.querySelector('input[name="role"]:checked').value,
+    full_name: form.querySelector('#signup-name').value,
+    email: form.querySelector('#signup-email').value,
+    phone_number: form.querySelector('#signup-phone').value,
     municipality: municipalitySelect.value,
-    password: document.getElementById('signup-password').value,
-    confirm_password: document.getElementById('signup-confirm-password').value,
+    password: form.querySelector('#signup-password').value,
+    confirm_password: form.querySelector('#signup-confirm-password').value,
     agreed_to_terms: agreedToTerms
   };
   
@@ -313,7 +313,7 @@ const handleSignup = async (e, signupModal) => {
   
   // Add seller-specific fields
   if (formData.role === 'seller') {
-    formData.farm_type = document.getElementById('signup-farm-type').value;
+    formData.farm_type = form.querySelector('#signup-farm-type').value;
   }
   
   // Validate

@@ -10,9 +10,15 @@ const { ipBlockingService } = require('../middleware/ipBlockingMiddleware');
 // ... existing code ...
 
 const generateToken = (userId) => {
+  const signingSecret = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET;
   return jwt.sign(
-    { id: userId },
-    process.env.JWT_SECRET,
+    {
+      id: userId,                 // Backward-compatible app claim
+      sub: userId,                // Used by auth.uid() in Supabase RLS
+      role: 'authenticated',      // Used by Supabase RLS role checks
+      aud: 'authenticated'
+    },
+    signingSecret,
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
   );
 };
@@ -44,6 +50,11 @@ exports.signup = asyncHandler(async (req, res, next) => {
     agreed_to_terms
   } = req.body;
 
+  // Validate role-specific required fields before creating user record
+  if (role === 'seller' && (!municipality || !farm_type)) {
+    throw new AppError('Municipality and farm type are required for sellers.', 400);
+  }
+
   const { data: existingUser } = await supabase
     .from('users')
     .select('email')
@@ -65,7 +76,7 @@ exports.signup = asyncHandler(async (req, res, next) => {
       phone_number,
       role,
       status: 'unverified',
-      agreed_to_terms: true,
+      agreed_to_terms: agreed_to_terms === true || agreed_to_terms === 'true',
       agreed_at: new Date().toISOString()
     }])
     .select()
@@ -76,10 +87,6 @@ exports.signup = asyncHandler(async (req, res, next) => {
   }
 
   if (role === 'seller') {
-    if (!municipality || !farm_type) {
-      throw new AppError('Municipality and farm type are required for sellers.', 400);
-    }
-
     const { error: profileError } = await supabaseService
       .from('seller_profiles')
       .insert([{
@@ -304,7 +311,7 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
     throw new AppError('Failed to generate reset token. Please try again.', 500);
   }
 
-  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/reset-password?token=${resetToken}`;
 
   // Send password reset email with timeout
   const { sendPasswordResetEmail } = require('../services/emailService');

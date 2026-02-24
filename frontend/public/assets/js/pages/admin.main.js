@@ -8,6 +8,7 @@ import { createModal } from '../components/modal.js';
 import { requireAuth } from '../core/auth.js';
 import { formatDate, formatCurrency } from '../utils/formatters.js';
 import { initNotificationSounds } from '../features/notifications/notification-sound.js';
+import { initSupabase } from '../config/supabase.js';
 
 import {
   getDashboardStats,
@@ -18,7 +19,6 @@ import {
   reinstateUser,
   deleteUser,
   getSystemLogs,
-  getSocketConnections,
   getIPBlockingStats,
   getDatabaseStats,
   getOrdersForDispute,
@@ -31,6 +31,10 @@ let currentStats = null;
 let currentUsers = [];
 let currentVerifications = [];
 let currentIssues = [];
+let currentIssueFilters = {
+  status: 'under_review',
+  overdue_only: false
+};
 let currentLogs = [];
 let currentUserPage = 1;
 let currentUserFilters = {};
@@ -56,14 +60,14 @@ const init = async () => {
     const { initSocket } = await import('../services/socket.service.js');
     initSocket();
   } catch (error) {
-    console.warn('Socket.io not available:', error);
+    console.warn('Realtime connection not available:', error);
   }
   
   // Load initial data
   await Promise.all([
     loadDashboardStats(),
     loadPendingVerifications(),
-    loadOpenIssues(),
+    loadIssues(),
     loadUsers(),
     loadSystemMonitoring(),
     loadDisputeLogs()
@@ -129,6 +133,7 @@ const loadPendingVerifications = async () => {
 
 const createVerificationCard = (verification) => {
   const placeholderSvg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2216%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E';
+  const submittedAt = verification.submitted_at || verification.created_at;
   
   return `
     <div class="card mb-4" data-verification-id="${verification.id}">
@@ -137,7 +142,7 @@ const createVerificationCard = (verification) => {
           <div>
             <h4 class="font-bold text-lg">${verification.users?.full_name || 'Unknown User'}</h4>
             <p class="text-sm text-gray-600">${verification.users?.email || 'No email'}</p>
-            <p class="text-sm text-gray-600">Submitted: ${formatDate(verification.created_at)}</p>
+            <p class="text-sm text-gray-600">Submitted: ${submittedAt ? formatDate(submittedAt) : 'N/A'}</p>
           </div>
           <span class="badge badge-warning">PENDING</span>
         </div>
@@ -323,40 +328,144 @@ window.viewImage = (imageUrl) => {
 
 // ============ Issues Management ============
 
-const loadOpenIssues = async () => {
+const getIssueStatusMeta = (status) => {
+  const meta = {
+    under_review: { badge: 'badge-warning', label: 'Under Review', dateField: 'created_at', dateLabel: 'Created' },
+    resolved: { badge: 'badge-success', label: 'Resolved', dateField: 'resolved_at', dateLabel: 'Resolved' },
+    rejected: { badge: 'badge-danger', label: 'Rejected', dateField: 'resolved_at', dateLabel: 'Rejected' }
+  };
+  return meta[status] || meta.under_review;
+};
+
+const getIssuePriorityMeta = (priority) => {
+  const meta = {
+    low: { badge: 'badge-secondary', label: 'Low' },
+    medium: { badge: 'badge-info', label: 'Medium' },
+    high: { badge: 'badge-warning', label: 'High' },
+    critical: { badge: 'badge-danger', label: 'Critical' }
+  };
+  return meta[priority] || meta.medium;
+};
+
+const formatSlaState = (issue) => {
+  if (issue.status !== 'under_review') {
+    return '<span class="text-xs text-gray-500">Closed</span>';
+  }
+
+  const dueAt = issue.sla_due_at ? formatDate(issue.sla_due_at) : 'N/A';
+  if (issue.is_overdue) {
+    return `<span class="badge badge-danger">Overdue ${Math.ceil(issue.overdue_hours || 0)}h</span><div class="text-xs text-gray-500 mt-1">Due: ${dueAt}</div>`;
+  }
+
+  return `<span class="badge badge-success">On Track</span><div class="text-xs text-gray-500 mt-1">Due: ${dueAt}</div>`;
+};
+
+const formatIssueTimeline = (timeline = []) => {
+  if (!timeline.length) {
+    return '<p class="text-sm text-gray-500">No timeline events yet</p>';
+  }
+
+  return timeline.map(event => `
+    <div class="border rounded-lg p-3 bg-gray-50">
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm font-semibold">${(event.event_type || 'event').replace(/_/g, ' ').toUpperCase()}</p>
+        <span class="text-xs text-gray-500">${formatDate(event.created_at)}</span>
+      </div>
+      <p class="text-xs text-gray-600">By: ${event.actor?.full_name || 'System'}</p>
+      ${event.note ? `<p class="text-sm text-gray-700 mt-2">${event.note}</p>` : ''}
+    </div>
+  `).join('');
+};
+
+const loadIssues = async () => {
   const tbody = document.getElementById('issues-table-body');
-  if (!tbody) return;
+  const mobileView = document.getElementById('issues-mobile-view');
+  if (!tbody && !mobileView) return;
   
-  tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8"><div class="loading-spinner mx-auto"></div></td></tr>';
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8"><div class="loading-spinner mx-auto"></div></td></tr>';
+  }
+  if (mobileView) {
+    mobileView.innerHTML = '<div class="text-center py-8"><div class="loading-spinner mx-auto"></div></div>';
+  }
   
   try {
     const { getIssues } = await import('../services/issue.service.js');
-    const response = await getIssues({ status: 'under_review' });
+    const response = await getIssues(currentIssueFilters);
     currentIssues = response.data?.issues || [];
+    const statusMeta = getIssueStatusMeta(currentIssueFilters.status);
+    const emptyLabel = currentIssueFilters.status === 'under_review'
+      ? 'No open issues'
+      : `No ${statusMeta.label.toLowerCase()} issues`;
     
     if (currentIssues.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-500">No open issues</td></tr>';
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-gray-500">${emptyLabel}</td></tr>`;
+      }
+      if (mobileView) {
+        mobileView.innerHTML = `<p class="text-center text-gray-500 py-8">${emptyLabel}</p>`;
+      }
       return;
     }
-    
-    tbody.innerHTML = currentIssues.map(issue => `
-      <tr>
-        <td>${issue.id?.substring(0, 8) || 'N/A'}...</td>
-        <td>${issue.issue_type || 'N/A'}</td>
-        <td>${issue.reporter?.full_name || 'N/A'}</td>
-        <td><span class="badge badge-warning">Under Review</span></td>
-        <td>${formatDate(issue.created_at)}</td>
-        <td>
-          <button class="btn btn-sm btn-outline" onclick="window.viewIssue('${issue.id}')">
-            <i class="bi bi-eye"></i> View
-          </button>
-        </td>
-      </tr>
-    `).join('');
+
+    if (tbody) {
+      tbody.innerHTML = currentIssues.map(issue => {
+        const rowMeta = getIssueStatusMeta(issue.status);
+        const priorityMeta = getIssuePriorityMeta(issue.priority);
+        const displayDate = issue[rowMeta.dateField] || issue.created_at;
+        return `
+          <tr>
+            <td>${issue.id?.substring(0, 8) || 'N/A'}...</td>
+            <td>${issue.issue_type || 'N/A'}</td>
+            <td>${issue.reporter?.full_name || 'N/A'}</td>
+            <td><span class="badge ${rowMeta.badge}">${rowMeta.label}</span></td>
+            <td><span class="badge ${priorityMeta.badge}">${priorityMeta.label}</span></td>
+            <td>${formatSlaState(issue)}</td>
+            <td>${formatDate(displayDate)}</td>
+            <td>
+              <button class="btn btn-sm btn-outline" onclick="window.viewIssue('${issue.id}')">
+                <i class="bi bi-eye"></i> View
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    if (mobileView) {
+      mobileView.innerHTML = currentIssues.map(issue => {
+        const rowMeta = getIssueStatusMeta(issue.status);
+        const priorityMeta = getIssuePriorityMeta(issue.priority);
+        const displayDate = issue[rowMeta.dateField] || issue.created_at;
+        return `
+          <div class="card mb-3">
+            <div class="card-body">
+              <p class="font-mono text-xs text-gray-500 mb-1">${issue.id?.substring(0, 10) || 'N/A'}...</p>
+              <p class="font-semibold">${issue.issue_type || 'N/A'}</p>
+              <p class="text-sm text-gray-600 mb-2">${issue.reporter?.full_name || 'N/A'}</p>
+              <div class="flex items-center justify-between mb-3">
+                <span class="badge ${rowMeta.badge}">${rowMeta.label}</span>
+                <span class="badge ${priorityMeta.badge}">${priorityMeta.label}</span>
+              </div>
+              <div class="mb-3 text-xs">${formatSlaState(issue)}</div>
+              <p class="text-xs text-gray-500 mb-3">${formatDate(displayDate)}</p>
+              <button class="btn btn-sm btn-outline w-full" onclick="window.viewIssue('${issue.id}')">
+                <i class="bi bi-eye"></i> View
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
     
   } catch (error) {
     console.error('Error loading issues:', error);
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-danger">Failed to load issues: ' + (error.message || 'Unknown error') + '</td></tr>';
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-danger">Failed to load issues: ' + (error.message || 'Unknown error') + '</td></tr>';
+    }
+    if (mobileView) {
+      mobileView.innerHTML = '<p class="text-center text-danger py-8">Failed to load issues</p>';
+    }
   }
 };
 
@@ -366,6 +475,7 @@ window.viewIssue = async (issueId) => {
     const { getIssueEvidenceUrl } = await import('../utils/image-helpers.js');
     const response = await getIssue(issueId);
     const issue = response.data?.issue;
+    const timeline = response.data?.timeline || [];
     
     if (!issue) {
       showError('Issue not found');
@@ -392,6 +502,9 @@ window.viewIssue = async (issueId) => {
           <p><strong>Type:</strong> ${issue.issue_type || 'N/A'}</p>
           <p><strong>Order:</strong> #${issue.order?.order_number || 'N/A'}</p>
           <p><strong>Reporter:</strong> ${issue.reporter?.full_name || 'N/A'} (${issue.reporter?.role || 'N/A'})</p>
+          <p><strong>Priority:</strong> ${(issue.priority || 'medium').toUpperCase()}</p>
+          <p><strong>SLA Due:</strong> ${issue.sla_due_at ? formatDate(issue.sla_due_at) : 'N/A'}</p>
+          <p><strong>SLA State:</strong> ${issue.is_overdue ? 'OVERDUE' : 'ON TRACK'}</p>
           <p><strong>Created:</strong> ${formatDate(issue.created_at)}</p>
         </div>
         
@@ -412,19 +525,58 @@ window.viewIssue = async (issueId) => {
           </div>
         ` : '<div class="border-t pt-4"><p class="text-sm text-gray-500">No evidence provided</p></div>'}
         
-        ${issue.admin_notes ? `
+        ${issue.resolution ? `
           <div class="border-t pt-4">
-            <h4 class="font-semibold mb-2">Admin Notes</h4>
+            <h4 class="font-semibold mb-2">Resolution</h4>
             <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p class="text-sm text-blue-900">${issue.admin_notes}</p>
+              <p class="text-sm text-blue-900">${issue.resolution}</p>
             </div>
           </div>
         ` : ''}
+
+        ${issue.resolved_at ? `
+          <div class="border-t pt-4 text-sm text-gray-700">
+            <p><strong>Resolved At:</strong> ${formatDate(issue.resolved_at)}</p>
+            <p><strong>Resolved By:</strong> ${issue.admin?.full_name || 'Admin'}</p>
+          </div>
+        ` : ''}
+
+        <div class="border-t pt-4">
+          <h4 class="font-semibold mb-2">Outcome Action</h4>
+          ${issue.outcome_action ? `
+            <div class="p-3 bg-green-50 border border-green-200 rounded-lg text-sm">
+              <p><strong>Action:</strong> ${String(issue.outcome_action).replace(/_/g, ' ')}</p>
+              ${issue.outcome_amount ? `<p><strong>Amount:</strong> ${formatCurrency(issue.outcome_amount)}</p>` : ''}
+              ${issue.outcome_notes ? `<p><strong>Notes:</strong> ${issue.outcome_notes}</p>` : ''}
+            </div>
+          ` : '<p class="text-sm text-gray-500">No outcome action set yet.</p>'}
+        </div>
+
+        <div class="border-t pt-4">
+          <h4 class="font-semibold mb-2">Internal Timeline</h4>
+          <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
+            ${formatIssueTimeline(timeline)}
+          </div>
+        </div>
       </div>
     `;
     
     const footer = `
       <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+      <button class="btn btn-outline" onclick="window.addIssueNote('${issueId}')">
+        <i class="bi bi-journal-plus"></i> Add Note
+      </button>
+      <button class="btn btn-outline" onclick="window.updateIssuePriority('${issueId}')">
+        <i class="bi bi-flag"></i> Priority
+      </button>
+      <button class="btn btn-outline" onclick="window.setIssueOutcome('${issueId}')">
+        <i class="bi bi-cash-coin"></i> Outcome
+      </button>
+      ${issue.status === 'under_review' && issue.is_overdue ? `
+        <button class="btn btn-warning" onclick="window.escalateIssue('${issueId}')">
+          <i class="bi bi-exclamation-triangle"></i> Escalate
+        </button>
+      ` : ''}
       ${issue.status === 'under_review' ? `
         <button class="btn btn-success" onclick="window.resolveIssue('${issueId}')">
           <i class="bi bi-check-circle"></i> Resolve
@@ -514,6 +666,152 @@ const showInputModal = (title, label, placeholder) => {
   });
 };
 
+const showOutcomeModal = (title = 'Set Outcome Action') => {
+  return new Promise((resolve) => {
+    const content = document.createElement('div');
+    content.innerHTML = `
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Outcome Action</label>
+          <select id="outcome-action-input" class="form-select w-full">
+            <option value="keep_order">Keep Order</option>
+            <option value="cancel_order">Cancel Order</option>
+            <option value="refund">Full Refund</option>
+            <option value="partial_refund">Partial Refund</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Amount (for partial/full refund)</label>
+          <input id="outcome-amount-input" type="number" min="0" step="0.01" class="form-control w-full" placeholder="0.00">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Notes (optional)</label>
+          <textarea id="outcome-notes-input" rows="3" class="form-control w-full" placeholder="Enter outcome notes..."></textarea>
+        </div>
+      </div>
+    `;
+
+    const footer = document.createElement('div');
+    footer.className = 'flex gap-3 justify-end';
+    footer.innerHTML = `
+      <button class="btn btn-outline" data-action="cancel">Cancel</button>
+      <button class="btn btn-primary" data-action="confirm">Save Outcome</button>
+    `;
+
+    const modal = createModal({
+      title,
+      content,
+      footer,
+      size: 'md',
+      closeOnBackdrop: true
+    });
+
+    const confirmBtn = footer.querySelector('[data-action="confirm"]');
+    const cancelBtn = footer.querySelector('[data-action="cancel"]');
+
+    confirmBtn.addEventListener('click', () => {
+      const action = modal.body.querySelector('#outcome-action-input')?.value;
+      const amountRaw = modal.body.querySelector('#outcome-amount-input')?.value;
+      const notes = modal.body.querySelector('#outcome-notes-input')?.value?.trim() || '';
+      const amount = amountRaw ? Number(amountRaw) : null;
+
+      if (!action) {
+        return;
+      }
+
+      modal.close();
+      resolve({
+        outcome_action: action,
+        outcome_amount: Number.isFinite(amount) ? amount : null,
+        outcome_notes: notes || null
+      });
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      modal.close();
+      resolve(null);
+    });
+  });
+};
+
+window.addIssueNote = async (issueId) => {
+  const note = await showInputModal(
+    'Add Internal Note',
+    'Admin Note',
+    'Write internal note for this issue...'
+  );
+
+  if (!note) return;
+
+  try {
+    const { addIssueNote } = await import('../services/issue.service.js');
+    await addIssueNote(issueId, note);
+    showSuccess('Issue note added');
+    await window.viewIssue(issueId);
+  } catch (error) {
+    console.error('Error adding issue note:', error);
+    showError(error.message || 'Failed to add note');
+  }
+};
+
+window.updateIssuePriority = async (issueId) => {
+  const priority = await showInputModal(
+    'Set Issue Priority',
+    'Priority (low, medium, high, critical)',
+    'Example: high'
+  );
+
+  if (!priority) return;
+
+  try {
+    const { setIssuePriority } = await import('../services/issue.service.js');
+    await setIssuePriority(issueId, String(priority).trim().toLowerCase());
+    showSuccess('Issue priority updated');
+    await loadIssues();
+    await window.viewIssue(issueId);
+  } catch (error) {
+    console.error('Error setting issue priority:', error);
+    showError(error.message || 'Failed to update priority');
+  }
+};
+
+window.setIssueOutcome = async (issueId) => {
+  const outcome = await showOutcomeModal();
+  if (!outcome) return;
+
+  try {
+    const { setIssueOutcome } = await import('../services/issue.service.js');
+    await setIssueOutcome(issueId, outcome);
+    showSuccess('Outcome action saved');
+    await loadIssues();
+    await loadDashboardStats();
+    await window.viewIssue(issueId);
+  } catch (error) {
+    console.error('Error setting outcome:', error);
+    showError(error.message || 'Failed to set outcome');
+  }
+};
+
+window.escalateIssue = async (issueId) => {
+  const note = await showInputModal(
+    'Escalate Issue',
+    'Escalation Note (optional)',
+    'Why this issue needs escalation...'
+  );
+
+  try {
+    const { escalateIssue } = await import('../services/issue.service.js');
+    await escalateIssue(issueId, note || '');
+    showSuccess('Issue escalated to critical');
+    await loadIssues();
+    await loadDashboardStats();
+    await window.viewIssue(issueId);
+  } catch (error) {
+    console.error('Error escalating issue:', error);
+    showError(error.message || 'Failed to escalate issue');
+  }
+};
+
 window.resolveIssue = async (issueId) => {
   const resolution = await showInputModal(
     'Resolve Issue',
@@ -522,15 +820,23 @@ window.resolveIssue = async (issueId) => {
   );
   
   if (!resolution) return;
+
+  let outcomePayload = {};
+  if (window.confirm('Add outcome action now? (Refund/Cancel/Keep Order)')) {
+    const outcome = await showOutcomeModal('Set Outcome for Resolution');
+    if (outcome) {
+      outcomePayload = outcome;
+    }
+  }
   
   try {
     const { resolveIssue } = await import('../services/issue.service.js');
-    await resolveIssue(issueId, resolution);
+    await resolveIssue(issueId, resolution, outcomePayload);
     showSuccess('Issue resolved successfully!');
     
     // Close modal and reload
     document.querySelector('.modal-backdrop')?.remove();
-    await loadOpenIssues();
+    await loadIssues();
     await loadDashboardStats();
   } catch (error) {
     console.error('Error resolving issue:', error);
@@ -546,15 +852,23 @@ window.rejectIssue = async (issueId) => {
   );
   
   if (!reason) return;
+
+  let outcomePayload = {};
+  if (window.confirm('Add outcome action now? (Refund/Cancel/Keep Order)')) {
+    const outcome = await showOutcomeModal('Set Outcome for Rejection');
+    if (outcome) {
+      outcomePayload = outcome;
+    }
+  }
   
   try {
     const { rejectIssue } = await import('../services/issue.service.js');
-    await rejectIssue(issueId, reason);
+    await rejectIssue(issueId, reason, outcomePayload);
     showSuccess('Issue rejected');
     
     // Close modal and reload
     document.querySelector('.modal-backdrop')?.remove();
-    await loadOpenIssues();
+    await loadIssues();
     await loadDashboardStats();
   } catch (error) {
     console.error('Error rejecting issue:', error);
@@ -574,8 +888,12 @@ const loadSystemLogs = async () => {
     const logType = document.getElementById('log-type')?.value || 'all';
     const logDate = document.getElementById('log-date')?.value || null;
     
-    const filters = { type: logType };
-    if (logDate) filters.date = logDate;
+    const filters = {};
+    if (logType && logType !== 'all') filters.action_type = logType;
+    if (logDate) {
+      filters.date_from = logDate;
+      filters.date_to = logDate;
+    }
     
     const response = await getSystemLogs(filters);
     currentLogs = response.data?.logs || [];
@@ -1319,26 +1637,47 @@ const loadSystemMonitoring = async () => {
 
 const loadSocketConnections = async () => {
   try {
-    const response = await getSocketConnections();
-    const data = response.data;
+    const client = await initSupabase();
     
     const usersCount = document.getElementById('socket-users-count');
     const connectionsCount = document.getElementById('socket-connections-count');
     const status = document.getElementById('socket-status');
-    
-    if (usersCount) usersCount.textContent = data.total_users || 0;
-    if (connectionsCount) connectionsCount.textContent = data.total_connections || 0;
-    
+
+    if (!client) {
+      if (usersCount) usersCount.textContent = '0';
+      if (connectionsCount) connectionsCount.textContent = '0';
+      if (status) {
+        status.innerHTML = '<span class="badge badge-warning">Not Configured</span>';
+      }
+      return;
+    }
+
+    const channels = typeof client.getChannels === 'function' ? client.getChannels() : [];
+    const activeSubscriptions = channels.filter(channel => (
+      channel?.state === 'joined' ||
+      channel?.state === 'joining'
+    )).length;
+
+    if (usersCount) usersCount.textContent = channels.length;
+    if (connectionsCount) connectionsCount.textContent = activeSubscriptions;
+
     if (status) {
-      if (data.connected) {
+      const readyState = client?.realtime?.conn?.readyState;
+      if (readyState === 1) {
         status.innerHTML = '<span class="badge badge-success">Connected</span>';
-      } else {
+      } else if (readyState === 0) {
+        status.innerHTML = '<span class="badge badge-info">Connecting</span>';
+      } else if (readyState === 2) {
+        status.innerHTML = '<span class="badge badge-warning">Closing</span>';
+      } else if (readyState === 3) {
         status.innerHTML = '<span class="badge badge-secondary">Disconnected</span>';
+      } else {
+        status.innerHTML = '<span class="badge badge-secondary">Idle</span>';
       }
     }
     
   } catch (error) {
-    console.error('Error loading socket connections:', error);
+    console.error('Error loading realtime status:', error);
     const status = document.getElementById('socket-status');
     if (status) {
       status.innerHTML = '<span class="badge badge-danger">Error</span>';
@@ -1417,6 +1756,74 @@ const attachEventListeners = () => {
     const filterHandler = () => loadSystemLogs();
     logType.addEventListener('change', filterHandler);
     eventListeners.push({ element: logType, event: 'change', handler: filterHandler });
+  }
+
+  // Issues filters
+  const applyIssueFilters = () => {
+    const status = document.getElementById('issue-status-filter')?.value || 'under_review';
+    const issueType = document.getElementById('issue-type-filter')?.value?.trim() || '';
+    const priority = document.getElementById('issue-priority-filter')?.value || '';
+    const overdueOnly = !!document.getElementById('issue-overdue-filter')?.checked;
+
+    currentIssueFilters = {
+      status,
+      overdue_only: overdueOnly
+    };
+    if (issueType) {
+      currentIssueFilters.issue_type = issueType;
+    }
+    if (priority) {
+      currentIssueFilters.priority = priority;
+    }
+
+    loadIssues();
+  };
+
+  const issueStatusFilter = document.getElementById('issue-status-filter');
+  if (issueStatusFilter) {
+    const statusHandler = () => applyIssueFilters();
+    issueStatusFilter.addEventListener('change', statusHandler);
+    eventListeners.push({ element: issueStatusFilter, event: 'change', handler: statusHandler });
+  }
+
+  const issueTypeFilter = document.getElementById('issue-type-filter');
+  if (issueTypeFilter) {
+    const enterHandler = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applyIssueFilters();
+      }
+    };
+    issueTypeFilter.addEventListener('keypress', enterHandler);
+    eventListeners.push({ element: issueTypeFilter, event: 'keypress', handler: enterHandler });
+  }
+
+  const issuePriorityFilter = document.getElementById('issue-priority-filter');
+  if (issuePriorityFilter) {
+    const priorityHandler = () => applyIssueFilters();
+    issuePriorityFilter.addEventListener('change', priorityHandler);
+    eventListeners.push({ element: issuePriorityFilter, event: 'change', handler: priorityHandler });
+  }
+
+  const issueOverdueFilter = document.getElementById('issue-overdue-filter');
+  if (issueOverdueFilter) {
+    const overdueHandler = () => applyIssueFilters();
+    issueOverdueFilter.addEventListener('change', overdueHandler);
+    eventListeners.push({ element: issueOverdueFilter, event: 'change', handler: overdueHandler });
+  }
+
+  const btnSearchIssues = document.getElementById('btn-search-issues');
+  if (btnSearchIssues) {
+    const searchHandler = () => applyIssueFilters();
+    btnSearchIssues.addEventListener('click', searchHandler);
+    eventListeners.push({ element: btnSearchIssues, event: 'click', handler: searchHandler });
+  }
+
+  const btnRefreshIssues = document.getElementById('btn-refresh-issues');
+  if (btnRefreshIssues) {
+    const refreshHandler = () => loadIssues();
+    btnRefreshIssues.addEventListener('click', refreshHandler);
+    eventListeners.push({ element: btnRefreshIssues, event: 'click', handler: refreshHandler });
   }
   
   // Users search

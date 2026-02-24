@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agrimarket-tiles-v1';
+const CACHE_NAME = 'agrimarket-tiles-v2';
 const TILE_CACHE_EXPIRE = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 self.addEventListener('install', (event) => {
@@ -44,8 +44,12 @@ async function handleTileRequest(request) {
     const cachedResponse = await caches.match(request);
     if (cachedResponse) {
       // Check if cache is expired
-      const cacheDate = cachedResponse.headers.get('sw-cache-date');
-      if (cacheDate && Date.now() - parseInt(cacheDate) < TILE_CACHE_EXPIRE) {
+      const cacheDate = Number(cachedResponse.headers.get('sw-cache-date'));
+      if (Number.isFinite(cacheDate) && Date.now() - cacheDate < TILE_CACHE_EXPIRE) {
+        return cachedResponse;
+      }
+      // If metadata is missing/corrupted, still use stale cached tile as fallback.
+      if (!cachedResponse.headers.get('sw-cache-date')) {
         return cachedResponse;
       }
     }
@@ -55,25 +59,31 @@ async function handleTileRequest(request) {
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     const response = await fetch(request, {
-      signal: controller.signal,
-      cache: 'force-cache'
+      signal: controller.signal
     });
 
     clearTimeout(timeoutId);
 
     // Cache successful responses
-    if (response.ok && response.status === 200) {
+    if (response && (response.ok || response.type === 'opaque')) {
       const responseToCache = response.clone();
-      const cacheResponse = new Response(responseToCache.body, {
-        status: responseToCache.status,
-        statusText: responseToCache.statusText,
-        headers: new Headers(responseToCache.headers)
-      });
-      cacheResponse.headers.set('sw-cache-date', Date.now().toString());
-      
-      caches.open(CACHE_NAME).then((cache) => {
-        cache.put(request, cacheResponse);
-      });
+
+      // Keep original response intact for opaque/cross-origin safety.
+      if (responseToCache.type === 'opaque') {
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(request, responseToCache).catch(() => {});
+        });
+      } else {
+        const cacheResponse = new Response(responseToCache.body, {
+          status: responseToCache.status,
+          statusText: responseToCache.statusText,
+          headers: new Headers(responseToCache.headers)
+        });
+        cacheResponse.headers.set('sw-cache-date', Date.now().toString());
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(request, cacheResponse).catch(() => {});
+        });
+      }
     }
 
     return response;

@@ -10,6 +10,7 @@ const requiredEnvVars = [
 ];
 
 const optionalEnvVars = [
+  'SUPABASE_JWT_SECRET',
   'CORS_ORIGIN',
   'RATE_LIMIT_WINDOW_MS',
   'RATE_LIMIT_MAX_REQUESTS',
@@ -50,6 +51,10 @@ const validateEnvironment = () => {
 
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
     console.warn('JWT_SECRET is too short. Use at least 32 characters for production.');
+  }
+
+  if (!process.env.SUPABASE_JWT_SECRET) {
+    console.warn('SUPABASE_JWT_SECRET is not set. Realtime with RLS may not work with custom JWT auth.');
   }
 
   if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'production') {

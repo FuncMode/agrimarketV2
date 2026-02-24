@@ -31,7 +31,7 @@ const createProductValidation = [
 
   body('available_quantity')
     .notEmpty().withMessage('Available quantity is required')
-    .isInt({ min: 1, max: 1000000 }).withMessage('Quantity must be between 1 and 1,000,000')
+    .isInt({ min: 0, max: 1000000 }).withMessage('Quantity must be between 0 and 1,000,000')
     .toInt(),
 
   body('tags')

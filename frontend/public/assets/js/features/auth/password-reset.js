@@ -36,14 +36,15 @@ const showForgotPasswordModal = () => {
     size: 'sm'
   });
   
-  const form = document.getElementById('forgot-password-form');
-  form.addEventListener('submit', handleForgotPassword);
+  const form = modal.body.querySelector('#forgot-password-form');
+  form.addEventListener('submit', (e) => handleForgotPassword(e, modal.body));
 };
 
-const handleForgotPassword = async (e) => {
+const handleForgotPassword = async (e, scope = document) => {
   e.preventDefault();
   
-  const email = document.getElementById('forgot-email').value;
+  const emailInput = scope.querySelector('#forgot-email');
+  const email = emailInput ? emailInput.value : '';
   
   const validation = validateEmail(email);
   if (!validation.valid) {

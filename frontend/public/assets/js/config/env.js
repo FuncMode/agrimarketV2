@@ -31,20 +31,8 @@ const getDefaultApiUrl = () => {
   return 'http://localhost:3000/api'; // Default for Node.js environment
 };
 
-const getDefaultWsUrl = () => {
-  if (isBrowser) {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return 'ws://localhost:3000';
-    }
-    // For production (Vercel), use Railway backend
-    return 'wss://agrimarketv2-production.up.railway.app';
-  }
-  return 'ws://localhost:3000'; // Default for Node.js environment
-};
-
 const ENV = {
   API_BASE_URL: envSource.API_BASE_URL || envSource.VITE_API_BASE_URL || getDefaultApiUrl(),
-  WS_URL: envSource.WS_URL || envSource.VITE_WS_URL || getDefaultWsUrl(),
   SUPABASE_URL: envSource.SUPABASE_URL || envSource.VITE_SUPABASE_URL,
   SUPABASE_ANON_KEY: envSource.SUPABASE_ANON_KEY || envSource.VITE_SUPABASE_ANON_KEY,
   APP_NAME: envSource.APP_NAME || envSource.VITE_APP_NAME || 'AgriMarket',
@@ -63,7 +51,6 @@ if (!hasBothSupabaseVars && !isBrowser) {
 if (ENV.APP_ENV === 'development') {
   const logEnv = {
     API_BASE_URL: ENV.API_BASE_URL,
-    WS_URL: ENV.WS_URL,
     SUPABASE_URL: ENV.SUPABASE_URL ? ENV.SUPABASE_URL.substring(0, 20) + '...' : 'NOT SET',
     APP_ENV: ENV.APP_ENV,
     Environment: isBrowser ? 'Browser' : isNode ? 'Node.js' : 'Unknown'

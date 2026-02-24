@@ -180,13 +180,13 @@ exports.createOrder = asyncHandler(async (req, res, next) => {
     .single();
 
   if (buyerUser) {
-    await emailService.sendOrderStatusEmail(completeOrder, buyerUser, 'placed').catch(err => 
+    await emailService.sendOrderStatusEmail(completeOrder, buyerUser, 'placed', { recipientRole: 'buyer' }).catch(err => 
       console.error('Failed to send buyer order placed email:', err.message)
     );
   }
 
   if (sellerUser) {
-    await emailService.sendOrderStatusEmail(completeOrder, sellerUser, 'placed').catch(err => 
+    await emailService.sendOrderStatusEmail(completeOrder, sellerUser, 'placed', { recipientRole: 'seller' }).catch(err => 
       console.error('Failed to send seller order placed email:', err.message)
     );
   }
@@ -379,7 +379,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res, next) => {
         .single();
 
       if (buyerUser) {
-        await emailService.sendOrderStatusEmail(order, buyerUser, 'confirmed').catch(err => 
+        await emailService.sendOrderStatusEmail(order, buyerUser, 'confirmed', { recipientRole: 'buyer' }).catch(err => 
           console.error('Failed to send order confirmed email:', err.message)
         );
       }
@@ -398,7 +398,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res, next) => {
         .single();
 
       if (buyerUser) {
-        await emailService.sendOrderStatusEmail(order, buyerUser, 'ready').catch(err => 
+        await emailService.sendOrderStatusEmail(order, buyerUser, 'ready', { recipientRole: 'buyer' }).catch(err => 
           console.error('Failed to send order ready email:', err.message)
         );
       }
@@ -529,7 +529,7 @@ exports.confirmOrderCompletion = asyncHandler(async (req, res, next) => {
         .single();
 
       if (sellerUser) {
-        await emailService.sendOrderStatusEmail(order, sellerUser, 'completed').catch(err => 
+        await emailService.sendOrderStatusEmail(order, sellerUser, 'completed', { recipientRole: 'seller' }).catch(err => 
           console.error('Failed to send seller completion email:', err.message)
         );
       }
@@ -545,7 +545,7 @@ exports.confirmOrderCompletion = asyncHandler(async (req, res, next) => {
         .single();
 
       if (buyerUser) {
-        await emailService.sendOrderStatusEmail(order, buyerUser, 'completed').catch(err => 
+        await emailService.sendOrderStatusEmail(order, buyerUser, 'completed', { recipientRole: 'buyer' }).catch(err => 
           console.error('Failed to send buyer completion email:', err.message)
         );
       }
@@ -650,6 +650,7 @@ exports.cancelOrder = asyncHandler(async (req, res, next) => {
 
   // Get socket service for real-time updates
   const socketService = req.app.get('socketService');
+  const cancelledByRole = ownership.isSeller ? 'seller' : 'buyer';
 
   if (seller) {
     // Emit real-time socket event to seller about order cancellation
@@ -658,7 +659,7 @@ exports.cancelOrder = asyncHandler(async (req, res, next) => {
         id: orderId,
         order_number: order.order_number,
         cancellation_reason: reason,
-        cancelled_by: 'buyer'
+        cancelled_by: 'seller'
       });
     }
     
@@ -672,7 +673,10 @@ exports.cancelOrder = asyncHandler(async (req, res, next) => {
         .single();
       
       if (sellerUser) {
-        await emailService.sendOrderCancellationEmail(sellerUser, order, reason);
+        await emailService.sendOrderCancellationEmail(sellerUser, order, reason, {
+          recipientRole: 'seller',
+          cancelledByRole
+        });
       }
     } catch (emailError) {
       console.error('Failed to send cancellation email to seller:', emailError.message);
@@ -686,7 +690,7 @@ exports.cancelOrder = asyncHandler(async (req, res, next) => {
         id: orderId,
         order_number: order.order_number,
         cancellation_reason: reason,
-        cancelled_by: 'seller'
+        cancelled_by: 'buyer'
       });
     }
     
@@ -700,7 +704,10 @@ exports.cancelOrder = asyncHandler(async (req, res, next) => {
         .single();
       
       if (buyerUser) {
-        await emailService.sendOrderCancellationEmail(buyerUser, order, reason);
+        await emailService.sendOrderCancellationEmail(buyerUser, order, reason, {
+          recipientRole: 'buyer',
+          cancelledByRole
+        });
       }
     } catch (emailError) {
       console.error('Failed to send cancellation email to buyer:', emailError.message);

@@ -90,9 +90,19 @@ const deleteUser = async (userId, reason = '') => {
 const getSystemLogs = async (filters = {}) => {
   try {
     const params = new URLSearchParams();
-    if (filters.type) params.append('type', filters.type);
-    if (filters.date) params.append('date', filters.date);
+
+    const actionType = filters.action_type || filters.type;
+    if (actionType && actionType !== 'all') {
+      params.append('action_type', actionType);
+    }
+
+    const dateFrom = filters.date_from || filters.date;
+    const dateTo = filters.date_to || filters.date;
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+
     if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
     
     const queryString = params.toString();
     const url = queryString ? `${ENDPOINTS.ADMIN.LOGS}?${queryString}` : ENDPOINTS.ADMIN.LOGS;

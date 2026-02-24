@@ -10,10 +10,20 @@ import { updateBadgeDisplay } from '../utils/helpers.js';
 let bellElement = null;
 let badgeElement = null;
 let unsubscribeSocket = null;
+let unsubscribeStore = null;
 
 // ============ Initialize Notification Bell ============
 
 const initNotificationBell = async () => {
+  // Make init idempotent when navbar re-renders or init is called repeatedly.
+  if (bellElement) {
+    bellElement.removeEventListener('click', handleBellClick);
+  }
+  if (unsubscribeStore) {
+    unsubscribeStore();
+    unsubscribeStore = null;
+  }
+
   bellElement = document.getElementById('notification-bell');
   
   if (!bellElement) {
@@ -45,7 +55,7 @@ const initNotificationBell = async () => {
   setupRealtimeListener();
   
   // Listen for store changes
-  notificationStore.onChange(handleStoreChange);
+  unsubscribeStore = notificationStore.onChange(handleStoreChange);
   
 
 };
@@ -57,6 +67,7 @@ const updateUnreadCount = async () => {
     const response = await getUnreadCount();
     const count = response.data?.unread_count || response.data?.count || 0;
     
+    notificationStore.setUnreadCount(count);
     setUnreadCount(count);
   } catch (error) {
     console.error('Error fetching unread count:', error);
@@ -137,10 +148,18 @@ const cleanup = () => {
     bellElement.removeEventListener('click', handleBellClick);
   }
   
+  if (unsubscribeStore) {
+    unsubscribeStore();
+    unsubscribeStore = null;
+  }
+
   if (unsubscribeSocket) {
     unsubscribeSocket();
     unsubscribeSocket = null;
   }
+
+  bellElement = null;
+  badgeElement = null;
 };
 
 // ============ Exports ============

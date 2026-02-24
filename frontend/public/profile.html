@@ -501,6 +501,33 @@
                 </div>
             </div>
 
+            <!-- Buyer Preferences Section -->
+            <div id="buyer-section" class="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 hidden animate-fade-in" style="animation-delay: 0.25s;">
+                <div class="bg-gradient-to-r from-blue-50 to-sky-50 px-6 py-4 border-b border-blue-100">
+                    <h3 class="text-xl font-bold text-blue-700 flex items-center gap-3">
+                        <div class="icon-wrapper bg-gradient-to-br from-blue-500 to-sky-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                            <i class="bi bi-heart-fill"></i>
+                        </div>
+                        Buyer Preferences
+                    </h3>
+                </div>
+                <div class="px-6 py-6">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div class="flex-1">
+                            <p class="text-gray-900 font-semibold mb-2">Purchase Summary</p>
+                            <p class="text-gray-600 text-sm">
+                                Total purchases:
+                                <span id="view-total-purchases" class="font-semibold text-gray-900">0</span>
+                            </p>
+                        </div>
+                        <button id="edit-buyer-btn" class="btn-modern btn btn-outline flex items-center gap-2 whitespace-nowrap shadow-md hover:shadow-lg px-5 py-3">
+                            <i class="bi bi-sliders"></i>
+                            <span>Edit Preferences</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Danger Zone -->
             <div class="bg-white rounded-2xl shadow-lg overflow-hidden border-l-4 border-red-500 animate-fade-in" style="animation-delay: 0.3s;">
                 <div class="bg-gradient-to-r from-red-50 to-rose-50 px-6 py-4 border-b border-red-100">

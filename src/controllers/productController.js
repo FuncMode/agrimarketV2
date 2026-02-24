@@ -242,7 +242,9 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
     unit_type,
     available_quantity,
     tags,
-    status
+    status,
+    photos,
+    photo_path
   } = req.body;
 
   const isOwner = await productModel.isProductOwner(productId, userId);
@@ -258,6 +260,24 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
   if (unit_type !== undefined) updates.unit_type = unit_type;
   if (available_quantity !== undefined) updates.available_quantity = parseInt(available_quantity);
   if (status !== undefined) updates.status = status;
+  if (photo_path !== undefined) updates.photo_path = photo_path || null;
+  if (photos !== undefined) {
+    if (Array.isArray(photos)) {
+      updates.photos = photos;
+    } else if (typeof photos === 'string') {
+      try {
+        const parsedPhotos = JSON.parse(photos);
+        updates.photos = Array.isArray(parsedPhotos) ? parsedPhotos : [];
+      } catch (error) {
+        updates.photos = photos
+          .split(',')
+          .map(p => p.trim())
+          .filter(Boolean);
+      }
+    } else {
+      updates.photos = [];
+    }
+  }
 
   if (req.files && req.files.length > 0) {
     const { data: sellerProfile } = await supabase

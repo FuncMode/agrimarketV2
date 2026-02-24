@@ -16,7 +16,7 @@ import { MUNICIPALITY_COORDINATES, RIZAL_MUNICIPALITIES, PRODUCT_TAGS } from '..
 import { ENDPOINTS, buildUrl } from '../config/api.js';
 
 // Services
-import { listProducts, incrementViewCount } from '../services/product.service.js';
+import { listProducts, getProduct, incrementViewCount } from '../services/product.service.js';
 import {
   getCart,
   addToCart as addToCartService,
@@ -37,13 +37,14 @@ import {
   getConversations,
   getOrderMessages,
   sendMessage,
+  sendMessageWithAttachment,
   markMessagesAsRead
 } from '../services/message.service.js';
 import { getMyIssues, getIssue } from '../services/issue.service.js';
 import { getProfile } from '../services/user.service.js';
 import { calculateDistance, getRoute, geocodeAddress } from '../services/map.service.js';
 import { getUserId } from '../core/auth.js';
-import { getDeliveryProofUrl, getIssueEvidenceUrl } from '../utils/image-helpers.js';
+import { getDeliveryProofUrl, getIssueEvidenceUrl, getMessageAttachmentUrl } from '../utils/image-helpers.js';
 import { initNotificationSounds, playMessageSound } from '../features/notifications/notification-sound.js';
 import {
   initOnlineStatus,
@@ -62,6 +63,16 @@ import cartStore from '../store/cart.store.js';
 
 let currentPage = 'browse';
 let currentConversation = null;
+let currentConversationOrderIds = [];
+let currentConversationSendOrderId = null;
+let selectedMessageAttachment = null;
+let hasAttachmentPreviewDelegation = false;
+let socketEmit = null;
+let isTypingActive = false;
+let typingStopTimer = null;
+let typingIndicatorHideTimer = null;
+const typingPreviewByOrderId = new Map();
+const typingPreviewTimers = new Map();
 let onlineUsers = new Set(); // Track online users
 let initialOnlineUsersPromise = Promise.resolve(); // Promise that resolves when initial online users are loaded
 let browseFilters = {
@@ -97,7 +108,8 @@ async function viewProductReviews(productId, productName) {
     showSpinner(null, 'md', 'primary', 'Loading reviews...');
 
     const token = getToken();
-    const response = await fetch(`/api/products/${productId}/reviews?page=1&limit=20`, {
+    const reviewsUrl = buildUrl(`/products/${productId}/reviews?page=1&limit=20`);
+    const response = await fetch(reviewsUrl, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -199,7 +211,7 @@ const init = async () => {
   try {
     const response = await getCart();
     if (response.success && response.data) {
-      cartStore.set(response.data.items || []);
+      cartStore.set(response.data?.cart?.items || []);
     }
   } catch (error) {
     console.warn('Could not load cart:', error);
@@ -243,9 +255,13 @@ const showPage = (page) => {
     window.location.hash = page;
   }
 
-  // Close conversation when leaving messaging section
+  // Close conversation when leaving messaging section (same behavior as seller page)
   if (page !== 'messaging') {
+    stopTypingSignal();
+    hideTypingIndicator();
     currentConversation = null;
+    currentConversationOrderIds = [];
+    currentConversationSendOrderId = null;
     const chatWindow = document.getElementById('chat-window');
     if (chatWindow) {
       chatWindow.innerHTML = '<p class="text-center text-gray-500 py-12">Select a conversation to start messaging</p>';
@@ -270,6 +286,17 @@ const showPage = (page) => {
     switch (page) {
       case 'browse':
         loadBrowseProducts();
+        if (currentView === 'map') {
+          setTimeout(() => {
+            if (!browseMap) {
+              initBrowseMap();
+              return;
+            }
+
+            browseMap.invalidateSize();
+            loadProductsOnMap();
+          }, 0);
+        }
         break;
       case 'cart':
         loadCart();
@@ -409,6 +436,9 @@ const clearAllFilters = () => {
 
   // Reload products
   loadBrowseProducts();
+  if (currentView === 'map') {
+    loadProductsOnMap();
+  }
 };
 
 // Toggle between grid and map view
@@ -434,6 +464,9 @@ const toggleView = (view) => {
     // Initialize map if not already done
     if (!browseMap) {
       initBrowseMap();
+    } else {
+      setTimeout(() => browseMap?.invalidateSize(), 0);
+      loadProductsOnMap();
     }
   }
 };
@@ -460,10 +493,38 @@ const initBrowseMap = () => {
     });
 
     // Load and display products on map
+    setTimeout(() => browseMap?.invalidateSize(), 0);
     loadProductsOnMap();
   } catch (error) {
     console.error('Error initializing browse map:', error);
   }
+};
+
+const fetchAllProductsForMap = async (filters) => {
+  const limit = 100;
+  const maxPages = 50;
+  const allProducts = [];
+  let page = 1;
+  let reportedTotal = null;
+
+  while (page <= maxPages) {
+    const response = await listProducts({ ...filters, page, limit });
+    const products = response.data?.products || [];
+    const parsedTotal = Number(response.total);
+
+    if (Number.isFinite(parsedTotal)) {
+      reportedTotal = parsedTotal;
+    }
+
+    allProducts.push(...products);
+
+    if (products.length < limit) break;
+    if (reportedTotal !== null && allProducts.length >= reportedTotal) break;
+
+    page += 1;
+  }
+
+  return allProducts;
 };
 
 // Load products on map
@@ -479,8 +540,9 @@ const loadProductsOnMap = async () => {
       delete filters.tags;
     }
 
-    const response = await listProducts({ ...filters, limit: 100 });
-    const products = response.data?.products || [];
+    delete filters.page;
+    delete filters.limit;
+    const products = await fetchAllProductsForMap(filters);
 
     // Clear existing markers
     browseMap.eachLayer((layer) => {
@@ -514,6 +576,10 @@ const loadProductsOnMap = async () => {
     // Add one marker per seller per location
     Object.values(sellerGroups).forEach(sellerGroup => {
       const { seller_name, seller_verified, municipality, coordinates, products } = sellerGroup;
+      const safeSellerName = escapeHtml(seller_name);
+      const safeMunicipality = escapeHtml(municipality);
+      const encodedSellerName = encodeURIComponent(String(seller_name ?? ''));
+      const encodedMunicipality = encodeURIComponent(String(municipality ?? ''));
 
       const marker = L.marker([coordinates.latitude, coordinates.longitude]);
 
@@ -523,13 +589,13 @@ const loadProductsOnMap = async () => {
         // Create popup content showing all products from this seller
         const productList = products.map(product => `
           <div class="border-b border-gray-200 pb-2 mb-2 last:border-b-0 last:pb-0 last:mb-0">
-            <h5 class="font-semibold text-sm text-gray-800">${product.name}</h5>
-            <p class="text-xs text-gray-600 mb-1">${product.description || ''}</p>
+            <h5 class="font-semibold text-sm text-gray-800">${escapeHtml(product.name || 'Unnamed Product')}</h5>
+            <p class="text-xs text-gray-600 mb-1">${escapeHtml(product.description || '')}</p>
             <div class="flex justify-between items-center">
-              <span class="text-sm font-bold text-primary">${formatCurrency(product.price_per_unit)}/${product.unit_type}</span>
+              <span class="text-sm font-bold text-primary">${formatCurrency(product.price_per_unit)}/${escapeHtml(product.unit_type || 'unit')}</span>
               <button 
                 class="btn btn-xs btn-outline-primary" 
-                onclick="window.viewProductFromMap('${product.id}')"
+                onclick="window.viewProductFromMap('${encodeURIComponent(String(product.id ?? ''))}')"
               >
                 View
               </button>
@@ -541,12 +607,12 @@ const loadProductsOnMap = async () => {
           <div class="p-3" style="min-width: 280px; max-width: 320px;">
             <div class="flex items-center gap-2 mb-3">
               <i class="bi bi-shop text-primary"></i>
-              <h4 class="font-bold text-base text-gray-800">${seller_name}</h4>
+              <h4 class="font-bold text-base text-gray-800">${safeSellerName}</h4>
               ${seller_verified ? '<i class="bi bi-patch-check-fill text-success" title="Verified Seller"></i>' : ''}
             </div>
             
             <p class="text-xs text-gray-600 mb-3">
-              <i class="bi bi-geo-alt"></i> ${municipality}
+              <i class="bi bi-geo-alt"></i> ${safeMunicipality}
             </p>
             
             <div class="mb-3">
@@ -559,7 +625,7 @@ const loadProductsOnMap = async () => {
             <div class="text-center">
               <button 
                 class="btn btn-sm btn-primary w-full" 
-                onclick="window.viewAllSellerProducts('${sellerGroup.seller_name}', '${municipality}')"
+                onclick="window.viewAllSellerProducts('${encodedSellerName}', '${encodedMunicipality}')"
               >
                 <i class="bi bi-grid-3x3-gap"></i> View All ${products.length} Products
               </button>
@@ -572,12 +638,12 @@ const loadProductsOnMap = async () => {
           <div class="p-3" style="min-width: 280px; max-width: 320px;">
             <div class="flex items-center gap-2 mb-3">
               <i class="bi bi-shop text-primary"></i>
-              <h4 class="font-bold text-base text-gray-800">${seller_name}</h4>
+              <h4 class="font-bold text-base text-gray-800">${safeSellerName}</h4>
               ${seller_verified ? '<i class="bi bi-patch-check-fill text-success" title="Verified Seller"></i>' : ''}
             </div>
             
             <p class="text-xs text-gray-600 mb-3">
-              <i class="bi bi-geo-alt"></i> ${municipality}
+              <i class="bi bi-geo-alt"></i> ${safeMunicipality}
             </p>
             
             <div class="text-center p-4 bg-gray-100 rounded">
@@ -599,9 +665,18 @@ const loadProductsOnMap = async () => {
   }
 };
 
+const decodeMapParam = (value) => {
+  try {
+    return decodeURIComponent(String(value ?? ''));
+  } catch (error) {
+    return String(value ?? '');
+  }
+};
+
 // Global function to view product from map
 window.viewProductFromMap = async (productId) => {
   try {
+    const normalizedProductId = decodeMapParam(productId);
     const filters = { ...browseFilters };
     if (filters.tags && filters.tags.length > 0) {
       filters.tags = filters.tags.join(',');
@@ -609,8 +684,10 @@ window.viewProductFromMap = async (productId) => {
       delete filters.tags;
     }
 
-    const response = await listProducts(filters);
-    const product = response.data?.products.find(p => p.id === productId);
+    delete filters.page;
+    delete filters.limit;
+    const allProducts = await fetchAllProductsForMap(filters);
+    const product = allProducts.find(p => String(p.id) === normalizedProductId);
 
     if (product) {
       viewProductDetails(product);
@@ -623,11 +700,11 @@ window.viewProductFromMap = async (productId) => {
 // Global function to view all products from a seller
 window.viewAllSellerProducts = async (sellerName, municipality) => {
   try {
-    // Filter products to show only from this seller in this municipality
-    const originalFilters = { ...browseFilters };
+    const decodedSellerName = decodeMapParam(sellerName);
+    const decodedMunicipality = decodeMapParam(municipality);
+    const safeSellerName = escapeHtml(decodedSellerName);
+    const safeMunicipality = escapeHtml(decodedMunicipality);
 
-    // Apply seller filter by searching for seller name
-    // Since we don't have direct seller filter, we'll show a modal instead
     const filters = { ...browseFilters };
     if (filters.tags && filters.tags.length > 0) {
       filters.tags = filters.tags.join(',');
@@ -635,12 +712,13 @@ window.viewAllSellerProducts = async (sellerName, municipality) => {
       delete filters.tags;
     }
 
-    const response = await listProducts({ ...filters, limit: 100 });
-    const allProducts = response.data?.products || [];
+    delete filters.page;
+    delete filters.limit;
+    const allProducts = await fetchAllProductsForMap(filters);
 
     // Filter products by seller and municipality
     const sellerProducts = allProducts.filter(product =>
-      product.seller_name === sellerName && product.municipality === municipality
+      product.seller_name === decodedSellerName && product.municipality === decodedMunicipality
     );
 
     if (sellerProducts.length === 0) {
@@ -650,7 +728,7 @@ window.viewAllSellerProducts = async (sellerName, municipality) => {
 
     // Create modal to show all seller products
     const modal = createModal({
-      title: `${sellerName} - ${municipality}`,
+      title: `${safeSellerName} - ${safeMunicipality}`,
       content: `
         <div class="space-y-4">
           <div class="text-sm text-gray-600 mb-4">
@@ -659,9 +737,9 @@ window.viewAllSellerProducts = async (sellerName, municipality) => {
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
             ${sellerProducts.map(product => `
               <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                <h5 class="font-semibold text-gray-800 mb-2">${product.name}</h5>
-                <p class="text-xs text-gray-600 mb-2">${product.description || ''}</p>
-                <p class="text-sm font-bold text-primary mb-3">${formatCurrency(product.price_per_unit)} per ${product.unit_type}</p>
+                <h5 class="font-semibold text-gray-800 mb-2">${escapeHtml(product.name || 'Unnamed Product')}</h5>
+                <p class="text-xs text-gray-600 mb-2">${escapeHtml(product.description || '')}</p>
+                <p class="text-sm font-bold text-primary mb-3">${formatCurrency(product.price_per_unit)} per ${escapeHtml(product.unit_type || 'unit')}</p>
                 <div class="flex gap-2">
                   <button 
                     class="btn btn-xs btn-outline-primary flex-1" 
@@ -693,8 +771,8 @@ window.viewAllSellerProducts = async (sellerName, municipality) => {
 // Helper functions for modal actions
 window.viewProductFromModal = async (productId) => {
   try {
-    const response = await listProducts({ limit: 100 });
-    const product = response.data?.products.find(p => p.id === productId);
+    const response = await getProduct(productId);
+    const product = response?.data?.product;
 
     if (product) {
       // Close only the seller products modal, keep the product details modal intact
@@ -711,8 +789,8 @@ window.viewProductFromModal = async (productId) => {
 
 window.addToCartFromModal = async (productId) => {
   try {
-    const response = await listProducts({ limit: 100 });
-    const product = response.data?.products.find(p => p.id === productId);
+    const response = await getProduct(productId);
+    const product = response?.data?.product;
 
     if (product) {
       await handleAddToCart(product);
@@ -744,19 +822,19 @@ const viewProductDetails = async (product) => {
       const dynamicModal = createModal({
         title: `Product Name: ${product.name}` || 'Product Details',
         content: `
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="product-view-modal-grid grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
             <!-- Map Section -->
-            <div class="bg-gray-50 rounded-lg h-64 lg:h-80 relative">
+            <div class="product-view-modal-map bg-gray-50 rounded-lg h-52 sm:h-64 lg:h-80 relative overflow-hidden">
               <div id="dynamic-product-map" class="w-full h-full rounded-lg"></div>
-              <div class="absolute bottom-2 left-2 right-2">
-                <div id="dynamic-distance-display" class="bg-white/90 backdrop-blur-sm rounded px-3 py-2 text-sm">
+              <div class="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3">
+                <div id="dynamic-distance-display" class="product-view-distance bg-white/90 backdrop-blur-sm rounded px-3 py-2 text-sm">
                   <i class="bi bi-geo-alt"></i> Calculating distance...
                 </div>
               </div>
             </div>
             
             <!-- Product Info -->
-            <div id="dynamic-product-info" class="space-y-4">
+            <div id="dynamic-product-info" class="product-view-modal-info space-y-4">
               <!-- Content will be populated here -->
             </div>
           </div>
@@ -786,6 +864,7 @@ const viewProductDetails = async (product) => {
     // Use existing static modal
     titleEl.textContent = product.name;
     renderProductInfo(product, infoSection);
+    resetProductMapSizeState();
     modal.classList.remove('hidden');
 
     // Initialize map after modal is shown
@@ -816,7 +895,7 @@ const renderProductInfo = (product, container) => {
 
     // Create carousel HTML
     const carouselHtml = createCarousel(photos, product.name, {
-      height: '400px',
+      height: '340px',
       objectFit: 'cover',
       showIndicators: photos.length > 1,
       showArrows: photos.length > 1,
@@ -902,7 +981,7 @@ const renderProductInfoForDynamicModal = (product, container) => {
 
     // Create carousel HTML
     const carouselHtml = createCarousel(photos, product.name, {
-      height: '300px',
+      height: '280px',
       objectFit: 'cover',
       showIndicators: photos.length > 1,
       showArrows: photos.length > 1,
@@ -910,14 +989,14 @@ const renderProductInfoForDynamicModal = (product, container) => {
     });
 
     container.innerHTML = `
-      <div class="space-y-4">
+      <div class="product-view-info space-y-4">
         <!-- Product Carousel -->
-        <div class="aspect-w-16 aspect-h-12 bg-gray-100 rounded-lg overflow-hidden">
+        <div class="product-view-carousel bg-gray-100 rounded-lg overflow-hidden">
           ${carouselHtml}
         </div>
         
         <!-- Product Info -->
-        <div class="space-y-3">
+        <div class="product-view-info-content space-y-3">
           <div class="flex items-start justify-between">
             <h3 class="text-xl font-bold text-gray-900">${product.name || 'Unknown Product'}</h3>
             ${product.seller_verified ? '<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"><i class="bi bi-patch-check-fill mr-1"></i> Verified</span>' : ''}
@@ -928,7 +1007,7 @@ const renderProductInfoForDynamicModal = (product, container) => {
           ${product.description ? `<p class="text-gray-700">${product.description}</p>` : ''}
           
           <!-- Details Grid -->
-          <div class="grid grid-cols-2 gap-3 text-sm">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div class="flex items-center text-gray-600">
               <i class="bi bi-shop mr-2"></i>
               <span>${product.seller_name || 'Unknown Seller'}</span>
@@ -949,9 +1028,9 @@ const renderProductInfoForDynamicModal = (product, container) => {
           
           <!-- Add to Cart Section -->
           <div class="border-t pt-4">
-            <div class="flex items-center gap-3 mb-3">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
               <label class="font-medium">Quantity:</label>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <button type="button" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center" onclick="decrementQuantity('dynamic-product-quantity')">-</button>
                 <input type="number" id="dynamic-product-quantity" value="1" min="1" max="${product.available_quantity || 1}" class="w-16 px-2 py-1 border border-gray-300 rounded text-center">
                 <button type="button" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center" onclick="incrementQuantity('dynamic-product-quantity', ${product.available_quantity || 1})">+</button>
@@ -1022,6 +1101,10 @@ const initDynamicProductMap = async (product) => {
       .addTo(map)
       .bindPopup(`<strong>${product.seller_name || 'Seller'}</strong><br>${product.municipality || 'Location'}`)
       .openPopup();
+
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 120);
 
     // Update distance display
     const distanceEl = document.getElementById('dynamic-distance-display');
@@ -1174,6 +1257,12 @@ const initProductMap = async (product) => {
 
     }
 
+    setTimeout(() => {
+      if (productDetailsMap) {
+        productDetailsMap.invalidateSize();
+      }
+    }, 150);
+
   } catch (error) {
     console.error('Error initializing product map:', error);
     mapContainer.innerHTML = `
@@ -1310,14 +1399,15 @@ const calculateProductDistance = async (userLoc, product) => {
 
     if (response && response.success && response.data && typeof response.data.distance_km === 'number') {
       const distanceKm = response.data.distance_km;
-      const estimatedTime = Math.round(distanceKm * 3);
+      // Conservative provisional estimate while route ETA is loading
+      const estimatedTime = Math.round((distanceKm * 5) + 8);
 
 
 
       distanceDisplay.innerHTML = `
         <div>
           <div><i class="bi bi-geo-alt"></i> ${distanceKm.toFixed(1)} km away</div>
-          <div class="text-sm mt-1"><i class="bi bi-clock"></i> ~${estimatedTime} mins travel</div>
+          <div class="text-sm mt-1"><i class="bi bi-clock"></i> ~${estimatedTime} mins travel (est.)</div>
         </div>
       `;
       distanceDisplay.classList.remove('loading');
@@ -1352,7 +1442,7 @@ const calculateProductDistance = async (userLoc, product) => {
         parseFloat(product.longitude)
       );
 
-      const estimatedTime = Math.round(fallbackDistance * 4); // More conservative for straight-line
+      const estimatedTime = Math.round((fallbackDistance * 6) + 10); // Conservative fallback with traffic allowance
 
 
 
@@ -1427,6 +1517,21 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 
 const toRadians = (degrees) => degrees * (Math.PI / 180);
 
+const estimateTrafficAwareEtaMinutes = (baseMinutes, distanceKm = 0) => {
+  if (!Number.isFinite(baseMinutes) || baseMinutes <= 0) return null;
+
+  const hour = new Date().getHours();
+  const isPeak = (hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 20);
+  const isShoulder = (hour >= 6 && hour < 7) || (hour > 9 && hour < 16) || (hour > 20 && hour <= 22);
+
+  const trafficMultiplier = isPeak ? 1.3 : (isShoulder ? 1.18 : 1.1);
+  const stopAndTurnBuffer = distanceKm < 3 ? 4 : (distanceKm < 10 ? 7 : 10);
+  const trafficAdjusted = Math.round((baseMinutes * trafficMultiplier) + stopAndTurnBuffer);
+  const conservativeFloor = Math.round((distanceKm * 4.5) + 5);
+
+  return Math.max(trafficAdjusted, conservativeFloor);
+};
+
 const displayRoute = async (userLoc, product, distance) => {
   try {
     // Only show route for reasonable distances (< 50km to avoid cluttering)
@@ -1473,14 +1578,24 @@ const displayRoute = async (userLoc, product, distance) => {
       }
       productDetailsMap.routeLayers.push(routeLine);
 
-      // Update distance display with route info if available
+      // Update distance display with traffic-aware route ETA
       if (routeResponse.data.duration_minutes) {
         const distanceDisplay = document.getElementById('distance-display');
+        const routeDistanceValue = Number(routeResponse.data.distance_km);
+        const routeDurationValue = Number(routeResponse.data.duration_minutes);
+        const routeDistanceKm = Number.isFinite(routeDistanceValue)
+          ? routeDistanceValue
+          : distance;
+        const etaMinutes = estimateTrafficAwareEtaMinutes(
+          routeDurationValue,
+          routeDistanceKm
+        );
+
         distanceDisplay.innerHTML = `
           <div>
-            <div><i class="bi bi-geo-alt"></i> ${distance.toFixed(1)} km away</div>
-            <div class="text-sm mt-1"><i class="bi bi-clock"></i> ~${routeResponse.data.duration_minutes} mins by car</div>
-            ${routeResponse.data.note ? '<div class="text-xs text-gray-300 mt-1">* Estimated based on straight-line distance</div>' : ''}
+            <div><i class="bi bi-geo-alt"></i> ${routeDistanceKm.toFixed(1)} km away</div>
+            <div class="text-sm mt-1"><i class="bi bi-clock"></i> ~${etaMinutes || routeResponse.data.duration_minutes} mins by car (traffic-aware)</div>
+            ${routeResponse.data.note ? '<div class="text-xs text-gray-300 mt-1">* Route API fallback estimate</div>' : ''}
           </div>
         `;
       }
@@ -1499,6 +1614,7 @@ const setupModalCloseHandlers = () => {
   try {
     const modal = document.getElementById('product-details-modal');
     const closeBtn = document.getElementById('close-product-modal');
+    const mapSizeBtn = document.getElementById('toggle-map-size-btn');
 
     if (!modal || !closeBtn) {
       console.warn('Modal or close button not found, skipping close handlers setup');
@@ -1507,6 +1623,9 @@ const setupModalCloseHandlers = () => {
 
     // Close button handler
     closeBtn.onclick = closeProductDetailsModal;
+    if (mapSizeBtn) {
+      mapSizeBtn.onclick = toggleProductMapSize;
+    }
 
     // Click outside modal to close
     modal.onclick = (e) => {
@@ -1537,6 +1656,7 @@ const closeProductDetailsModal = () => {
     }
 
     modal.classList.add('hidden');
+    resetProductMapSizeState();
 
     // Clean up map and route layers
     if (productDetailsMap) {
@@ -1553,6 +1673,35 @@ const closeProductDetailsModal = () => {
     }
   } catch (error) {
     console.error('Error closing product details modal:', error);
+  }
+};
+
+const toggleProductMapSize = () => {
+  const modalPanel = document.querySelector('#product-details-modal .product-details-modal');
+  const mapSizeBtn = document.getElementById('toggle-map-size-btn');
+  if (!modalPanel || !mapSizeBtn) return;
+
+  const isExpanded = modalPanel.classList.toggle('map-expanded');
+  mapSizeBtn.innerHTML = isExpanded
+    ? '<i class="bi bi-fullscreen-exit"></i> Collapse map'
+    : '<i class="bi bi-arrows-fullscreen"></i> Expand map';
+
+  setTimeout(() => {
+    if (productDetailsMap) {
+      productDetailsMap.invalidateSize();
+    }
+  }, 180);
+};
+
+const resetProductMapSizeState = () => {
+  const modalPanel = document.querySelector('#product-details-modal .product-details-modal');
+  const mapSizeBtn = document.getElementById('toggle-map-size-btn');
+  if (modalPanel) {
+    modalPanel.classList.remove('map-expanded');
+  }
+
+  if (mapSizeBtn) {
+    mapSizeBtn.innerHTML = '<i class="bi bi-arrows-fullscreen"></i> Expand map';
   }
 };
 
@@ -1693,12 +1842,24 @@ const updateCartUI = async () => {
 
 // Global functions for cart operations
 window.updateCartQuantity = async (itemId, quantity) => {
-  quantity = parseInt(quantity);
-  if (quantity < 1) return;
+  quantity = parseInt(quantity, 10);
+  if (!Number.isFinite(quantity) || quantity < 1) {
+    showError('Please enter a valid quantity (minimum 1).');
+    await loadCart();
+    return;
+  }
+
+  const item = currentCart?.items?.find(cartItem => cartItem.id === itemId);
+  const maxQty = parseInt(item?.product?.available_quantity, 10);
+  if (Number.isFinite(maxQty) && maxQty > 0 && quantity > maxQty) {
+    quantity = maxQty;
+    showError(`Only ${maxQty} item${maxQty !== 1 ? 's are' : ' is'} available.`);
+  }
 
   try {
     await updateCartItem(itemId, quantity);
     await loadCart();
+    await updateCartUI();
     showSuccess('Cart updated');
   } catch (error) {
     console.error('Error updating cart:', error);
@@ -1815,7 +1976,7 @@ const handleCheckout = async () => {
     const sellerItems = currentCart.items.filter(item => item.seller_id === sellerId);
     const subtotal = sellerItems.reduce((sum, item) => sum + ((item.product?.price_per_unit || 0) * item.quantity), 0);
     return `
-            <div class="border rounded-lg p-4 cursor-pointer hover:bg-gray-50" onclick="window.selectSellerForCheckout('${sellerId}', '${sellerName}')">
+            <div class="border rounded-lg p-4 cursor-pointer hover:bg-gray-50" onclick="window.selectSellerForCheckout('${sellerId}', '${encodeURIComponent(sellerName)}')">
               <div class="flex justify-between items-center">
                 <div>
                   <p class="font-semibold">${sellerName}</p>
@@ -1842,7 +2003,8 @@ const handleCheckout = async () => {
   });
 };
 
-window.selectSellerForCheckout = async (sellerId, sellerName) => {
+window.selectSellerForCheckout = async (sellerId, sellerNameEncoded) => {
+  const sellerName = decodeURIComponent(sellerNameEncoded || '');
   document.querySelector('.modal-backdrop').remove();
   showCheckoutModal(sellerId, sellerName);
 };
@@ -1883,15 +2045,15 @@ const showCheckoutModal = (sellerId, sellerName) => {
       
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="form-group">
-          <label class="form-label">Preferred Date (Optional)</label>
-          <input type="date" id="preferred-date" class="form-control" min="${new Date().toISOString().split('T')[0]}">
+          <label class="form-label">Preferred Date</label>
+          <input type="date" id="preferred-date" class="form-control" required min="${new Date().toISOString().split('T')[0]}">
           <small class="text-gray-500">When do you want to receive the order?</small>
         </div>
         
         <div class="form-group">
-          <label class="form-label">Preferred Time (Optional)</label>
-          <select id="preferred-time" class="form-select">
-            <option value="">Any time</option>
+          <label class="form-label">Preferred Time</label>
+          <select id="preferred-time" class="form-select" required>
+            <option value="" disabled selected>Select preferred time</option>
             <option value="morning">Morning (8AM - 12PM)</option>
             <option value="afternoon">Afternoon (12PM - 5PM)</option>
             <option value="evening">Evening (5PM - 8PM)</option>
@@ -1900,8 +2062,8 @@ const showCheckoutModal = (sellerId, sellerName) => {
       </div>
       
       <div class="form-group">
-        <label class="form-label">Notes (Optional)</label>
-        <textarea id="order-notes" class="form-control" rows="2" placeholder="Special instructions for the seller..."></textarea>
+        <label class="form-label">Notes</label>
+        <textarea id="order-notes" class="form-control" rows="2" minlength="3" required placeholder="Special instructions for the seller..."></textarea>
       </div>
     </form>
   `;
@@ -1981,19 +2143,63 @@ const showCheckoutModal = (sellerId, sellerName) => {
       return;
     }
 
-    // Get preferred time value
-    const preferredTimeValue = document.getElementById('preferred-time').value;
+    const deliveryOption = document.getElementById('delivery-option')?.value;
+    const paymentMethod = document.getElementById('payment-method')?.value;
+    const deliveryAddress = (document.getElementById('delivery-address')?.value || '').trim();
+    const preferredDateValue = document.getElementById('preferred-date')?.value;
+    const preferredTimeValue = document.getElementById('preferred-time')?.value;
+    const orderNotesValue = (document.getElementById('order-notes')?.value || '').trim();
+
+    if (!sellerId || typeof sellerId !== 'string' || !sellerId.trim()) {
+      showError('Invalid seller selected. Please reopen checkout and try again.');
+      return;
+    }
+
+    if (!deliveryOption) {
+      showError('Please select a delivery option.');
+      return;
+    }
+
+    const hasInvalidProfileAddress = deliveryAddress.toLowerCase().includes('no address found') ||
+      deliveryAddress.toLowerCase().includes('error loading address');
+    if (!deliveryAddress || deliveryAddress.length < 10 || hasInvalidProfileAddress) {
+      showError('Please set a valid delivery address in your profile before checkout.');
+      return;
+    }
+
+    if (!preferredDateValue) {
+      showError('Please select your preferred delivery date.');
+      return;
+    }
+
+    if (!preferredTimeValue) {
+      showError('Please select your preferred delivery time.');
+      return;
+    }
+
+    if (!orderNotesValue || orderNotesValue.length < 3) {
+      showError('Please add notes with at least 3 characters.');
+      return;
+    }
 
     const orderData = {
       seller_id: sellerId,
-      delivery_option: document.getElementById('delivery-option').value,
-      delivery_address: document.getElementById('delivery-address').value,
-      delivery_latitude: userDeliveryCoordinates.latitude,
-      delivery_longitude: userDeliveryCoordinates.longitude,
-      preferred_date: document.getElementById('preferred-date').value || null,
-      preferred_time: preferredTimeValue || null,
-      order_notes: document.getElementById('order-notes').value || null
+      delivery_option: deliveryOption,
+      payment_method: paymentMethod
     };
+
+    if (deliveryAddress) {
+      orderData.delivery_address = deliveryAddress;
+    }
+
+    if (Number.isFinite(userDeliveryCoordinates.latitude) && Number.isFinite(userDeliveryCoordinates.longitude)) {
+      orderData.delivery_latitude = userDeliveryCoordinates.latitude;
+      orderData.delivery_longitude = userDeliveryCoordinates.longitude;
+    }
+
+    orderData.preferred_date = preferredDateValue;
+    orderData.preferred_time = preferredTimeValue;
+    orderData.order_notes = orderNotesValue;
 
 
     try {
@@ -2021,7 +2227,17 @@ const showCheckoutModal = (sellerId, sellerName) => {
       }
     } catch (error) {
       console.error('Error placing order:', error);
-      showError(error.message || 'Failed to place order');
+      const firstValidationError = Array.isArray(error?.errors) && error.errors.length > 0
+        ? error.errors[0]?.message
+        : null;
+
+      if (firstValidationError) {
+        showError(firstValidationError);
+      } else if (error?.message === 'Validation failed') {
+        showError('Please complete the required checkout details and try again.');
+      } else {
+        showError(error.message || 'Failed to place order');
+      }
       btnPlaceOrder.disabled = false;
       btnPlaceOrder.innerHTML = '<i class="bi bi-check-circle"></i> Place Order';
     }
@@ -2073,7 +2289,9 @@ const loadOrders = async () => {
         <div class="text-center py-12">
           <i class="bi bi-inbox text-6xl text-gray-400"></i>
           <p class="text-gray-500 mt-4">${emptyMessage}</p>
-          ${orderFilters.status !== 'all' ? '<a href="#orders" class="btn btn-primary mt-4 onclick-filter">View All Orders</a>' : '<a href="#browse" class="btn btn-primary mt-4">Start Shopping</a>'}
+          ${orderFilters.status !== 'all'
+      ? '<button class="btn btn-primary mt-4" onclick="window.resetOrderFilters()">View All Orders</button>'
+      : '<a href="#browse" class="btn btn-primary mt-4">Start Shopping</a>'}
         </div>
       `;
       // Still attach filter listeners even if no orders
@@ -2089,6 +2307,13 @@ const loadOrders = async () => {
   } catch (error) {
     console.error('Error loading orders:', error);
     showError('Failed to load orders');
+    container.innerHTML = `
+      <div class="text-center py-12">
+        <i class="bi bi-exclamation-circle text-6xl text-danger"></i>
+        <p class="text-danger mt-4">Failed to load orders</p>
+        <button class="btn btn-primary mt-4" onclick="window.loadOrdersFromUI?.()">Retry</button>
+      </div>
+    `;
   }
 };
 
@@ -2210,7 +2435,7 @@ const createOrderCard = (order) => {
             </div>
           ` : ''}
           ${isCompleted && !hasRating ? `
-            <button class="btn btn-sm btn-warning" onclick="window.rateOrderModal('${order.id}', '${order.order_number}', '${sellerName.replace(/'/g, "\\'")}')">
+            <button class="btn btn-sm btn-warning" onclick="window.rateOrderModal('${order.id}', '${order.order_number}')">
               <i class="bi bi-star"></i> Rate Order
             </button>
           ` : ''}
@@ -2261,7 +2486,7 @@ window.viewOrderDetails = async (orderId) => {
     ).join('')}
               </div>
               <span class="text-sm font-semibold">${order.seller.rating.toFixed(1)} / 5.0</span>
-              <button class="btn btn-sm btn-outline text-xs" onclick="window.viewSellerReviews('${order.seller.id}', '${order.seller.user.full_name}')">
+              <button class="btn btn-sm btn-outline text-xs" onclick="window.viewSellerReviews('${order.seller.id}', '${encodeURIComponent(order.seller.user.full_name)}')">
                 View Reviews
               </button>
             </div>
@@ -2565,7 +2790,7 @@ window.confirmOrderReceived = async (orderId) => {
 };
 
 // Rate order modal - Rate individual products
-window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
+window.rateOrderModal = async (orderId, orderNumber) => {
   try {
     // Fetch order details to get products
     const response = await getOrderById(orderId);
@@ -2736,10 +2961,12 @@ window.rateOrderModal = async (orderId, orderNumber, sellerName) => {
 };
 
 // View seller reviews
-window.viewSellerReviews = async (sellerId, sellerName) => {
+window.viewSellerReviews = async (sellerId, sellerNameEncoded) => {
   try {
+    const sellerName = decodeURIComponent(sellerNameEncoded || '');
     const token = getToken();
-    const response = await fetch(`/api/products/seller/${sellerId}/reviews?limit=50`, {
+    const reviewsUrl = buildUrl(`/products/seller/${sellerId}/reviews?limit=50`);
+    const response = await fetch(reviewsUrl, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -2858,7 +3085,9 @@ const loadMyIssues = async () => {
         <div class="text-center py-12">
           <i class="bi bi-flag text-6xl text-gray-400"></i>
           <p class="text-gray-500 mt-4">${emptyMessage}</p>
-          ${issueFilters.status !== 'all' ? '<button class="btn btn-primary mt-4" onclick="document.querySelector(\'.issue-filter[data-status=\\\"all\\\"]\').click()">View All Issues</button>' : '<a href="#orders" class="btn btn-primary mt-4">View Orders</a>'}
+          ${issueFilters.status !== 'all'
+      ? '<button class="btn btn-primary mt-4" onclick="window.resetIssueFilters()">View All Issues</button>'
+      : '<a href="#orders" class="btn btn-primary mt-4">View Orders</a>'}
         </div>
       `;
       attachIssueFilterListeners();
@@ -2880,6 +3109,7 @@ const loadMyIssues = async () => {
 };
 
 const createIssueCard = (issue) => {
+  const issueStatus = String(issue.status || 'under_review');
   const statusColors = {
     under_review: 'warning',
     resolved: 'success',
@@ -2902,9 +3132,9 @@ const createIssueCard = (issue) => {
               <div class="flex-1">
                 <div class="flex items-center gap-2 mb-2">
                   <h3 class="font-bold text-lg">${issue.issue_type}</h3>
-                  <span class="badge badge-${statusColors[issue.status] || 'secondary'}">
-                    <i class="bi bi-${statusIcons[issue.status] || 'circle'}"></i>
-                    ${issue.status.replace('_', ' ').toUpperCase()}
+                  <span class="badge badge-${statusColors[issueStatus] || 'secondary'}">
+                    <i class="bi bi-${statusIcons[issueStatus] || 'circle'}"></i>
+                    ${issueStatus.replace('_', ' ').toUpperCase()}
                   </span>
                 </div>
                 
@@ -2916,9 +3146,19 @@ const createIssueCard = (issue) => {
                     <strong>Order:</strong> #${issue.order?.order_number || 'N/A'}
                   </div>
                   <div>
+                    <i class="bi bi-flag"></i>
+                    <strong>Priority:</strong> ${(issue.priority || 'medium').toUpperCase()}
+                  </div>
+                  <div>
                     <i class="bi bi-calendar"></i>
                     <strong>Reported:</strong> ${formatRelativeTime(issue.created_at)}
                   </div>
+                  ${issueStatus === 'under_review' ? `
+                    <div>
+                      <i class="bi bi-alarm"></i>
+                      <strong>SLA:</strong> ${issue.is_overdue ? 'OVERDUE' : 'On Track'}
+                    </div>
+                  ` : ''}
                   ${issue.evidence_urls && issue.evidence_urls.length > 0 ? `
                     <div>
                       <i class="bi bi-paperclip"></i>
@@ -2927,12 +3167,24 @@ const createIssueCard = (issue) => {
                   ` : ''}
                 </div>
                 
-                ${issue.admin_notes && issue.status !== 'under_review' ? `
+                ${issue.resolution && issueStatus !== 'under_review' ? `
                   <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <p class="text-sm font-semibold text-blue-800 mb-1">
-                      <i class="bi bi-person-badge"></i> Admin Response:
+                      <i class="bi bi-person-badge"></i> Resolution:
                     </p>
-                    <p class="text-sm text-blue-900">${issue.admin_notes}</p>
+                    <p class="text-sm text-blue-900">${issue.resolution}</p>
+                  </div>
+                ` : ''}
+                ${issue.outcome_action ? `
+                  <div class="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p class="text-sm font-semibold text-green-800 mb-1">
+                      <i class="bi bi-cash-coin"></i> Outcome Action
+                    </p>
+                    <p class="text-sm text-green-900">
+                      ${String(issue.outcome_action).replace(/_/g, ' ')}
+                      ${issue.outcome_amount ? ` - ${formatCurrency(issue.outcome_amount)}` : ''}
+                    </p>
+                    ${issue.outcome_notes ? `<p class="text-xs text-green-800 mt-1">${issue.outcome_notes}</p>` : ''}
                   </div>
                 ` : ''}
               </div>
@@ -2960,6 +3212,7 @@ window.viewIssueDetails = async (issueId) => {
       return;
     }
 
+    const issueStatus = String(issue.status || 'under_review');
     const statusColors = {
       under_review: 'warning',
       resolved: 'success',
@@ -2972,8 +3225,8 @@ window.viewIssueDetails = async (issueId) => {
         <div class="space-y-4">
           <div class="flex items-center justify-between">
             <h3 class="text-xl font-bold">${issue.issue_type}</h3>
-            <span class="badge badge-${statusColors[issue.status] || 'secondary'}">
-              ${issue.status.replace('_', ' ').toUpperCase()}
+            <span class="badge badge-${statusColors[issueStatus] || 'secondary'}">
+              ${issueStatus.replace('_', ' ').toUpperCase()}
             </span>
           </div>
           
@@ -2981,6 +3234,9 @@ window.viewIssueDetails = async (issueId) => {
             <h4 class="font-semibold mb-2">Order Information</h4>
             <p class="text-sm"><i class="bi bi-receipt"></i> Order #${issue.order?.order_number || 'N/A'}</p>
             <p class="text-sm"><i class="bi bi-cash"></i> ${formatCurrency(issue.order?.total_amount || 0)}</p>
+            <p class="text-sm"><i class="bi bi-flag"></i> Priority: ${(issue.priority || 'medium').toUpperCase()}</p>
+            ${issue.sla_due_at ? `<p class="text-sm"><i class="bi bi-alarm"></i> SLA Due: ${formatRelativeTime(issue.sla_due_at)}</p>` : ''}
+            ${issueStatus === 'under_review' ? `<p class="text-sm"><i class="bi bi-exclamation-circle"></i> SLA: ${issue.is_overdue ? 'OVERDUE' : 'On Track'}</p>` : ''}
           </div>
           
           <div class="border-t pt-4">
@@ -3000,11 +3256,11 @@ window.viewIssueDetails = async (issueId) => {
             </div>
           ` : ''}
           
-          ${issue.admin_notes ? `
+          ${issue.resolution ? `
             <div class="border-t pt-4">
-              <h4 class="font-semibold mb-2">Admin Response</h4>
+              <h4 class="font-semibold mb-2">Resolution</h4>
               <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p class="text-sm text-blue-900">${issue.admin_notes}</p>
+                <p class="text-sm text-blue-900">${issue.resolution}</p>
                 ${issue.resolved_at ? `
                   <p class="text-xs text-gray-500 mt-2">
                     <i class="bi bi-clock"></i> Responded: ${formatRelativeTime(issue.resolved_at)}
@@ -3021,6 +3277,19 @@ window.viewIssueDetails = async (issueId) => {
               </div>
             </div>
           `}
+
+          ${issue.outcome_action ? `
+            <div class="border-t pt-4">
+              <h4 class="font-semibold mb-2">Outcome Action</h4>
+              <div class="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p class="text-sm text-green-900">
+                  ${String(issue.outcome_action).replace(/_/g, ' ')}
+                  ${issue.outcome_amount ? ` - ${formatCurrency(issue.outcome_amount)}` : ''}
+                </p>
+                ${issue.outcome_notes ? `<p class="text-xs text-green-800 mt-2">${issue.outcome_notes}</p>` : ''}
+              </div>
+            </div>
+          ` : ''}
           
           <div class="border-t pt-4 text-xs text-gray-500">
             <p><i class="bi bi-calendar"></i> Reported: ${formatRelativeTime(issue.created_at)}</p>
@@ -3040,11 +3309,20 @@ window.viewIssueDetails = async (issueId) => {
 
 const attachIssueFilterListeners = () => {
   document.querySelectorAll('.issue-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      issueFilters.status = btn.dataset.status;
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+    newBtn.addEventListener('click', () => {
+      document.querySelectorAll('.issue-filter').forEach(b => b.classList.remove('active'));
+      newBtn.classList.add('active');
+      issueFilters.status = newBtn.dataset.status;
       loadMyIssues();
     });
   });
+};
+
+window.resetIssueFilters = () => {
+  issueFilters.status = 'all';
+  loadMyIssues();
 };
 
 // Update message badge in navbar
@@ -3093,6 +3371,36 @@ const loadConversations = async () => {
   renderConversationsList(container);
 };
 
+const mergeConversationMessages = (messageResponses = []) => {
+  const allMessages = messageResponses
+    .flatMap(response => response?.data?.messages || [])
+    .filter(Boolean);
+
+  const uniqueById = new Map();
+  allMessages.forEach((message) => {
+    if (message?.id) {
+      uniqueById.set(message.id, message);
+    }
+  });
+
+  return Array.from(uniqueById.values()).sort((a, b) =>
+    new Date(a.created_at) - new Date(b.created_at)
+  );
+};
+
+const scrollChatToBottom = (container) => {
+  if (!container) return;
+
+  const doScroll = () => {
+    container.scrollTop = container.scrollHeight;
+  };
+
+  doScroll();
+  requestAnimationFrame(doScroll);
+  setTimeout(doScroll, 30);
+  setTimeout(doScroll, 120);
+};
+
 // Fetch and cache conversations data (always executes, even if DOM doesn't exist)
 const updateConversationsData = async () => {
   try {
@@ -3100,6 +3408,38 @@ const updateConversationsData = async () => {
     currentConversations = response.data?.conversations || [];
   } catch (error) {
     console.error('Error updating conversations data:', error);
+  }
+};
+
+const setConversationTypingPreview = (orderId, isTyping, displayName = 'Seller') => {
+  const key = orderId ? String(orderId) : '';
+  if (!key) return;
+
+  const existingTimer = typingPreviewTimers.get(key);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    typingPreviewTimers.delete(key);
+  }
+
+  if (isTyping) {
+    const safeName = (displayName || 'Seller').trim() || 'Seller';
+    typingPreviewByOrderId.set(key, safeName);
+    const timeoutId = setTimeout(() => {
+      typingPreviewByOrderId.delete(key);
+      typingPreviewTimers.delete(key);
+      const container = document.getElementById('conversations-list');
+      if (container) {
+        renderConversationsList(container);
+      }
+    }, 3500);
+    typingPreviewTimers.set(key, timeoutId);
+  } else {
+    typingPreviewByOrderId.delete(key);
+  }
+
+  const container = document.getElementById('conversations-list');
+  if (container) {
+    renderConversationsList(container);
   }
 };
 
@@ -3112,10 +3452,21 @@ const renderConversationsList = (container) => {
 
   container.innerHTML = currentConversations.map(conv => {
     const userId = conv.other_party_id;
+    const typingDisplayName = typingPreviewByOrderId.get(String(conv.order_id));
+    const previewText = typingDisplayName
+      ? `${typingDisplayName} is typing...`
+      : (conv.last_message || 'No messages yet');
+    const previewClass = typingDisplayName
+      ? 'text-sm text-primary truncate italic'
+      : 'text-sm text-gray-600 truncate';
     return `
     <div class="conversation-item p-3 hover:bg-gray-100 cursor-pointer rounded-lg"
          data-order-id="${conv.order_id}"
          data-user-id="${userId}"
+         data-order-count="${conv.order_count || 1}"
+         data-active-order-count="${conv.active_order_count || 0}"
+         data-order-ids="${(conv.order_ids || []).join(',')}"
+         data-active-order-ids="${(conv.active_order_ids || []).join(',')}"
          onclick="window.openConversation('${conv.order_id}')">
       <div class="flex items-center gap-3">
         <div class="flex-1">
@@ -3123,7 +3474,7 @@ const renderConversationsList = (container) => {
             <p class="font-semibold">${conv.other_party}</p>
             <span class="status-badge-container" data-user-id="${userId}"></span>
           </div>
-          <p class="text-sm text-gray-600 truncate">${conv.last_message || 'No messages yet'}</p>
+          <p class="${previewClass}" data-conversation-preview="${conv.order_id}">${previewText}</p>
         </div>
         ${conv.unread_count > 0 ? `
           <span class="badge badge-danger" data-conversation-badge="${conv.order_id}">${conv.unread_count}</span>
@@ -3153,14 +3504,15 @@ const renderConversationsList = (container) => {
 // Update a single conversation's badge and message preview
 const updateConversationBadge = async (orderId) => {
   try {
+    const normalizedOrderId = String(orderId);
     // First update the cached data
     await updateConversationsData();
 
     // Then find the conversation in cache
-    const conversation = currentConversations.find(c => c.order_id === orderId);
+    const conversation = currentConversations.find(c => String(c.order_id) === normalizedOrderId);
 
     if (conversation) {
-      const badge = document.querySelector(`[data-conversation-badge="${orderId}"]`);
+      const badge = document.querySelector(`[data-conversation-badge="${normalizedOrderId}"]`);
       if (badge) {
         if (conversation.unread_count > 0) {
           badge.textContent = conversation.unread_count;
@@ -3171,11 +3523,18 @@ const updateConversationBadge = async (orderId) => {
       }
 
       // Update last message preview
-      const item = document.querySelector(`[data-order-id="${orderId}"]`);
+      const item = document.querySelector(`[data-order-id="${normalizedOrderId}"]`);
       if (item) {
-        const messagePreview = item.querySelector('p:nth-child(2)');
+        const messagePreview = item.querySelector('[data-conversation-preview]');
         if (messagePreview) {
-          messagePreview.textContent = conversation.last_message || 'No messages yet';
+          const typingDisplayName = typingPreviewByOrderId.get(normalizedOrderId);
+          const previewText = typingDisplayName
+            ? `${typingDisplayName} is typing...`
+            : (conversation.last_message || 'No messages yet');
+          messagePreview.textContent = previewText;
+          messagePreview.classList.toggle('text-primary', Boolean(typingDisplayName));
+          messagePreview.classList.toggle('italic', Boolean(typingDisplayName));
+          messagePreview.classList.toggle('text-gray-600', !typingDisplayName);
         }
       }
     }
@@ -3188,14 +3547,33 @@ window.openConversation = async (orderId) => {
   // Get the user ID from the conversation element's data attribute for consistency
   const conversationItem = document.querySelector(`[data-order-id="${orderId}"]`);
   const userId = conversationItem?.dataset.userId;
+  const orderCount = Number(conversationItem?.dataset.orderCount || 1);
+  const activeOrderCount = Number(conversationItem?.dataset.activeOrderCount || 0);
+  const orderIds = (conversationItem?.dataset.orderIds || '')
+    .split(',')
+    .map(id => id.trim())
+    .filter(Boolean);
+  const activeOrderIds = (conversationItem?.dataset.activeOrderIds || '')
+    .split(',')
+    .map(id => id.trim())
+    .filter(Boolean);
 
   // Store userId globally to ensure consistency in openOrderChat
   window.conversationUserId = userId;
+  window.currentConversationMeta = {
+    sourceOrderId: orderId,
+    orderCount,
+    activeOrderCount,
+    orderIds,
+    activeOrderIds
+  };
 
   window.openOrderChat(orderId, userId);
 };
 
 window.openOrderChat = async (orderId, userId) => {
+  stopTypingSignal();
+  hideTypingIndicator();
   currentConversation = orderId;
 
   // Join conversation room via socket for real-time updates
@@ -3219,9 +3597,17 @@ window.openOrderChat = async (orderId, userId) => {
     }
 
     try {
+      const conversationMeta = window.currentConversationMeta || null;
+      const threadOrderIds = (conversationMeta?.sourceOrderId === orderId && conversationMeta?.orderIds?.length)
+        ? conversationMeta.orderIds
+        : [orderId];
+      const activeThreadOrderIds = (conversationMeta?.sourceOrderId === orderId && conversationMeta?.activeOrderIds?.length)
+        ? conversationMeta.activeOrderIds
+        : [];
+
       // Mark messages as read immediately when opening conversation
       try {
-        const markReadResponse = await markMessagesAsRead(orderId);
+        await Promise.allSettled(threadOrderIds.map(id => markMessagesAsRead(id)));
         updateConversationBadge(orderId);
 
         // Immediately update navbar badge
@@ -3230,12 +3616,30 @@ window.openOrderChat = async (orderId, userId) => {
         console.error('Failed to mark messages as read:', error);
       }
 
-      // Get fresh message data
-      const response = await getOrderMessages(orderId);
-      const messages = response.data?.messages || [];
+      currentConversationOrderIds = threadOrderIds;
+      currentConversationSendOrderId = activeThreadOrderIds[0] || orderId;
+
+      // Join all order rooms in grouped conversation so real-time updates cover every order in this thread.
+      try {
+        const { default: socketService } = await import('../services/socket.service.js');
+        threadOrderIds.forEach(id => socketService.joinConversation(id));
+      } catch (error) {
+        console.warn('Failed to join grouped conversation rooms:', error);
+      }
+
+      // Get fresh message data from all orders in this grouped conversation
+      const messageResponses = await Promise.allSettled(
+        threadOrderIds.map(id => getOrderMessages(id))
+      );
+      const successfulResponses = messageResponses
+        .filter(result => result.status === 'fulfilled')
+        .map(result => result.value);
+      const response = successfulResponses[0] || await getOrderMessages(orderId);
+      const messages = mergeConversationMessages(successfulResponses);
       const userRole = response.data?.user_role || 'buyer';
-      const orderStatus = response.data?.order_status;
-      const isCancelled = orderStatus === 'cancelled';
+      const activeConversation = currentConversations.find(conv => conv.order_id === orderId);
+      const activeOrderCount = activeConversation?.active_order_count ?? activeThreadOrderIds.length;
+      const isCancelled = activeOrderCount === 0;
 
       chatWindow.innerHTML = `
         <div class="flex flex-col h-96">
@@ -3257,16 +3661,22 @@ window.openOrderChat = async (orderId, userId) => {
                 <i class="bi bi-exclamation-circle"></i> This order has been cancelled. No new messages can be sent.
               </div>
             ` : `
-              <form id="chat-form" class="flex gap-2">
-                <input type="text" 
-                       id="message-input" 
-                       class="form-control flex-1" 
-                       placeholder="Type a message..."
-                       required>
-                <button type="submit" class="btn btn-primary">
-                  <i class="bi bi-send"></i> Send
-                </button>
-              </form>
+              <div class="space-y-2">
+                <div id="message-attachment-preview" class="hidden"></div>
+                <form id="chat-form" class="flex gap-2">
+                  <input type="file" id="message-attachment" class="hidden" accept="image/jpeg,image/jpg,image/png">
+                  <button type="button" class="btn btn-outline px-3" id="btn-attach-message" title="Attach image">
+                    <i class="bi bi-paperclip"></i>
+                  </button>
+                  <input type="text" 
+                         id="message-input" 
+                         class="form-control flex-1" 
+                         placeholder="Type a message...">
+                  <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-send"></i> Send
+                  </button>
+                </form>
+              </div>
             `}
           </div>
         </div>
@@ -3282,14 +3692,19 @@ window.openOrderChat = async (orderId, userId) => {
       // Auto-scroll to bottom
       const messagesContainer = document.getElementById('chat-messages');
       if (messagesContainer) {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        setupLazyMessageRendering(messagesContainer, messages, userRole);
+        scrollChatToBottom(messagesContainer);
       }
+      initAttachmentPreviewDelegation();
 
       // Handle send message
       const chatForm = document.getElementById('chat-form');
       if (chatForm) {
         chatForm.addEventListener('submit', handleSendMessage);
       }
+      setupMessageAttachmentUI();
+      setupTypingInputHandlers();
+      hideTypingIndicator();
 
     } catch (error) {
       console.error('Error loading messages:', error);
@@ -3302,12 +3717,312 @@ const createMessageBubble = (message, userRole) => {
   const isSender = message.sender?.role === userRole;
   const alignClass = isSender ? 'justify-end' : 'justify-start';
   const bgClass = isSender ? 'bg-primary text-white' : 'bg-gray-200';
+  const textMarkup = message.message_text
+    ? `<p class="text-sm">${escapeHtml(message.message_text)}</p>`
+    : '';
+  const attachmentMarkup = renderMessageAttachment(message);
 
   return `
     <div class="flex ${alignClass}">
       <div class="${bgClass} rounded-lg px-4 py-2 max-w-xs">
-        <p class="text-sm">${message.message_text}</p>
+        ${textMarkup}
+        ${attachmentMarkup}
         <p class="text-xs opacity-75 mt-1">${formatRelativeTime(message.created_at)}</p>
+      </div>
+    </div>
+  `;
+};
+
+const CHAT_MESSAGE_BATCH_SIZE = 40;
+
+const setupLazyMessageRendering = (messagesContainer, messages, userRole) => {
+  if (!messagesContainer) return;
+
+  let renderedStart = Math.max(0, messages.length - CHAT_MESSAGE_BATCH_SIZE);
+  const renderRange = (start, end) => messages
+    .slice(start, end)
+    .map(msg => createMessageBubble(msg, userRole))
+    .join('');
+
+  messagesContainer.innerHTML = renderRange(renderedStart, messages.length);
+
+  if (messagesContainer.__lazyScrollHandler) {
+    messagesContainer.removeEventListener('scroll', messagesContainer.__lazyScrollHandler);
+  }
+
+  const onScrollLoadOlder = () => {
+    if (renderedStart === 0 || messagesContainer.scrollTop > 60) return;
+
+    const previousHeight = messagesContainer.scrollHeight;
+    const previousTop = messagesContainer.scrollTop;
+    const nextStart = Math.max(0, renderedStart - CHAT_MESSAGE_BATCH_SIZE);
+    const olderMarkup = renderRange(nextStart, renderedStart);
+    messagesContainer.insertAdjacentHTML('afterbegin', olderMarkup);
+    renderedStart = nextStart;
+
+    const newHeight = messagesContainer.scrollHeight;
+    messagesContainer.scrollTop = newHeight - previousHeight + previousTop;
+  };
+
+  messagesContainer.__lazyScrollHandler = onScrollLoadOlder;
+  messagesContainer.addEventListener('scroll', onScrollLoadOlder, { passive: true });
+};
+
+const formatFileSize = (bytes) => {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size <= 0) return 'Size unknown';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const getAttachmentMeta = (message, attachmentUrl) => {
+  const attachmentPath = message?.attachment_path || '';
+  const fallbackName = attachmentPath.split('/').pop() || 'attachment';
+  const urlName = (() => {
+    try {
+      return new URL(attachmentUrl).pathname.split('/').pop() || fallbackName;
+    } catch (error) {
+      return fallbackName;
+    }
+  })();
+  const ext = (urlName.split('.').pop() || '').toUpperCase();
+  const isImage = message?.message_type === 'image' || /\.(jpe?g|png|gif|webp)$/i.test(attachmentUrl);
+  const typeLabel = isImage ? 'Image' : (ext || 'File');
+  const sizeText = formatFileSize(message?.attachment_size || message?.file_size || message?.attachment_bytes);
+  return { isImage, typeLabel, sizeText, fileName: urlName };
+};
+
+const initAttachmentPreviewDelegation = () => {
+  if (hasAttachmentPreviewDelegation) return;
+  const chatWindow = document.getElementById('chat-window');
+  if (!chatWindow) return;
+
+  chatWindow.addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-attachment-preview="true"]');
+    if (!trigger) return;
+    const attachmentUrl = trigger.getAttribute('data-attachment-url');
+    const attachmentName = trigger.getAttribute('data-attachment-name') || 'Attachment';
+    if (!attachmentUrl) return;
+    openAttachmentPreviewModal(attachmentUrl, attachmentName);
+  });
+
+  hasAttachmentPreviewDelegation = true;
+};
+
+const openAttachmentPreviewModal = (attachmentUrl, attachmentName) => {
+  const content = `
+    <div class="space-y-3">
+      <img src="${attachmentUrl}" alt="${escapeHtml(attachmentName)}" class="w-full max-h-[70vh] object-contain rounded-lg border" loading="eager" decoding="async">
+      <div class="flex justify-end">
+        <a href="${attachmentUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">
+          <i class="bi bi-box-arrow-up-right"></i> Open Original
+        </a>
+      </div>
+    </div>
+  `;
+
+  createModal({
+    title: attachmentName,
+    content,
+    size: 'lg'
+  });
+};
+
+const setupMessageAttachmentUI = () => {
+  const fileInput = document.getElementById('message-attachment');
+  const attachBtn = document.getElementById('btn-attach-message');
+  if (!fileInput || !attachBtn) return;
+
+  selectedMessageAttachment = null;
+  clearMessageAttachmentUI();
+
+  attachBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (!file) {
+      selectedMessageAttachment = null;
+      clearMessageAttachmentUI();
+      return;
+    }
+
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+    const maxSize = 5 * 1024 * 1024;
+
+    if (!validTypes.includes(file.type)) {
+      showError('Only JPG and PNG images are allowed.');
+      fileInput.value = '';
+      selectedMessageAttachment = null;
+      clearMessageAttachmentUI();
+      return;
+    }
+
+    if (file.size > maxSize) {
+      showError('Image is too large. Max file size is 5MB.');
+      fileInput.value = '';
+      selectedMessageAttachment = null;
+      clearMessageAttachmentUI();
+      return;
+    }
+
+    selectedMessageAttachment = file;
+    const preview = document.getElementById('message-attachment-preview');
+    if (preview) {
+      preview.classList.remove('hidden');
+      preview.innerHTML = `
+        <div class="flex items-center justify-between bg-blue-50 border border-blue-200 rounded px-3 py-2 text-sm">
+          <span class="truncate pr-3"><i class="bi bi-image"></i> ${escapeHtml(file.name)}</span>
+          <button type="button" class="text-danger" id="btn-remove-attachment" title="Remove image">
+            <i class="bi bi-x-circle"></i>
+          </button>
+        </div>
+      `;
+      const removeBtn = document.getElementById('btn-remove-attachment');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+          fileInput.value = '';
+          selectedMessageAttachment = null;
+          clearMessageAttachmentUI();
+        });
+      }
+    }
+  });
+};
+
+const clearMessageAttachmentUI = () => {
+  const preview = document.getElementById('message-attachment-preview');
+  if (preview) {
+    preview.classList.add('hidden');
+    preview.innerHTML = '';
+  }
+};
+
+const getTypingOrderId = () => currentConversationSendOrderId || currentConversationOrderIds[0] || currentConversation;
+
+const stopTypingSignal = () => {
+  if (typingStopTimer) {
+    clearTimeout(typingStopTimer);
+    typingStopTimer = null;
+  }
+
+  if (!isTypingActive) return;
+
+  const orderId = getTypingOrderId();
+  if (socketEmit && orderId) {
+    socketEmit('typing:status', { orderId, isTyping: false });
+  }
+
+  isTypingActive = false;
+};
+
+const scheduleTypingStop = () => {
+  if (typingStopTimer) {
+    clearTimeout(typingStopTimer);
+  }
+  typingStopTimer = setTimeout(() => {
+    stopTypingSignal();
+  }, 1200);
+};
+
+const handleTypingInput = (event) => {
+  const inputValue = event?.target?.value?.trim() || '';
+  const orderId = getTypingOrderId();
+  if (!socketEmit || !orderId) return;
+
+  if (!inputValue) {
+    stopTypingSignal();
+    return;
+  }
+
+  if (!isTypingActive) {
+    socketEmit('typing:status', { orderId, isTyping: true });
+    isTypingActive = true;
+  }
+
+  scheduleTypingStop();
+};
+
+const setupTypingInputHandlers = () => {
+  const input = document.getElementById('message-input');
+  if (!input || input.dataset.typingBound === '1') return;
+
+  input.dataset.typingBound = '1';
+  input.addEventListener('input', handleTypingInput);
+  input.addEventListener('blur', () => {
+    stopTypingSignal();
+  });
+};
+
+const hideTypingIndicator = () => {
+  const indicator = document.getElementById('typing-indicator');
+  if (!indicator) return;
+  indicator.classList.add('hidden');
+};
+
+const showTypingIndicator = (displayName = 'Seller') => {
+  const chatMessages = document.getElementById('chat-messages');
+  if (!chatMessages) return;
+
+  let indicator = document.getElementById('typing-indicator');
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.id = 'typing-indicator';
+    indicator.className = 'flex justify-start hidden';
+    indicator.innerHTML = `
+      <div class="bg-gray-100 text-gray-600 rounded-lg px-3 py-2 text-xs italic">
+        <span id="typing-indicator-text"></span>
+      </div>
+    `;
+  }
+
+  // Always keep typing indicator at the bottom of the chat list.
+  chatMessages.appendChild(indicator);
+
+  const text = indicator.querySelector('#typing-indicator-text');
+  if (text) {
+    text.textContent = `${displayName} is typing...`;
+  }
+
+  indicator.classList.remove('hidden');
+  scrollChatToBottom(chatMessages);
+
+  if (typingIndicatorHideTimer) {
+    clearTimeout(typingIndicatorHideTimer);
+  }
+  typingIndicatorHideTimer = setTimeout(() => {
+    hideTypingIndicator();
+  }, 2500);
+};
+
+const renderMessageAttachment = (message) => {
+  if (!message?.attachment_path) return '';
+
+  const attachmentUrl = getMessageAttachmentUrl(message.attachment_path);
+  if (!attachmentUrl) return '';
+
+  const { isImage, typeLabel, sizeText, fileName } = getAttachmentMeta(message, attachmentUrl);
+  if (isImage) {
+    return `
+      <div class="mt-2">
+        <button type="button" class="block w-full text-left border-0 bg-transparent p-0" data-attachment-preview="true" data-attachment-url="${attachmentUrl}" data-attachment-name="${escapeHtml(fileName)}">
+          <img src="${attachmentUrl}" alt="${escapeHtml(fileName)}" class="w-48 max-w-full rounded-lg border cursor-zoom-in" loading="lazy" decoding="async">
+        </button>
+        <div class="mt-1 flex items-center gap-2 text-xs opacity-80">
+          <span class="px-2 py-0.5 rounded bg-black/20">${typeLabel}</span>
+          <span>${sizeText}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="mt-2">
+      <a href="${attachmentUrl}" target="_blank" rel="noopener noreferrer" class="underline break-all">
+        <i class="bi bi-paperclip"></i> ${escapeHtml(fileName)}
+      </a>
+      <div class="mt-1 flex items-center gap-2 text-xs opacity-80">
+        <span class="px-2 py-0.5 rounded bg-black/20">${typeLabel}</span>
+        <span>${sizeText}</span>
       </div>
     </div>
   `;
@@ -3317,18 +4032,42 @@ const handleSendMessage = async (e) => {
   e.preventDefault();
 
   const input = document.getElementById('message-input');
+  const fileInput = document.getElementById('message-attachment');
   const messageText = input.value.trim();
+  const attachment = selectedMessageAttachment || fileInput?.files?.[0] || null;
 
-  if (!messageText) return;
+  if (!messageText && !attachment) return;
 
   // Clear input immediately
   input.value = '';
+  if (fileInput) {
+    fileInput.value = '';
+  }
+  stopTypingSignal();
+  hideTypingIndicator();
+  selectedMessageAttachment = null;
+  clearMessageAttachmentUI();
 
   try {
-    await sendMessage({
-      order_id: currentConversation,
-      message_text: messageText
-    });
+    const targetOrderId = currentConversationSendOrderId || currentConversation;
+    if (!targetOrderId) {
+      showError('No active order available for this conversation');
+      input.value = messageText;
+      return;
+    }
+
+    if (attachment) {
+      await sendMessageWithAttachment({
+        order_id: targetOrderId,
+        message_text: messageText,
+        attachment
+      });
+    } else {
+      await sendMessage({
+        order_id: targetOrderId,
+        message_text: messageText
+      });
+    }
 
     // Reload messages
     await window.openOrderChat(currentConversation);
@@ -3343,9 +4082,35 @@ const handleSendMessage = async (e) => {
 
   } catch (error) {
     console.error('Error sending message:', error);
-    showError('Failed to send message');
+    showError(error.message || 'Failed to send message');
     // Restore message if send failed
     input.value = messageText;
+    if (attachment && fileInput) {
+      selectedMessageAttachment = attachment;
+      const dt = new DataTransfer();
+      dt.items.add(attachment);
+      fileInput.files = dt.files;
+      const preview = document.getElementById('message-attachment-preview');
+      if (preview) {
+        preview.classList.remove('hidden');
+        preview.innerHTML = `
+          <div class="flex items-center justify-between bg-blue-50 border border-blue-200 rounded px-3 py-2 text-sm">
+            <span class="truncate pr-3"><i class="bi bi-image"></i> ${escapeHtml(attachment.name)}</span>
+            <button type="button" class="text-danger" id="btn-remove-attachment" title="Remove image">
+              <i class="bi bi-x-circle"></i>
+            </button>
+          </div>
+        `;
+        const removeBtn = document.getElementById('btn-remove-attachment');
+        if (removeBtn) {
+          removeBtn.addEventListener('click', () => {
+            fileInput.value = '';
+            selectedMessageAttachment = null;
+            clearMessageAttachmentUI();
+          });
+        }
+      }
+    }
   }
 };
 
@@ -3353,7 +4118,7 @@ const handleSendMessage = async (e) => {
 
 const initializeRealTime = async () => {
   try {
-    const { initSocket, on, onInitialOnlineUsers, onUserOnline, onUserOffline } = await import('../services/socket.service.js');
+    const { initSocket, on, onInitialOnlineUsers, onUserOnline, onUserOffline, onNotification, onTypingStatus, emit } = await import('../services/socket.service.js');
 
     // Create a promise that resolves when initial online users are loaded
     let resolveInitialUsers;
@@ -3390,6 +4155,24 @@ const initializeRealTime = async () => {
     });
 
     if (socket) {
+      socketEmit = emit;
+      // Prevent duplicate message toasts when the same event arrives from both
+      // message channel and notification channel.
+      let lastMessageToastOrderKey = null;
+      let lastMessageToastAt = 0;
+      const showMessageToastOnce = (orderKey) => {
+        const now = Date.now();
+        const normalizedKey = String(orderKey || 'global');
+        const isDuplicate = lastMessageToastOrderKey === normalizedKey && (now - lastMessageToastAt) < 1500;
+
+        if (isDuplicate) return;
+
+        lastMessageToastOrderKey = normalizedKey;
+        lastMessageToastAt = now;
+        showToast('New message received', 'info', 5000, false);
+        playMessageSound();
+      };
+
       // IMPORTANT: Register all socket listeners immediately
       // The socket will connect in the background and fire events when ready
 
@@ -3413,14 +4196,45 @@ const initializeRealTime = async () => {
         updateOnlineStatusDisplay();
       });
 
+      onTypingStatus((data) => {
+        if (!data || String(data.userId) === String(getUserId())) return;
+
+        const referenceOrderId = data.orderId ? String(data.orderId) : null;
+        const remoteName = (data.userName || data.senderName || document.getElementById('chat-user-name')?.textContent || 'Seller').trim() || 'Seller';
+        if (referenceOrderId) {
+          setConversationTypingPreview(referenceOrderId, Boolean(data.isTyping), remoteName);
+        }
+        const isCurrentThreadOrder = referenceOrderId
+          ? currentConversationOrderIds.map(String).includes(referenceOrderId)
+          : false;
+        const isViewingThisConversation = currentPage === 'messaging' && isCurrentThreadOrder;
+
+        if (!isViewingThisConversation) {
+          hideTypingIndicator();
+          return;
+        }
+
+        if (data.isTyping) {
+          showTypingIndicator(remoteName);
+        } else {
+          hideTypingIndicator();
+        }
+      });
+
       // Listen for new messages from socket
       on('message_received', (data) => {
         // ALWAYS update conversations data, even if UI isn't visible
         (async () => {
+          if (data?.order_id) {
+            setConversationTypingPreview(data.order_id, false);
+          }
           await updateConversationsData();
 
           // Check if user is currently viewing this conversation
-          const isViewingThisConversation = currentPage === 'messaging' && currentConversation === data.order_id;
+          const isCurrentThreadOrder = currentConversationOrderIds
+            .map(String)
+            .includes(String(data.order_id));
+          const isViewingThisConversation = currentPage === 'messaging' && isCurrentThreadOrder;
 
           // ALWAYS update the conversations list preview on the left side (real-time)
           const container = document.getElementById('conversations-list');
@@ -3432,12 +4246,11 @@ const initializeRealTime = async () => {
           if (!isViewingThisConversation) {
             // Update message badge in navbar
             updateMessageBadge();
-            // Show toast for new messages in other conversations (no sound - we play message sound separately)
-            showToast('New message received', 'info', 5000, false);
-            // Play message sound
-            playMessageSound();
+            // Show toast/sound only once for duplicate realtime sources
+            showMessageToastOnce(data.order_id);
           } else {
             // User is viewing the conversation, add the message to chat
+            hideTypingIndicator();
             const chatMessages = document.getElementById('chat-messages');
             if (chatMessages) {
               addMessageBubbleToChat(data);
@@ -3460,15 +4273,32 @@ const initializeRealTime = async () => {
 
       // Listen for message read receipts
       on('message_read_receipt', (data) => {
-        if (currentConversation === data.orderId) {
+        if (currentConversationOrderIds.map(String).includes(String(data.orderId))) {
           // Update badge for current conversation
-          updateConversationBadge(data.orderId);
+          updateConversationBadge(currentConversation);
         } else {
           // Reload conversations to update badges in other conversations
           loadConversations();
         }
         // Always update navbar badge
         updateMessageBadge();
+      });
+
+      // Listen for direct notification events (covers messages from conversations not currently joined via socket rooms)
+      onNotification((data) => {
+        if (data.type === 'new_message' || data.type === 'message') {
+          updateMessageBadge();
+
+          const referenceOrderId = data.reference_id || data.referenceId || data.order_id;
+          const isCurrentThreadOrder = referenceOrderId
+            ? currentConversationOrderIds.map(String).includes(String(referenceOrderId))
+            : false;
+          const isViewingThisConversation = currentPage === 'messaging' && isCurrentThreadOrder;
+
+          if (!isViewingThisConversation) {
+            showMessageToastOnce(referenceOrderId);
+          }
+        }
       });
 
       // Listen for order updates
@@ -3511,20 +4341,28 @@ const addMessageBubbleToChat = (message) => {
     <div class="flex ${alignClass}">
       <div class="${bgClass} rounded-lg px-4 py-2 max-w-xs">
         <p class="text-xs opacity-75 mb-1">${isSender ? 'You' : senderName}</p>
-        <p class="text-sm">${escapeHtml(message.message_text)}</p>
+        ${message.message_text ? `<p class="text-sm">${escapeHtml(message.message_text)}</p>` : ''}
+        ${renderMessageAttachment(message)}
         <p class="text-xs opacity-75 mt-1">${timeText}</p>
       </div>
     </div>
   `;
 
-  chatMessages.insertAdjacentHTML('beforeend', bubble);
+  const typingIndicator = chatMessages.querySelector('#typing-indicator');
+  if (typingIndicator) {
+    // Keep typing indicator at the very bottom while new messages arrive.
+    typingIndicator.insertAdjacentHTML('beforebegin', bubble);
+  } else {
+    chatMessages.insertAdjacentHTML('beforeend', bubble);
+  }
 
   // Auto-scroll to bottom
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+  scrollChatToBottom(chatMessages);
 };
 
 // Helper to safely escape HTML
 const escapeHtml = (text) => {
+  const safeText = typeof text === 'string' ? text : String(text || '');
   const map = {
     '&': '&amp;',
     '<': '&lt;',
@@ -3532,7 +4370,7 @@ const escapeHtml = (text) => {
     '"': '&quot;',
     "'": '&#039;'
   };
-  return text.replace(/[&<>"']/g, m => map[m]);
+  return safeText.replace(/[&<>"']/g, m => map[m]);
 };
 
 // Helper to get current user synchronously
@@ -3557,6 +4395,9 @@ const attachEventListeners = () => {
       browseFilters.search = e.target.value;
       browseFilters.page = 1; // Reset to first page when searching
       loadBrowseProducts();
+      if (currentView === 'map') {
+        loadProductsOnMap();
+      }
     }, 500);
     searchInput.addEventListener('input', searchHandler);
     eventListeners.push({ element: searchInput, event: 'input', handler: searchHandler });
@@ -3569,6 +4410,9 @@ const attachEventListeners = () => {
       browseFilters.category = e.target.value;
       browseFilters.page = 1; // Reset to first page when category changes
       loadBrowseProducts();
+      if (currentView === 'map') {
+        loadProductsOnMap();
+      }
     };
     categorySelect.addEventListener('change', categoryHandler);
     eventListeners.push({ element: categorySelect, event: 'change', handler: categoryHandler });
@@ -3644,6 +4488,9 @@ const attachEventListeners = () => {
       browseFilters.sort_order = sort_order;
       browseFilters.page = 1; // Reset to first page when sorting changes
       loadBrowseProducts();
+      if (currentView === 'map') {
+        loadProductsOnMap();
+      }
     };
     sortSelect.addEventListener('change', sortHandler);
     eventListeners.push({ element: sortSelect, event: 'change', handler: sortHandler });
@@ -3672,6 +4519,15 @@ const attachOrderFilterListeners = () => {
       loadOrders();
     });
   });
+};
+
+window.resetOrderFilters = () => {
+  orderFilters.status = 'all';
+  loadOrders();
+};
+
+window.loadOrdersFromUI = () => {
+  loadOrders();
 };
 
 const cleanupEventListeners = () => {
@@ -3747,16 +4603,8 @@ window.handleAddToCartFromDynamicModal = async (productId) => {
     const quantityInput = document.getElementById('dynamic-product-quantity');
     const quantity = quantityInput ? parseInt(quantityInput.value) || 1 : 1;
 
-    // Find the product from current products list
-    const filters = { ...browseFilters };
-    if (filters.tags && filters.tags.length > 0) {
-      filters.tags = filters.tags.join(',');
-    } else {
-      delete filters.tags;
-    }
-
-    const response = await listProducts({ ...filters, limit: 100 });
-    const product = response.data?.products.find(p => p.id === productId);
+    const response = await getProduct(productId);
+    const product = response?.data?.product;
 
     if (!product) {
       showError('Product not found');
@@ -3782,16 +4630,8 @@ window.handleAddToCartFromModal = async (productId) => {
     const quantityInput = document.getElementById('product-quantity');
     const quantity = quantityInput ? parseInt(quantityInput.value) || 1 : 1;
 
-    // Find the product from current products list
-    const filters = { ...browseFilters };
-    if (filters.tags && filters.tags.length > 0) {
-      filters.tags = filters.tags.join(',');
-    } else {
-      delete filters.tags;
-    }
-
-    const response = await listProducts({ ...filters, limit: 100 });
-    const product = response.data?.products.find(p => p.id === productId);
+    const response = await getProduct(productId);
+    const product = response?.data?.product;
 
     if (!product) {
       showError('Product not found');

@@ -43,9 +43,18 @@ router.post(
       .isUUID().withMessage('Invalid order ID'),
     
     body('message_text')
-      .notEmpty().withMessage('Message text is required')
+      .optional({ nullable: true })
       .trim()
-      .isLength({ min: 1, max: 500 }).withMessage('Message must be 1-500 characters'),
+      .isLength({ max: 500 }).withMessage('Message must not exceed 500 characters'),
+    body('message_text')
+      .custom((value, { req }) => {
+        const hasText = typeof value === 'string' && value.trim().length > 0;
+        const hasAttachment = !!req.file;
+        if (!hasText && !hasAttachment) {
+          throw new Error('Message text or attachment is required');
+        }
+        return true;
+      }),
     
     validate
   ],
