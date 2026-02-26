@@ -64,6 +64,18 @@ const FALLBACK_SOUNDS = {
 
 const DEFAULT_VOLUME = 0.5;
 const SOUND_CACHE = {};
+const BROKEN_SOUNDS = new Set();
+const FILE_FALLBACK_SOUNDS = {
+  warning: 'notification'
+};
+
+const sanitizeVolume = (value, fallback = DEFAULT_VOLUME) => {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(1, parsed));
+};
 
 // ============ Settings ============
 
@@ -84,7 +96,7 @@ const loadSettings = () => {
     }
     
     if (savedVolume !== null) {
-      volume = parseFloat(savedVolume);
+      volume = sanitizeVolume(savedVolume, DEFAULT_VOLUME);
     }
   } catch (error) {
     console.error('Error loading sound settings:', error);
@@ -96,8 +108,8 @@ const loadSettings = () => {
 // Save settings to localStorage
 const saveSettings = () => {
   try {
-    localStorage.setItem('notification_sound_enabled', soundEnabled);
-    localStorage.setItem('notification_sound_volume', volume);
+    localStorage.setItem('notification_sound_enabled', String(soundEnabled));
+    localStorage.setItem('notification_sound_volume', String(volume));
   } catch (error) {
     console.error('Error saving sound settings:', error);
   }
@@ -109,6 +121,7 @@ loadSettings();
 // ============ Sound Playback ============
 
 const preloadSound = (soundType) => {
+  if (BROKEN_SOUNDS.has(soundType)) return;
   if (SOUND_CACHE[soundType]) return;
   
   const soundUrl = SOUNDS[soundType];
@@ -125,59 +138,76 @@ const preloadSound = (soundType) => {
 };
 
 
-const playSound = async (soundType = 'notification', options = {}) => {
-  // Check if sounds are enabled
-  if (!soundEnabled) {
-    return;
+const playFallbackTone = async (soundType) => {
+  const fallbackFunction = FALLBACK_SOUNDS[soundType];
+  if (fallbackFunction && typeof fallbackFunction === 'function') {
+    await fallbackFunction();
   }
-  
+};
+
+const playAudioFile = async (soundType, options = {}) => {
   const {
     volumeOverride = null,
     loop = false,
     rate = 1.0
   } = options;
-  
+
   const soundUrl = SOUNDS[soundType];
-  
   if (!soundUrl) {
+    throw new Error(`No sound URL configured for type: ${soundType}`);
+  }
+
+  let audio = SOUND_CACHE[soundType];
+
+  if (!audio) {
+    audio = new Audio(soundUrl);
+    audio.preload = 'auto';
+    SOUND_CACHE[soundType] = audio;
+  }
+
+  audio.currentTime = 0;
+  audio.volume = sanitizeVolume(
+    volumeOverride !== null ? volumeOverride : volume,
+    DEFAULT_VOLUME
+  );
+  audio.playbackRate = Number.isFinite(rate) ? rate : 1.0;
+  audio.loop = Boolean(loop);
+
+  const playPromise = audio.play();
+  if (playPromise !== undefined) {
+    await playPromise;
+  }
+};
+
+const playSound = async (soundType = 'notification', options = {}) => {
+  // Check if sounds are enabled
+  if (!soundEnabled) {
     return;
   }
-  
+
   try {
-    // Get or create audio element
-    let audio = SOUND_CACHE[soundType];
-    
-    if (!audio) {
-      audio = new Audio(soundUrl);
-      audio.preload = 'auto';
-      SOUND_CACHE[soundType] = audio;
+    if (BROKEN_SOUNDS.has(soundType)) {
+      throw new Error(`Sound type ${soundType} marked as broken`);
     }
-    
-    // Reset audio to beginning
-    audio.currentTime = 0;
-    
-    // Set volume
-    audio.volume = volumeOverride !== null ? volumeOverride : volume;
-    
-    // Set playback rate
-    audio.playbackRate = rate;
-    
-    // Set loop
-    audio.loop = loop;
-    
-    // Play sound
-    const playPromise = audio.play();
-    
-    if (playPromise !== undefined) {
-      await playPromise;
-    }
+
+    await playAudioFile(soundType, options);
   } catch (error) {
-    // ALWAYS try fallback sound if main sound fails
-    try {
-      const fallbackFunction = FALLBACK_SOUNDS[soundType];
-      if (fallbackFunction && typeof fallbackFunction === 'function') {
-        await fallbackFunction();
+    BROKEN_SOUNDS.add(soundType);
+    delete SOUND_CACHE[soundType];
+
+    const fallbackFileType = FILE_FALLBACK_SOUNDS[soundType];
+    if (fallbackFileType && fallbackFileType !== soundType) {
+      try {
+        await playAudioFile(fallbackFileType, options);
+        return;
+      } catch (fileFallbackError) {
+        BROKEN_SOUNDS.add(fallbackFileType);
+        delete SOUND_CACHE[fallbackFileType];
       }
+    }
+
+    try {
+      await playFallbackTone(soundType);
     } catch (fallbackError) {
       // This can happen if user hasn't interacted with the page yet
     }
@@ -260,7 +290,7 @@ const isSoundEnabled = () => {
  * @param {Number} newVolume - Volume level
  */
 const setVolume = (newVolume) => {
-  volume = Math.max(0, Math.min(1, newVolume));
+  volume = sanitizeVolume(newVolume, volume);
   saveSettings();
   
   // Update all cached audio elements
@@ -386,6 +416,7 @@ const clearCache = () => {
   Object.keys(SOUND_CACHE).forEach(key => {
     delete SOUND_CACHE[key];
   });
+  BROKEN_SOUNDS.clear();
 };
 
 // ============ Fallback Beep ============

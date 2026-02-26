@@ -23,7 +23,7 @@ const createModal = (options = {}) => {
     width: 100%;
     height: 100%;
     background-color: rgba(0, 0, 0, 0.5);
-    z-index: 1040;
+    z-index: 2200;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -214,7 +214,10 @@ const createModal = (options = {}) => {
   }
   
   backdrop.addEventListener('click', (e) => {
-    if (e.target && e.target.hasAttribute('data-modal-close')) {
+    const closeTrigger = e.target && typeof e.target.closest === 'function'
+      ? e.target.closest('[data-modal-close]')
+      : null;
+    if (closeTrigger) {
       closeModal(backdrop, onClose);
     }
   });

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agrimarket-tiles-v2';
+const CACHE_NAME = 'agrimarket-tiles-v3';
 const TILE_CACHE_EXPIRE = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 self.addEventListener('install', (event) => {
@@ -59,7 +59,8 @@ async function handleTileRequest(request) {
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     const response = await fetch(request, {
-      signal: controller.signal
+      signal: controller.signal,
+      cache: 'reload'
     });
 
     clearTimeout(timeoutId);
@@ -88,6 +89,16 @@ async function handleTileRequest(request) {
 
     return response;
   } catch (error) {
+    // Retry once while explicitly bypassing HTTP cache.
+    try {
+      const retryResponse = await fetch(request, { cache: 'reload' });
+      if (retryResponse && (retryResponse.ok || retryResponse.type === 'opaque')) {
+        return retryResponse;
+      }
+    } catch (retryError) {
+      // Continue to cache fallback
+    }
+
     // Return cached version if available, even if expired
     const cachedResponse = await caches.match(request);
     if (cachedResponse) {

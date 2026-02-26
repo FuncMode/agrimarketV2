@@ -74,6 +74,7 @@ exports.getAllProducts = async (filters = {}) => {
     search,
     category,
     municipality,
+    seller_id,
     tags,
     min_price,
     max_price,
@@ -103,7 +104,40 @@ exports.getAllProducts = async (filters = {}) => {
     .eq('seller.user.status', 'verified'); 
 
   if (search) {
-    query = query.ilike('name', `%${search}%`);
+    const searchPattern = `%${search}%`;
+
+    // Find seller profiles whose user full name matches the search term.
+    // We use seller_id matching in products query to avoid unsupported nested OR filters.
+    const { data: sellerMatches, error: sellerMatchesError } = await supabase
+      .from('seller_profiles')
+      .select(`
+        id,
+        user:users!inner (
+          full_name
+        )
+      `)
+      .ilike('user.full_name', searchPattern);
+
+    if (sellerMatchesError) {
+      return {
+        data: [],
+        error: sellerMatchesError,
+        count: 0,
+        page,
+        limit,
+        total_pages: 0
+      };
+    }
+
+    const sellerIds = (sellerMatches || [])
+      .map((seller) => seller?.id)
+      .filter(Boolean);
+
+    if (sellerIds.length > 0) {
+      query = query.or(`name.ilike.${searchPattern},seller_id.in.(${sellerIds.join(',')})`);
+    } else {
+      query = query.ilike('name', searchPattern);
+    }
   }
 
   if (category) {
@@ -112,6 +146,10 @@ exports.getAllProducts = async (filters = {}) => {
 
   if (municipality) {
     query = query.eq('seller.municipality', municipality);
+  }
+
+  if (seller_id) {
+    query = query.eq('seller_id', seller_id);
   }
 
   if (min_price) {

@@ -4,6 +4,95 @@ const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const productModel = require('../models/productModel');
 const { uploadProductPhoto, deleteFile, BUCKETS } = require('../config/storage');
 const { supabase, supabaseService } = require('../config/database');
+const emailService = require('../services/emailService');
+
+const LOW_STOCK_THRESHOLD = 10;
+
+const sendStockAlertsForInterestedBuyers = async (beforeProduct, afterProduct) => {
+  const oldQuantity = Number(beforeProduct?.available_quantity);
+  const newQuantity = Number(afterProduct?.available_quantity);
+
+  if (!Number.isFinite(oldQuantity) || !Number.isFinite(newQuantity) || oldQuantity === newQuantity) {
+    return;
+  }
+
+  if (afterProduct?.status !== 'active') {
+    return;
+  }
+
+  let alertType = null;
+
+  if (oldQuantity === 0 && newQuantity > 0) {
+    alertType = 'back_in_stock';
+  } else if (oldQuantity > LOW_STOCK_THRESHOLD && newQuantity > 0 && newQuantity <= LOW_STOCK_THRESHOLD) {
+    alertType = 'low_stock';
+  }
+
+  if (!alertType) {
+    return;
+  }
+
+  const { data: cartWatchers, error: watcherError } = await supabase
+    .from('shopping_carts')
+    .select('buyer_id')
+    .eq('product_id', afterProduct.id);
+
+  if (watcherError) {
+    console.error('Failed to fetch cart watchers for stock alerts:', watcherError);
+    return;
+  }
+
+  if (!cartWatchers || cartWatchers.length === 0) {
+    return;
+  }
+
+  const buyerProfileIds = [...new Set(cartWatchers.map((row) => row?.buyer_id).filter(Boolean))];
+  if (buyerProfileIds.length === 0) {
+    return;
+  }
+
+  const { data: buyerProfiles, error: profileError } = await supabase
+    .from('buyer_profiles')
+    .select('id, user_id')
+    .in('id', buyerProfileIds);
+
+  if (profileError) {
+    console.error('Failed to resolve buyer profiles for stock alerts:', profileError);
+    return;
+  }
+
+  const userIds = [...new Set((buyerProfiles || []).map((profile) => profile?.user_id).filter(Boolean))];
+  if (userIds.length === 0) {
+    return;
+  }
+
+  const { data: users, error: userError } = await supabase
+    .from('users')
+    .select('id, email, full_name, status')
+    .in('id', userIds);
+
+  if (userError) {
+    console.error('Failed to fetch user emails for stock alerts:', userError);
+    return;
+  }
+
+  const uniqueUsers = new Map();
+
+  (users || []).forEach((user) => {
+    if (!user?.id || !user?.email || user.status === 'banned') return;
+    uniqueUsers.set(user.id, user);
+  });
+
+  if (uniqueUsers.size === 0) {
+    return;
+  }
+
+  await Promise.allSettled(
+    Array.from(uniqueUsers.values()).map((user) =>
+      emailService.sendProductStockAlertEmail(user, afterProduct, alertType)
+    )
+  );
+};
 
 exports.createProduct = asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
@@ -106,6 +195,7 @@ exports.getAllProducts = asyncHandler(async (req, res, next) => {
     search: req.query.search,
     category: req.query.category,
     municipality: req.query.municipality,
+    seller_id: req.query.seller_id,
     tags: tagsArray,
     min_price: req.query.min_price ? parseFloat(req.query.min_price) : undefined,
     max_price: req.query.max_price ? parseFloat(req.query.max_price) : undefined,
@@ -252,6 +342,11 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
     throw new AppError('You do not have permission to update this product.', 403);
   }
 
+  const { data: currentProduct, error: currentProductError } = await productModel.getProductById(productId);
+  if (currentProductError || !currentProduct) {
+    throw new AppError('Product not found.', 404);
+  }
+
   const updates = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
@@ -286,8 +381,7 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
       .eq('user_id', userId)
       .single();
 
-    const { data: oldProduct } = await productModel.getProductById(productId);
-    const oldPhotos = oldProduct?.photos || [];
+    const oldPhotos = currentProduct?.photos || [];
 
     // Upload new photos (limit to 3)
     let photoUrls = [];
@@ -310,7 +404,7 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
     }
 
     updates.photos = photoUrls;
-    updates.photo_path = photoUrls[0] || oldProduct?.photo_path || null;
+    updates.photo_path = photoUrls[0] || currentProduct?.photo_path || null;
 
     // Delete old photos
     if (oldPhotos.length > 0) {
@@ -341,6 +435,12 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
   }
 
   const { data: completeProduct } = await productModel.getProductById(productId);
+
+  if (updates.available_quantity !== undefined && completeProduct) {
+    sendStockAlertsForInterestedBuyers(currentProduct, completeProduct).catch((stockAlertError) => {
+      console.error('Failed to send stock alert emails:', stockAlertError);
+    });
+  }
 
   res.status(200).json({
     success: true,

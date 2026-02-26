@@ -71,9 +71,22 @@ export const deleteProduct = async (id) => {
 };
 
 // Get seller's products
-export const getMyProducts = async () => {
+export const getMyProducts = async (filters = {}) => {
   try {
-    const response = await get(ENDPOINTS.PRODUCTS.MY_PRODUCTS);
+    let url = ENDPOINTS.PRODUCTS.MY_PRODUCTS;
+    const params = new URLSearchParams();
+
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        params.append(key, value);
+      }
+    });
+
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+
+    const response = await get(url);
     return response;
   } catch (error) {
     console.error('Error getting my products:', error);

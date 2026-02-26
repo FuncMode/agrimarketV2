@@ -96,6 +96,9 @@ async function validateSchema() {
     'buyer_profiles',
     'seller_profiles',
     'products',
+    'product_tags',
+    'product_reviews',
+    'product_views',
     'orders',
     'order_items',
     'shopping_carts',
@@ -103,14 +106,30 @@ async function validateSchema() {
     'verification_documents',
     'issue_reports',
     'notifications',
-    'admin_logs',
-    'product_tags'
+    'admin_logs'
   ];
+  const optionalTables = [
+    // Added by later migrations. Some environments may not have this table yet.
+    'issue_timeline_events'
+  ];
+
+  const projectRef = (() => {
+    try {
+      const url = new URL(process.env.SUPABASE_URL);
+      return url.hostname.split('.')[0] || null;
+    } catch (error) {
+      return null;
+    }
+  })();
 
   const results = {
     success: true,
+    projectRef,
     existingTables: [],
-    missingTables: []
+    missingTables: [],
+    existingOptionalTables: [],
+    missingOptionalTables: [],
+    missingColumns: []
   };
 
   try {
@@ -128,11 +147,31 @@ async function validateSchema() {
       }
     }
 
-    if (results.success) {
-      console.log(`All ${requiredTables.length} tables found!`);
-    } else {
+    for (const tableName of optionalTables) {
+      const { error } = await supabaseService
+        .from(tableName)
+        .select('*')
+        .limit(0);
+
+      if (error) {
+        results.missingOptionalTables.push(tableName);
+      } else {
+        results.existingOptionalTables.push(tableName);
+      }
+    }
+
+    if (results.missingTables.length > 0) {
       console.error('Missing tables:', results.missingTables);
       console.log('📝 Run the database schema SQL in Supabase SQL Editor');
+    }
+
+    if (results.success) {
+      console.log(`All ${requiredTables.length} required tables found!`);
+      if (optionalTables.length > 0) {
+        console.log(
+          `Optional tables found: ${results.existingOptionalTables.length}/${optionalTables.length}`
+        );
+      }
     }
 
     return results;

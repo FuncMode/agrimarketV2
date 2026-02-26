@@ -75,12 +75,12 @@ const getCSPDirectives = () => {
 
   return {
     defaultSrc: ["'self'"],
-    styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://cdn.jsdelivr.net", "https://unpkg.com"],
+    styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://cdn.jsdelivr.net", "https://unpkg.com", "https://fonts.googleapis.com"],
     scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://cdn.jsdelivr.net", "https://unpkg.com"],
     scriptSrcAttr: ["'unsafe-inline'"],
     imgSrc: ["'self'", "data:", "https:"],
     connectSrc: connectSrcSources,
-    fontSrc: ["'self'", "https://cdn.jsdelivr.net"],
+    fontSrc: ["'self'", "https://cdn.jsdelivr.net", "https://fonts.gstatic.com"],
   };
 };
 
@@ -352,6 +352,10 @@ const { testConnection, validateSchema } = require('./config/database');
 
 app.get('/api/test-db', async (req, res, next) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     const connectionTest = await testConnection();
     const schemaValidation = await validateSchema();
 

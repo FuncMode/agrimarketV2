@@ -3,7 +3,7 @@ import { createToast } from '../components/toast.js';
 import { showPageLoader, hidePageLoader } from '../components/loading-spinner.js';
 import { createModal } from '../components/modal.js';
 import state from '../core/state.js';
-import { RIZAL_MUNICIPALITIES, PRODUCT_CATEGORIES, MUNICIPALITY_COORDINATES } from '../utils/constants.js';
+import { RIZAL_MUNICIPALITIES, MUNICIPALITY_COORDINATES } from '../utils/constants.js';
 import { get, put, post, del } from '../core/http.js';
 import { reverseGeocode, geocodeAddress } from '../services/map.service.js';
 
@@ -115,6 +115,12 @@ async function loadProfile() {
     document.getElementById('view-last-name').textContent = lastName || '-';
     document.getElementById('view-email').textContent = user.email || '-';
     document.getElementById('view-phone').textContent = user.phone || 'Not provided';
+    const summaryFirstNameEl = document.getElementById('summary-first-name');
+    if (summaryFirstNameEl) summaryFirstNameEl.textContent = firstName || '-';
+    const summaryLastNameEl = document.getElementById('summary-last-name');
+    if (summaryLastNameEl) summaryLastNameEl.textContent = lastName || '';
+    const summaryEmailEl = document.getElementById('summary-email');
+    if (summaryEmailEl) summaryEmailEl.textContent = user.email || '-';
 
     let addressDisplay = 'Not provided';
     let addressLabel = 'Address';
@@ -142,14 +148,32 @@ async function loadProfile() {
     }
 
     const roleText = user.role === 'seller' ? 'Seller' : user.role === 'admin' ? 'Admin' : 'Buyer';
-    const roleBadgeColor = user.role === 'seller' ? 'bg-green-600' : user.role === 'admin' ? 'bg-purple-600' : 'bg-blue-600';
     document.getElementById('role-badge').textContent = roleText;
-    document.getElementById('role-badge').className = `inline-block px-3 py-1 rounded-full text-sm font-medium text-white ${roleBadgeColor}`;
+    const roleBadgeClass = user.role === 'admin'
+      ? 'profile-pill role-admin'
+      : user.role === 'buyer'
+        ? 'profile-pill role-buyer'
+        : 'profile-pill';
+    document.getElementById('role-badge').className = roleBadgeClass;
+    const summaryRoleBadgeEl = document.getElementById('summary-role-badge');
+    if (summaryRoleBadgeEl) {
+      summaryRoleBadgeEl.textContent = roleText;
+      summaryRoleBadgeEl.className = roleBadgeClass;
+    }
 
     const statusText = user.status === 'verified' ? 'Active' : user.status === 'verification_pending' ? 'Verification Pending' : 'Inactive';
-    const statusColor = user.status === 'verified' ? 'bg-green-600' : user.status === 'verification_pending' ? 'bg-yellow-600' : 'bg-red-600';
     document.getElementById('status-badge').textContent = statusText;
-    document.getElementById('status-badge').className = `inline-block px-3 py-1 rounded-full text-sm font-medium text-white ${statusColor}`;
+    const statusBadgeClass = user.status === 'verified'
+      ? 'profile-pill'
+      : user.status === 'verification_pending'
+        ? 'profile-pill status-pending'
+        : 'profile-pill status-inactive';
+    document.getElementById('status-badge').className = statusBadgeClass;
+    const summaryStatusBadgeEl = document.getElementById('summary-status-badge');
+    if (summaryStatusBadgeEl) {
+      summaryStatusBadgeEl.textContent = statusText;
+      summaryStatusBadgeEl.className = statusBadgeClass;
+    }
 
     if (user.role === 'seller') {
       await loadVerificationStatus(user);
@@ -774,39 +798,10 @@ function setupRoleSections() {
       buyerSection.classList.remove('hidden');
       document.getElementById('view-total-purchases').textContent = user.total_purchases || 0;
 
-      document.getElementById('edit-buyer-btn').addEventListener('click', () => {
-        const modal = createModal({
-          title: 'Edit Buyer Preferences',
-          content: `
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Favorite Categories</label>
-              <div class="space-y-2">
-                ${Object.values(PRODUCT_CATEGORIES).map(cat => `
-                  <label class="flex items-center gap-2">
-                    <input type="checkbox" class="w-4 h-4 rounded" value="${cat}" ${user.favorite_categories?.includes(cat) ? 'checked' : ''}>
-                    <span class="text-gray-900">${cat.replace(/_/g, ' ').toUpperCase()}</span>
-                  </label>
-                `).join('')}
-              </div>
-            </div>
-          </div>
-        `,
-          footer: `
-          <button class="btn btn-outline" data-modal-close>Cancel</button>
-          <button id="save-buyer-btn" class="btn btn-primary">Save Changes</button>
-        `,
-          size: 'sm'
-        });
-
-        document.getElementById('save-buyer-btn').addEventListener('click', async () => {
-          const favorites = Array.from(document.querySelectorAll('input[type="checkbox"]:checked')).map(el => el.value);
-          await saveBuyerProfile({
-            favorite_categories: favorites,
-          });
-          modal.close();
-        });
-      });
+      const editBuyerBtn = document.getElementById('edit-buyer-btn');
+      if (editBuyerBtn) {
+        editBuyerBtn.style.display = 'none';
+      }
     }
   }
 }
@@ -828,7 +823,7 @@ function setupEventListeners() {
 
   // Cancel edit button
   document.getElementById('cancel-edit-btn').addEventListener('click', () => {
-    document.getElementById('profile-view').style.display = 'block';
+    document.getElementById('profile-view').style.display = '';
     document.getElementById('profile-form').style.display = 'none';
   });
 
@@ -1032,7 +1027,7 @@ async function saveProfile() {
 
 
     await loadProfile();
-    document.getElementById('profile-view').style.display = 'block';
+    document.getElementById('profile-view').style.display = '';
     document.getElementById('profile-form').style.display = 'none';
   } catch (error) {
     console.error('Error saving profile:', error);
@@ -1059,27 +1054,6 @@ async function saveSellerProfile(data) {
     hidePageLoader();
     console.error('Error saving seller profile:', error);
     createToast(error.message || 'Failed to update seller profile', 'error');
-  }
-}
-
-async function saveBuyerProfile(data) {
-  try {
-    showPageLoader('Updating buyer preferences...');
-
-    const response = await put('/users/buyer-profile', data);
-
-    window.currentUser = { ...window.currentUser, ...data };
-
-    hidePageLoader();
-    createToast('Buyer preferences updated successfully', 'success');
-
-    // Reload to show updated data
-    await loadProfile();
-    setupRoleSections();
-  } catch (error) {
-    hidePageLoader();
-    console.error('Error saving buyer profile:', error);
-    createToast(error.message || 'Failed to update buyer preferences', 'error');
   }
 }
 

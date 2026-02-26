@@ -20,9 +20,9 @@ const initToastContainer = () => {
       toastContainer.className = 'fixed top-4 right-4 z-50 space-y-2';
       toastContainer.style.cssText = `
         position: fixed;
-        top: 1rem;
+        top: calc(env(safe-area-inset-top) + 1rem);
         right: 1rem;
-        z-index: 1080;
+        z-index: var(--z-toast, 1200);
         display: flex;
         flex-direction: column;
         gap: 0.5rem;

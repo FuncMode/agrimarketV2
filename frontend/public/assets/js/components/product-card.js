@@ -6,6 +6,7 @@ const createProductCard = (product, options = {}) => {
     showActions = true,
     showSeller = true,
     showViewButton = true,
+    enableMobileDetailsCollapse = false,
     onView = null,
     onAddToCart = null,
     onEdit = null,
@@ -20,6 +21,7 @@ const createProductCard = (product, options = {}) => {
   const imageUrl = product.photo_path || product.photos?.[0] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2220%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E';
   const isAuth = isAuthenticated();
   const canBuy = isAuth && isBuyer();
+  const detailsId = `pc-details-${String(product.id || '').replace(/[^a-zA-Z0-9_-]/g, '') || Math.random().toString(36).slice(2)}`;
   
   // Badge for tags
   let badgeHtml = '';
@@ -29,33 +31,29 @@ const createProductCard = (product, options = {}) => {
     badgeHtml = '<div class="product-card-badge" style="background-color: var(--color-success);">Organic</div>';
   }
   
-  card.innerHTML = `
-    ${badgeHtml}
-    
-    <img src="${imageUrl}" alt="${product.name}" class="card-img" loading="lazy">
-    
-    <div class="card-body">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="card-title pc-title mb-0">${product.name}</h3>
-        ${product.seller_verified ? '<span class="verified-badge"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
-      </div>
-      
+  const detailsContent = `
       ${showSeller && product.seller_name ? `
         <p class="text-sm text-gray-600 pc-meta mb-2">
           <i class="bi bi-shop"></i> ${product.seller_name || 'Unknown Seller'}
         </p>
       ` : ''}
-      
+
       <p class="text-sm text-gray-600 pc-meta mb-2">
         <i class="bi bi-geo-alt"></i> ${product.municipality}
       </p>
-      
+
+      ${product.category ? `
+        <p class="text-sm text-gray-600 pc-meta mb-2">
+          <i class="bi bi-tag"></i> ${product.category}
+        </p>
+      ` : ''}
+
       ${product.average_rating && product.average_rating > 0 ? `
         <div class="mb-2 pb-2 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <div class="flex gap-1 text-warning text-sm">
-                ${[1,2,3,4,5].map(star => 
+                ${[1,2,3,4,5].map(star =>
                   `<i class="bi bi-star${star <= Math.round(product.average_rating) ? '-fill' : ''}"></i>`
                 ).join('')}
               </div>
@@ -68,10 +66,9 @@ const createProductCard = (product, options = {}) => {
           </div>
         </div>
       ` : ''}
-      
+
       <p class="card-text pc-desc line-clamp-2">${product.description || 'No description available'}</p>
-      
-      <!-- Tags -->
+
       ${product.tags && product.tags.length > 0 ? `
         <div class="product-tags flex gap-2 mt-2 flex-wrap">
           ${product.tags.map(tag => `
@@ -81,8 +78,7 @@ const createProductCard = (product, options = {}) => {
           `).join('')}
         </div>
       ` : ''}
-      
-      <!-- View Count & Order Count -->
+
       <div class="pc-metrics flex gap-4 mt-3 text-xs text-gray-500 border-t border-gray-200 pt-2">
         <div class="flex items-center gap-1">
           <i class="bi bi-eye"></i>
@@ -93,6 +89,33 @@ const createProductCard = (product, options = {}) => {
           <span>${product.order_count || 0} orders</span>
         </div>
       </div>
+  `;
+
+  card.innerHTML = `
+    ${badgeHtml}
+    
+    <img src="${imageUrl}" alt="${product.name}" class="card-img" loading="lazy">
+    
+    <div class="card-body">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="card-title pc-title mb-0">${product.name}</h3>
+        ${product.seller_verified ? '<span class="verified-badge"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
+      </div>
+
+      ${enableMobileDetailsCollapse ? `
+        <button
+          type="button"
+          class="pc-details-toggle"
+          aria-expanded="false"
+          aria-controls="${detailsId}"
+        >
+          <i class="bi bi-caret-right-fill pc-details-toggle-icon"></i>
+          More details
+        </button>
+        <div id="${detailsId}" class="pc-mobile-details" aria-hidden="true">
+          ${detailsContent}
+        </div>
+      ` : detailsContent}
       
       <div class="flex items-center justify-between mt-4">
         <div>
@@ -161,6 +184,16 @@ const createProductCard = (product, options = {}) => {
       } else if (window.viewProductReviews) {
         window.viewProductReviews(product.id, product.name);
       }
+    });
+  }
+
+  const detailsToggle = card.querySelector('.pc-details-toggle');
+  const detailsPanel = card.querySelector('.pc-mobile-details');
+  if (detailsToggle && detailsPanel) {
+    detailsToggle.addEventListener('click', () => {
+      const isOpen = card.classList.toggle('details-open');
+      detailsToggle.setAttribute('aria-expanded', String(isOpen));
+      detailsPanel.setAttribute('aria-hidden', String(!isOpen));
     });
   }
   

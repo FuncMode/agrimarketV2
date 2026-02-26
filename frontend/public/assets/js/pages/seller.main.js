@@ -2,14 +2,12 @@
 // Seller Dashboard Main Script
 
 import { renderNavbar, updateOrdersCount, updateMessagesCount } from '../components/navbar.js';
-import { showToast, showError, showSuccess } from '../components/toast.js';
+import { showToast, showError, showSuccess, showWarning } from '../components/toast.js';
 import { showSpinner, hideSpinner } from '../components/loading-spinner.js';
-import { createModal, closeModal } from '../components/modal.js';
+import { createModal } from '../components/modal.js';
 import { openIssueModal } from '../components/issue-modal.js';
-import { createProductCard } from '../components/product-card.js';
 import { requireAuth, requireVerification, getUser, getToken, getUserId } from '../core/auth.js';
 import { formatCurrency, formatDate, formatRelativeTime } from '../utils/formatters.js';
-import { validateRequired, validateNumber } from '../utils/validators.js';
 import { ENDPOINTS, buildUrl } from '../config/api.js';
 
 // Services
@@ -17,7 +15,7 @@ import {
   getMyProducts, 
   createProduct, 
   updateProduct, 
-  deleteProduct,
+  deleteProduct as deleteProductRequest,
   getSellerAnalytics,
   getSalesOverTime,
   getTopProducts
@@ -71,11 +69,169 @@ let orderFilters = {
   page: 1,
   limit: 20
 };
+let ordersTotalPages = 1;
+let ordersTotalItems = 0;
+let ordersStatsCollapsed = false;
+let issuesStatsCollapsed = false;
+let productsFiltersCollapsed = false;
+let productFilters = {
+  search: '',
+  status: 'all',
+  category: 'all',
+  stock: 'all'
+};
+let pendingServerProductFilters = {
+  status: 'all',
+  category: 'all'
+};
+let allLoadedProducts = [];
+let selectedProductIds = new Set();
+let productUndoDeletes = new Map();
+let productFeedbackTimer = null;
+let productSearchSuggestions = [];
 let issueFilters = {
-  status: 'all'
+  status: 'all',
+  search: '',
+  sort: 'newest'
 };
 let currentIssues = [];
 let currentConversations = []; // Cache conversations data
+let conversationFilters = {
+  search: '',
+  unreadOnly: false,
+  sort: 'newest'
+};
+let messagingMobileView = 'list';
+let productSearchDebounceTimer = null;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normalizeOrderRef = (value) => String(value ?? '').trim();
+
+const isUuidOrderRef = (value) => UUID_PATTERN.test(normalizeOrderRef(value));
+
+const getCanonicalOrderId = (order) => {
+  if (!order || typeof order !== 'object') return '';
+  const candidates = [order.id, order.order_id, order.orderId, order.uuid, order.order_uuid]
+    .map(normalizeOrderRef)
+    .filter(Boolean);
+  const uuidCandidate = candidates.find(isUuidOrderRef);
+  if (uuidCandidate) return uuidCandidate;
+  return candidates[0] || normalizeOrderRef(order.order_number);
+};
+
+const matchesOrderReference = (order, orderRef) => {
+  const normalizedRef = normalizeOrderRef(orderRef);
+  if (!normalizedRef) return false;
+  return [
+    order?.id,
+    order?.order_id,
+    order?.orderId,
+    order?.uuid,
+    order?.order_uuid,
+    order?.order_number
+  ].map(normalizeOrderRef).includes(normalizedRef);
+};
+
+const findOrderByReference = (orderRef) => {
+  const normalizedRef = normalizeOrderRef(orderRef);
+  if (!normalizedRef) return null;
+  return currentOrders.find((order) => matchesOrderReference(order, normalizedRef)) || null;
+};
+
+const resolveOrderApiId = (orderRef) => {
+  const normalizedRef = normalizeOrderRef(orderRef);
+  if (!normalizedRef) return '';
+  if (isUuidOrderRef(normalizedRef)) return normalizedRef;
+
+  const matchedOrder = findOrderByReference(normalizedRef);
+  if (matchedOrder) {
+    const canonical = getCanonicalOrderId(matchedOrder);
+    if (canonical) return canonical;
+  }
+
+  const matchedConversation = currentConversations.find((conv) => {
+    const refs = [
+      conv?.order_id,
+      conv?.order_number,
+      ...(Array.isArray(conv?.order_ids) ? conv.order_ids : [])
+    ].map(normalizeOrderRef);
+    return refs.includes(normalizedRef);
+  });
+
+  if (matchedConversation) {
+    const conversationId = [
+      matchedConversation?.order_id,
+      ...(Array.isArray(matchedConversation?.order_ids) ? matchedConversation.order_ids : [])
+    ].map(normalizeOrderRef).find(Boolean);
+    if (conversationId) return conversationId;
+  }
+
+  return normalizedRef;
+};
+
+const debounce = (fn, delay = 200) => {
+  let timeoutId = null;
+  return (...args) => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+};
+
+const isMessagingMobileViewport = () => window.matchMedia('(max-width: 767px)').matches;
+
+const syncMessagingPanelsVisibility = () => {
+  const messagingSection = document.getElementById('messaging');
+  const conversationsPanel = document.getElementById('conversations-panel');
+  const chatPanel = document.getElementById('chat-panel');
+  if (!messagingSection || !conversationsPanel || !chatPanel) return;
+
+  if (!isMessagingMobileViewport()) {
+    conversationsPanel.classList.remove('hidden');
+    chatPanel.classList.remove('hidden');
+    messagingSection.classList.remove('is-mobile-chat-open');
+    return;
+  }
+
+  const hasRenderedChat = Boolean(chatPanel.querySelector('.buyer-chat-shell'));
+  const showChat = messagingMobileView === 'chat' && (Boolean(currentConversation) || hasRenderedChat);
+  conversationsPanel.classList.toggle('hidden', showChat);
+  chatPanel.classList.toggle('hidden', !showChat);
+  messagingSection.classList.toggle('is-mobile-chat-open', showChat);
+};
+
+const setMessagingMobileView = (view) => {
+  messagingMobileView = view === 'chat' ? 'chat' : 'list';
+  syncMessagingPanelsVisibility();
+};
+
+const applyConversationFiltersToUi = () => {
+  const searchInput = document.getElementById('conversation-search');
+  const unreadOnly = document.getElementById('conversation-unread-only');
+  const sortSelect = document.getElementById('conversation-sort');
+  const clearBtn = document.getElementById('conversation-search-clear');
+  if (searchInput) searchInput.value = conversationFilters.search || '';
+  if (unreadOnly) unreadOnly.checked = Boolean(conversationFilters.unreadOnly);
+  if (sortSelect) sortSelect.value = conversationFilters.sort || 'newest';
+  if (clearBtn) clearBtn.classList.toggle('is-visible', Boolean((conversationFilters.search || '').trim()));
+};
+
+const applyIssueFiltersToUi = () => {
+  const searchInput = document.getElementById('issues-search');
+  const sortSelect = document.getElementById('issues-sort');
+  if (searchInput) searchInput.value = issueFilters.search || '';
+  if (sortSelect) sortSelect.value = issueFilters.sort || 'newest';
+};
+
+const renderMessagingEmptyState = () => `
+  <div class="buyer-chat-empty-state">
+    <i class="bi bi-chat-left-text"></i>
+    <p class="title">Select a conversation to start messaging</p>
+    <p class="subtitle">Choose a thread on the left or jump to your latest unread conversation.</p>
+    <button type="button" class="btn btn-outline btn-sm" onclick="window.openLatestUnreadConversation?.()">
+      <i class="bi bi-lightning-charge"></i> Open latest unread
+    </button>
+  </div>
+`;
 
 // ============ Initialization ============
 
@@ -100,11 +256,17 @@ const init = async () => {
   // Load initial data (non-blocking)
   loadDashboardStats().catch(err => console.error('Error loading stats:', err));
   loadProducts().catch(err => console.error('Error loading products:', err));
+  loadOrderStats().catch(err => console.error('Error loading order stats:', err));
   loadOrders().catch(err => console.error('Error loading orders:', err));
   updateMessageBadge().catch(err => console.error('Error updating message badge:', err));
   
   // Attach event listeners
   attachEventListeners();
+  initializeProductFilterControls();
+  applyConversationFiltersToUi();
+  applyIssueFiltersToUi();
+  applyProductsFiltersCollapsedState();
+  applyIssuesStatsCollapsedState();
 };
 
 // ============ Navigation ============
@@ -116,6 +278,11 @@ const setupNavigation = () => {
   };
   
   window.addEventListener('hashchange', handleHashChange);
+  window.addEventListener('resize', syncMessagingPanelsVisibility);
+  window.addEventListener('resize', updateCreateProductFabVisibility);
+  window.addEventListener('resize', applyProductsFiltersCollapsedState);
+  window.addEventListener('resize', applyOrdersStatsCollapsedState);
+  window.addEventListener('resize', applyIssuesStatsCollapsedState);
   
   // Cleanup charts when page is unloaded
   window.addEventListener('beforeunload', cleanupCharts);
@@ -126,6 +293,15 @@ const setupNavigation = () => {
   } else {
     window.addEventListener('load', handleHashChange);
   }
+};
+
+const updateCreateProductFabVisibility = () => {
+  const fabButton = document.getElementById('btn-create-product-fab');
+  if (!fabButton) return;
+
+  const isMobileViewport = window.matchMedia('(max-width: 767px)').matches;
+  const shouldShowFab = isMobileViewport && currentPage === 'products';
+  fabButton.style.setProperty('display', shouldShowFab ? 'inline-flex' : 'none', 'important');
 };
 
 const showPage = (page) => {
@@ -149,9 +325,10 @@ const showPage = (page) => {
     currentConversation = null;
     currentConversationOrderIds = [];
     currentConversationSendOrderId = null;
+    messagingMobileView = 'list';
     const chatWindow = document.getElementById('chat-window');
     if (chatWindow) {
-      chatWindow.innerHTML = '<p class="text-center text-gray-500 py-12">Select a conversation to start messaging</p>';
+      chatWindow.innerHTML = renderMessagingEmptyState();
     }
   }
   
@@ -165,6 +342,7 @@ const showPage = (page) => {
   
   // Show requested section
   const section = document.getElementById(page);
+  updateCreateProductFabVisibility();
   
   if (section) {
     section.style.setProperty('display', 'block', 'important');
@@ -173,8 +351,10 @@ const showPage = (page) => {
     switch(page) {
       case 'products':
         loadProducts();
+        applyProductsFiltersCollapsedState();
         break;
       case 'orders':
+        loadOrderStats();
         loadOrders();
         break;
       case 'messaging':
@@ -190,6 +370,7 @@ const showPage = (page) => {
             loadConversations();
           }
         });
+        syncMessagingPanelsVisibility();
         break;
       case 'my-issues':
         loadMyIssues();
@@ -234,60 +415,393 @@ const loadDashboardStats = async () => {
 
 // ============ Product Management ============
 
+const initializeProductFilterControls = () => {
+  const statusFilter = document.getElementById('product-status-filter');
+  const categoryFilter = document.getElementById('product-category-filter');
+  const stockFilter = document.getElementById('product-stock-filter');
+  const searchInput = document.getElementById('product-search');
+  const resetButton = document.getElementById('btn-reset-product-filters');
+  const applyButton = document.getElementById('btn-apply-product-filters');
+  const suggestionsContainer = document.getElementById('product-search-suggestions');
+  const bulkCategorySelect = document.getElementById('bulk-category-select');
+  const selectAllCheckbox = document.getElementById('products-select-all');
+  const tableBody = document.getElementById('products-table-body');
+  const mobileView = document.getElementById('products-mobile-view');
+  const fabButton = document.getElementById('btn-create-product-fab');
+  const bulkPauseButton = document.getElementById('btn-bulk-pause');
+  const bulkDeleteButton = document.getElementById('btn-bulk-delete');
+  const bulkCategoryApplyButton = document.getElementById('btn-bulk-category-apply');
+
+  const categories = [...new Set(Object.values(PRODUCT_CATEGORIES || {}))]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+
+  if (categoryFilter && categoryFilter.dataset.optionsLoaded !== '1') {
+    categoryFilter.innerHTML = `
+      <option value="all">All categories</option>
+      ${categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category.replace(/_/g, ' '))}</option>`).join('')}
+    `;
+    categoryFilter.dataset.optionsLoaded = '1';
+  }
+  if (bulkCategorySelect && bulkCategorySelect.dataset.optionsLoaded !== '1') {
+    bulkCategorySelect.innerHTML = `
+      <option value="">Change category...</option>
+      ${categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category.replace(/_/g, ' '))}</option>`).join('')}
+    `;
+    bulkCategorySelect.dataset.optionsLoaded = '1';
+  }
+
+  if (statusFilter) statusFilter.value = pendingServerProductFilters.status;
+  if (categoryFilter) categoryFilter.value = pendingServerProductFilters.category;
+  if (stockFilter) stockFilter.value = productFilters.stock;
+  if (searchInput) searchInput.value = productFilters.search;
+  updateProductFilterApplyButtonState();
+
+  if (statusFilter && statusFilter.dataset.bound !== '1') {
+    statusFilter.dataset.bound = '1';
+    statusFilter.addEventListener('change', () => {
+      pendingServerProductFilters.status = statusFilter.value || 'all';
+      updateProductFilterApplyButtonState();
+    });
+  }
+
+  if (categoryFilter && categoryFilter.dataset.bound !== '1') {
+    categoryFilter.dataset.bound = '1';
+    categoryFilter.addEventListener('change', () => {
+      pendingServerProductFilters.category = categoryFilter.value || 'all';
+      updateProductFilterApplyButtonState();
+    });
+  }
+
+  if (stockFilter && stockFilter.dataset.bound !== '1') {
+    stockFilter.dataset.bound = '1';
+    stockFilter.addEventListener('change', () => {
+      productFilters.stock = stockFilter.value || 'all';
+      renderSearchSuggestions();
+      renderProductsFromCache();
+    });
+  }
+
+  if (searchInput && searchInput.dataset.bound !== '1') {
+    searchInput.dataset.bound = '1';
+    searchInput.addEventListener('input', (event) => {
+      productFilters.search = (event.target?.value || '').trim();
+      renderSearchSuggestions();
+      if (productSearchDebounceTimer) {
+        clearTimeout(productSearchDebounceTimer);
+      }
+      productSearchDebounceTimer = setTimeout(() => {
+        renderProductsFromCache();
+      }, 180);
+    });
+    searchInput.addEventListener('focus', () => {
+      renderSearchSuggestions();
+    });
+    searchInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        closeProductSuggestions();
+        renderProductsFromCache();
+      }
+      if (event.key === 'Escape') {
+        closeProductSuggestions();
+      }
+    });
+  }
+
+  if (suggestionsContainer && suggestionsContainer.dataset.bound !== '1') {
+    suggestionsContainer.dataset.bound = '1';
+    suggestionsContainer.addEventListener('click', (event) => {
+      const option = event.target.closest('[data-product-suggestion]');
+      if (!option) return;
+      const selectedValue = option.dataset.productSuggestion || '';
+      if (searchInput) {
+        searchInput.value = selectedValue;
+      }
+      productFilters.search = selectedValue;
+      closeProductSuggestions();
+      renderProductsFromCache();
+    });
+  }
+
+  if (applyButton && applyButton.dataset.bound !== '1') {
+    applyButton.dataset.bound = '1';
+    applyButton.addEventListener('click', () => {
+      productFilters.status = pendingServerProductFilters.status;
+      productFilters.category = pendingServerProductFilters.category;
+      clearProductSelections();
+      loadProducts();
+    });
+  }
+
+  if (resetButton && resetButton.dataset.bound !== '1') {
+    resetButton.dataset.bound = '1';
+    resetButton.addEventListener('click', () => {
+      productFilters = {
+        search: '',
+        status: 'all',
+        category: 'all',
+        stock: 'all'
+      };
+      pendingServerProductFilters = {
+        status: 'all',
+        category: 'all'
+      };
+      clearProductSelections();
+      closeProductSuggestions();
+      initializeProductFilterControls();
+      loadProducts();
+    });
+  }
+
+  if (selectAllCheckbox && selectAllCheckbox.dataset.bound !== '1') {
+    selectAllCheckbox.dataset.bound = '1';
+    selectAllCheckbox.addEventListener('change', () => {
+      const shouldSelect = Boolean(selectAllCheckbox.checked);
+      currentProducts.forEach((product) => {
+        if (shouldSelect) {
+          selectedProductIds.add(String(product.id));
+        } else {
+          selectedProductIds.delete(String(product.id));
+        }
+      });
+      syncProductSelectionUi();
+      applyProductSelectionToDom();
+    });
+  }
+
+  if (tableBody && tableBody.dataset.bound !== '1') {
+    tableBody.dataset.bound = '1';
+    tableBody.addEventListener('click', handleProductActionEvents);
+    tableBody.addEventListener('change', handleProductSelectionEvents);
+  }
+  if (mobileView && mobileView.dataset.bound !== '1') {
+    mobileView.dataset.bound = '1';
+    mobileView.addEventListener('click', handleProductActionEvents);
+    mobileView.addEventListener('change', handleProductSelectionEvents);
+  }
+
+  if (fabButton && fabButton.dataset.bound !== '1') {
+    fabButton.dataset.bound = '1';
+    fabButton.addEventListener('click', () => window.showProductModal());
+  }
+  if (bulkPauseButton && bulkPauseButton.dataset.bound !== '1') {
+    bulkPauseButton.dataset.bound = '1';
+    bulkPauseButton.addEventListener('click', () => handleBulkPauseProducts());
+  }
+  if (bulkDeleteButton && bulkDeleteButton.dataset.bound !== '1') {
+    bulkDeleteButton.dataset.bound = '1';
+    bulkDeleteButton.addEventListener('click', () => handleBulkDeleteProducts());
+  }
+  if (bulkCategoryApplyButton && bulkCategoryApplyButton.dataset.bound !== '1') {
+    bulkCategoryApplyButton.dataset.bound = '1';
+    bulkCategoryApplyButton.addEventListener('click', () => handleBulkCategoryUpdate());
+  }
+
+  if (document.body && document.body.dataset.productSuggestionBound !== '1') {
+    document.body.dataset.productSuggestionBound = '1';
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.seller-search-wrap')) {
+        closeProductSuggestions();
+      }
+    });
+  }
+};
+
+const getStockMeta = (quantity) => {
+  if (quantity <= 0) return { shortLabel: 'Out', label: 'Out of stock', className: 'badge-danger' };
+  if (quantity <= 10) return { shortLabel: 'Low', label: 'Low stock', className: 'badge-warning' };
+  return { shortLabel: 'OK', label: 'In stock', className: 'badge-success' };
+};
+
+const formatListingStatus = (status) => {
+  const normalized = String(status || 'draft').toLowerCase();
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
+const highlightMatchHtml = (value, query) => {
+  const safeValue = escapeHtml(value || '');
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery) return safeValue;
+  const escaped = cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return safeValue.replace(new RegExp(`(${escaped})`, 'ig'), '<mark>$1</mark>');
+};
+
+const updateProductFilterApplyButtonState = () => {
+  const applyButton = document.getElementById('btn-apply-product-filters');
+  if (!applyButton) return;
+  const isDirty = (
+    pendingServerProductFilters.status !== productFilters.status
+    || pendingServerProductFilters.category !== productFilters.category
+  );
+  applyButton.disabled = !isDirty;
+  applyButton.classList.toggle('btn-primary', isDirty);
+  applyButton.classList.toggle('btn-outline', !isDirty);
+};
+
+const closeProductSuggestions = () => {
+  const container = document.getElementById('product-search-suggestions');
+  if (!container) return;
+  container.classList.remove('is-open');
+  container.innerHTML = '';
+};
+
+const buildProductSearchSuggestions = (products = []) => {
+  const query = String(productFilters.search || '').trim().toLowerCase();
+  if (!query) {
+    productSearchSuggestions = [];
+    return;
+  }
+
+  const source = [];
+  products.forEach((product) => {
+    [product?.name, product?.category, product?.municipality, product?.unit_type]
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+      .forEach((item) => source.push(item));
+  });
+
+  productSearchSuggestions = [...new Set(source)]
+    .filter((item) => item.toLowerCase().includes(query))
+    .sort((a, b) => a.localeCompare(b))
+    .slice(0, 8);
+};
+
+const renderSearchSuggestions = () => {
+  buildProductSearchSuggestions(allLoadedProducts);
+  const container = document.getElementById('product-search-suggestions');
+  if (!container) return;
+  if (!productSearchSuggestions.length) {
+    closeProductSuggestions();
+    return;
+  }
+
+  const query = productFilters.search || '';
+  container.innerHTML = productSearchSuggestions.map((value) => `
+    <button type="button" class="seller-search-suggestion" data-product-suggestion="${escapeHtml(value)}" role="option">
+      ${highlightMatchHtml(value, query)}
+    </button>
+  `).join('');
+  container.classList.add('is-open');
+};
+
+const showProductInlineFeedback = (message = '', type = 'info', duration = 2600) => {
+  const feedback = document.getElementById('products-feedback');
+  if (!feedback) return;
+
+  feedback.textContent = message;
+  feedback.classList.remove('is-success', 'is-error');
+  if (type === 'success') feedback.classList.add('is-success');
+  if (type === 'error') feedback.classList.add('is-error');
+
+  if (productFeedbackTimer) clearTimeout(productFeedbackTimer);
+  if (!message || duration <= 0) return;
+  productFeedbackTimer = setTimeout(() => {
+    feedback.textContent = '';
+    feedback.classList.remove('is-success', 'is-error');
+  }, duration);
+};
+
+const applyClientProductFilters = (products = []) => {
+  const normalizedSearch = (productFilters.search || '').toLowerCase();
+
+  return products.filter((product) => {
+    const stock = Number(product.available_quantity) || 0;
+    if (productFilters.stock === 'low' && (stock <= 0 || stock > 10)) {
+      return false;
+    }
+    if (productFilters.stock === 'out' && stock > 0) {
+      return false;
+    }
+
+    if (!normalizedSearch) {
+      return true;
+    }
+
+    const searchableText = [
+      product.name,
+      product.category,
+      product.municipality,
+      product.unit_type
+    ]
+      .map((item) => String(item || '').toLowerCase())
+      .join(' ');
+
+    return searchableText.includes(normalizedSearch);
+  });
+};
+
+const renderProductSummary = (totalProducts, filteredProducts) => {
+  const summaryElement = document.getElementById('products-summary');
+  if (!summaryElement) return;
+
+  const draftCount = filteredProducts.filter((product) => product.status === 'draft').length;
+  const pausedCount = filteredProducts.filter((product) => product.status === 'paused').length;
+  const activeCount = filteredProducts.filter((product) => product.status === 'active').length;
+  const lowStockCount = filteredProducts.filter((product) => {
+    const quantity = Number(product.available_quantity) || 0;
+    return quantity > 0 && quantity <= 10;
+  }).length;
+  const outOfStockCount = filteredProducts.filter((product) => (Number(product.available_quantity) || 0) === 0).length;
+
+  summaryElement.innerHTML = `
+    <span class="seller-summary-chip seller-summary-chip--primary"><strong>${filteredProducts.length}</strong> shown</span>
+    <span class="seller-summary-chip"><strong>${totalProducts}</strong> total</span>
+    <span class="seller-summary-chip"><strong>${activeCount}</strong> active</span>
+    <span class="seller-summary-chip"><strong>${draftCount}</strong> draft</span>
+    <span class="seller-summary-chip"><strong>${pausedCount}</strong> paused</span>
+    <span class="seller-summary-chip"><strong>${lowStockCount}</strong> low stock</span>
+    <span class="seller-summary-chip"><strong>${outOfStockCount}</strong> out of stock</span>
+  `;
+};
+
 const loadProducts = async () => {
   const tbody = document.getElementById('products-table-body');
   const mobileView = document.getElementById('products-mobile-view');
   if (!tbody && !mobileView) return;
-  
-  // Show loading state for both views
-  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8"><div class="loading-spinner mx-auto"></div></td></tr>';
-  if (mobileView) mobileView.innerHTML = '<div class="text-center py-8"><div class="loading-spinner mx-auto"></div></div>';
+
+  initializeProductFilterControls();
+  updateProductFilterApplyButtonState();
+
+  const skeletonRows = Array.from({ length: 4 }).map(() => `
+    <tr>
+      <td colspan="8" class="py-3">
+        <div class="home-skeleton shimmer h-10 rounded-lg"></div>
+      </td>
+    </tr>
+  `).join('');
+  const skeletonCards = Array.from({ length: 3 }).map(() => `
+    <div class="seller-product-card p-3">
+      <div class="home-skeleton shimmer h-4 rounded mb-2"></div>
+      <div class="home-skeleton shimmer h-4 rounded mb-2"></div>
+      <div class="home-skeleton shimmer h-9 rounded"></div>
+    </div>
+  `).join('');
+  if (tbody) tbody.innerHTML = skeletonRows;
+  if (mobileView) mobileView.innerHTML = skeletonCards;
   
   try {
-    const response = await getMyProducts();
-    currentProducts = response.data?.products || [];
-    
-    if (currentProducts.length === 0) {
-      // Empty state for both views
-      if (tbody) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="6" class="text-center py-12">
-              <i class="bi bi-inbox text-6xl text-gray-400"></i>
-              <p class="text-gray-500 mt-4">No products yet</p>
-            </td>
-          </tr>
-        `;
-      }
-      if (mobileView) {
-        mobileView.innerHTML = `
-          <div class="text-center py-12">
-            <i class="bi bi-inbox text-6xl text-gray-400"></i>
-            <p class="text-gray-500 mt-4">No products yet</p>
-          </div>
-        `;
-      }
-      return;
+    const serverFilters = {};
+    if (productFilters.status !== 'all') {
+      serverFilters.status = productFilters.status;
     }
-    
-    // Populate both views
-    if (tbody) tbody.innerHTML = currentProducts.map(product => createProductRow(product)).join('');
-    if (mobileView) {
-      mobileView.innerHTML = '';
-      currentProducts.forEach(product => {
-        const card = createProductCard(product, {
-          showActions: true,
-          showSeller: false, // Seller knows it's their product
-          showViewButton: false, // Hide view button for seller
-          onEdit: () => window.editProduct(product.id),
-          onDelete: () => window.deleteProduct(product.id)
-        });
-        mobileView.appendChild(card);
-      });
+    if (productFilters.category !== 'all') {
+      serverFilters.category = productFilters.category;
     }
+
+    const response = await getMyProducts(serverFilters);
+    const allProducts = response.data?.products || [];
+    allLoadedProducts = allProducts.filter((product) => !productUndoDeletes.has(String(product.id)));
+    renderSearchSuggestions();
+    renderProductsFromCache();
+    showProductInlineFeedback('', 'info', 0);
     
   } catch (error) {
     console.error('Error loading products:', error);
+    allLoadedProducts = [];
+    currentProducts = [];
+    closeProductSuggestions();
+    renderProductSummary(0, []);
     
     // Handle verification required error
     if (error.status === 403 && error.message?.includes('verification')) {
@@ -305,7 +819,7 @@ const loadProducts = async () => {
       if (tbody) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="6" class="text-center py-12">
+            <td colspan="8" class="text-center py-12">
               ${verificationContent}
             </td>
           </tr>
@@ -322,7 +836,7 @@ const loadProducts = async () => {
     if (tbody) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="6" class="text-center py-8 text-danger">
+          <td colspan="8" class="text-center py-8 text-danger">
             ${errorMessage}
           </td>
         </tr>
@@ -331,6 +845,7 @@ const loadProducts = async () => {
     if (mobileView) {
       mobileView.innerHTML = `<div class="text-center py-8 text-danger">${errorMessage}</div>`;
     }
+    showProductInlineFeedback(errorMessage, 'error');
   }
 };
 
@@ -340,46 +855,403 @@ const createProductRow = (product) => {
     paused: 'warning',
     draft: 'secondary'
   };
-  const productName = escapeHtml(product.name || 'Unnamed Product');
-  const municipality = escapeHtml(product.municipality || 'Unknown');
-  const category = escapeHtml(product.category || 'other');
-  const unitType = escapeHtml(product.unit_type || 'unit');
-  const status = escapeHtml(product.status || 'draft');
+  const productName = product.name || 'Unnamed Product';
+  const municipality = product.municipality || 'Unknown';
+  const category = product.category || 'other';
+  const unitType = product.unit_type || 'unit';
+  const listingStatus = formatListingStatus(product.status);
+  const quantity = Number(product.available_quantity) || 0;
   const photoSrc = escapeHtml(product.photo_path || product.photos?.[0] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2216%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E');
+  const stockMeta = getStockMeta(quantity);
+  const nextStatus = product.status === 'active' ? 'paused' : 'active';
+  const nextStatusLabel = product.status === 'active' ? 'Pause' : 'Activate';
+  const nextStatusIcon = product.status === 'active' ? 'bi-pause-circle' : 'bi-play-circle';
+  const nextStatusClass = product.status === 'active' ? 'btn-warning' : 'btn-success';
+  const search = productFilters.search || '';
   
   return `
-    <tr data-product-id="${product.id}">
+    <tr data-product-id="${escapeHtml(product.id)}">
+      <td class="seller-select-col">
+        <input type="checkbox" data-product-select="true" data-product-id="${escapeHtml(product.id)}" aria-label="Select ${escapeHtml(productName)}">
+      </td>
       <td>
         <div class="flex items-center gap-3">
           <img src="${photoSrc}" 
-               alt="${productName}"
+               alt="${escapeHtml(productName)}"
                class="w-12 h-12 object-cover rounded">
           <div>
-            <p class="font-semibold">${productName}</p>
-            <p class="text-sm text-gray-600">${municipality}</p>
+            <p class="font-semibold seller-product-name">${highlightMatchHtml(productName, search)}</p>
+            <p class="text-sm text-gray-600 seller-product-meta">${highlightMatchHtml(municipality, search)}</p>
           </div>
         </div>
       </td>
-      <td>${category}</td>
-      <td>${formatCurrency(product.price_per_unit)} / ${unitType}</td>
-      <td>${product.available_quantity}</td>
+      <td class="seller-product-category">${highlightMatchHtml(category, search)}</td>
+      <td class="seller-price-cell"><strong>${formatCurrency(product.price_per_unit)}</strong> / ${escapeHtml(unitType)}</td>
+      <td class="seller-stock-cell"><strong>${quantity}</strong></td>
+      <td><span class="badge ${stockMeta.className}">${stockMeta.label}</span></td>
       <td>
         <span class="badge badge-${statusColors[product.status] || 'secondary'}">
-          ${status}
+          ${escapeHtml(listingStatus)}
         </span>
       </td>
       <td>
-        <div class="flex gap-2">
-          <button class="btn btn-sm btn-outline" onclick="window.editProduct('${product.id}')">
-            <i class="bi bi-pencil"></i>
+        <div class="seller-action-group">
+          <button class="btn btn-sm ${nextStatusClass} seller-action-btn" data-product-action="toggle-status" data-product-id="${escapeHtml(product.id)}" data-next-status="${escapeHtml(nextStatus)}" title="${nextStatusLabel} product">
+            <i class="bi ${nextStatusIcon}"></i> ${nextStatusLabel}
           </button>
-          <button class="btn btn-sm btn-danger" onclick="window.deleteProduct('${product.id}')">
-            <i class="bi bi-trash"></i>
+          <button class="btn btn-sm btn-outline seller-action-btn" data-product-action="edit" data-product-id="${escapeHtml(product.id)}" title="Edit product">
+            <i class="bi bi-pencil"></i> Edit
+          </button>
+          <button class="btn btn-sm btn-danger seller-action-btn" data-product-action="delete" data-product-id="${escapeHtml(product.id)}" title="Delete product">
+            <i class="bi bi-trash"></i> Delete
           </button>
         </div>
       </td>
     </tr>
   `;
+};
+
+const createProductMobileCard = (product) => {
+  const statusColors = {
+    active: 'success',
+    paused: 'warning',
+    draft: 'secondary'
+  };
+  const productName = product.name || 'Unnamed Product';
+  const municipality = product.municipality || 'Unknown';
+  const category = product.category || 'other';
+  const unitType = product.unit_type || 'unit';
+  const listingStatus = formatListingStatus(product.status);
+  const quantity = Number(product.available_quantity) || 0;
+  const photoSrc = escapeHtml(product.photo_path || product.photos?.[0] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2216%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E');
+  const stockMeta = getStockMeta(quantity);
+  const nextStatus = product.status === 'active' ? 'paused' : 'active';
+  const nextStatusLabel = product.status === 'active' ? 'Pause' : 'Activate';
+  const nextStatusClass = product.status === 'active' ? 'btn-warning' : 'btn-success';
+  const nextStatusIcon = product.status === 'active' ? 'bi-pause-circle' : 'bi-play-circle';
+  const search = productFilters.search || '';
+  return `
+    <article class="seller-product-card" data-product-id="${escapeHtml(product.id)}">
+      <div class="seller-product-card-head">
+        <input type="checkbox" data-product-select="true" data-product-id="${escapeHtml(product.id)}" aria-label="Select ${escapeHtml(productName)}">
+        <img src="${photoSrc}" alt="${escapeHtml(productName)}" class="seller-product-card-image object-cover rounded-lg border">
+        <div class="seller-product-card-meta">
+          <p class="font-semibold seller-product-name mb-0">${highlightMatchHtml(productName, search)}</p>
+          <p class="text-xs text-gray-600 seller-product-meta mb-1">${highlightMatchHtml(municipality, search)}</p>
+          <span class="badge badge-${statusColors[product.status] || 'secondary'}">${escapeHtml(listingStatus)}</span>
+          <span class="badge ${stockMeta.className} ml-1">${stockMeta.shortLabel}</span>
+        </div>
+      </div>
+      <div class="seller-product-card-grid">
+        <div class="seller-product-card-stat">
+          <span>Category</span>
+          <strong class="seller-product-category">${highlightMatchHtml(category, search)}</strong>
+        </div>
+        <div class="seller-product-card-stat">
+          <span>Price</span>
+          <strong>${formatCurrency(product.price_per_unit)} / ${escapeHtml(unitType)}</strong>
+        </div>
+        <div class="seller-product-card-stat">
+          <span>Stock</span>
+          <strong>${quantity}</strong>
+        </div>
+        <div class="seller-product-card-stat">
+          <span>Stock Status</span>
+          <strong>${stockMeta.label}</strong>
+        </div>
+      </div>
+      <div class="seller-product-card-actions">
+        <button class="btn btn-sm ${nextStatusClass}" data-product-action="toggle-status" data-product-id="${escapeHtml(product.id)}" data-next-status="${escapeHtml(nextStatus)}">
+          <i class="bi ${nextStatusIcon}"></i> ${nextStatusLabel}
+        </button>
+        <button class="btn btn-sm btn-outline" data-product-action="edit" data-product-id="${escapeHtml(product.id)}">
+          <i class="bi bi-pencil"></i> Edit
+        </button>
+        <button class="btn btn-sm btn-danger" data-product-action="delete" data-product-id="${escapeHtml(product.id)}">
+          <i class="bi bi-trash"></i> Delete
+        </button>
+      </div>
+    </article>
+  `;
+};
+
+const syncProductSelectionUi = () => {
+  const selectedCountElement = document.getElementById('products-selected-count');
+  const bulkActions = document.getElementById('products-bulk-actions');
+  const selectAllCheckbox = document.getElementById('products-select-all');
+  const currentProductIds = new Set(currentProducts.map((product) => String(product.id)));
+  selectedProductIds.forEach((id) => {
+    if (!currentProductIds.has(id)) selectedProductIds.delete(id);
+  });
+
+  const selectedCount = selectedProductIds.size;
+  if (selectedCountElement) {
+    selectedCountElement.textContent = `${selectedCount} selected`;
+  }
+  if (bulkActions) {
+    bulkActions.classList.toggle('hidden', selectedCount === 0);
+  }
+  if (selectAllCheckbox) {
+    selectAllCheckbox.checked = Boolean(currentProducts.length) && selectedCount === currentProducts.length;
+    selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < currentProducts.length;
+  }
+};
+
+const applyProductSelectionToDom = () => {
+  document.querySelectorAll('[data-product-select]').forEach((checkbox) => {
+    const productId = checkbox.getAttribute('data-product-id');
+    checkbox.checked = selectedProductIds.has(String(productId));
+  });
+};
+
+const clearProductSelections = () => {
+  selectedProductIds = new Set();
+  syncProductSelectionUi();
+  applyProductSelectionToDom();
+};
+
+const renderProductEmptyState = (isFiltered) => {
+  const tbody = document.getElementById('products-table-body');
+  const mobileView = document.getElementById('products-mobile-view');
+  const message = isFiltered ? 'No products matched your current filters.' : 'No products yet.';
+  const cta = isFiltered
+    ? '<p class="text-xs text-gray-500 mt-2">Try resetting filters or updating your search.</p>'
+    : '<button class="btn btn-primary btn-sm seller-product-empty-cta" data-product-action="create"><i class="bi bi-plus-circle"></i> Add your first product</button>';
+
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" class="text-center py-12">
+          <i class="bi bi-inbox text-5xl text-gray-400"></i>
+          <p class="text-gray-600 mt-3">${message}</p>
+          ${cta}
+        </td>
+      </tr>
+    `;
+  }
+  if (mobileView) {
+    mobileView.innerHTML = `
+      <div class="text-center py-10">
+        <i class="bi bi-inbox text-5xl text-gray-400"></i>
+        <p class="text-gray-600 mt-3">${message}</p>
+        ${cta}
+      </div>
+    `;
+  }
+};
+
+const renderProductsFromCache = () => {
+  currentProducts = applyClientProductFilters(allLoadedProducts);
+  renderProductSummary(allLoadedProducts.length, currentProducts);
+  if (!currentProducts.length) {
+    renderProductEmptyState(Boolean(productFilters.search || productFilters.stock !== 'all'));
+    clearProductSelections();
+    return;
+  }
+
+  const tbody = document.getElementById('products-table-body');
+  const mobileView = document.getElementById('products-mobile-view');
+  if (tbody) tbody.innerHTML = currentProducts.map((product) => createProductRow(product)).join('');
+  if (mobileView) mobileView.innerHTML = currentProducts.map((product) => createProductMobileCard(product)).join('');
+  syncProductSelectionUi();
+  applyProductSelectionToDom();
+};
+
+const handleProductSelectionEvents = (event) => {
+  const checkbox = event.target.closest('[data-product-select]');
+  if (!checkbox) return;
+  const productId = checkbox.getAttribute('data-product-id');
+  if (!productId) return;
+  if (checkbox.checked) {
+    selectedProductIds.add(String(productId));
+  } else {
+    selectedProductIds.delete(String(productId));
+  }
+  syncProductSelectionUi();
+};
+
+const handleProductActionEvents = (event) => {
+  const actionButton = event.target.closest('[data-product-action]');
+  if (!actionButton) return;
+  const action = actionButton.getAttribute('data-product-action');
+  const productId = actionButton.getAttribute('data-product-id');
+  if (action === 'create') {
+    window.showProductModal();
+    return;
+  }
+  if (!productId) return;
+  if (action === 'edit') {
+    window.editProduct(productId);
+    return;
+  }
+  if (action === 'toggle-status') {
+    const nextStatus = actionButton.getAttribute('data-next-status') || 'paused';
+    window.toggleProductStatus(productId, nextStatus);
+    return;
+  }
+  if (action === 'delete') {
+    window.deleteProduct(productId);
+  }
+};
+
+const removeUndoDeleteToast = (productId) => {
+  const container = document.getElementById('seller-product-undo-toast-container');
+  if (!container) return;
+  const toast = [...container.querySelectorAll('[data-undo-product-id]')]
+    .find((item) => item.dataset.undoProductId === String(productId));
+  if (toast) toast.remove();
+};
+
+const undoDeleteProduct = (productId) => {
+  const id = String(productId);
+  const pendingDelete = productUndoDeletes.get(id);
+  if (!pendingDelete) return;
+  clearTimeout(pendingDelete.timeoutId);
+  productUndoDeletes.delete(id);
+  if (!allLoadedProducts.some((item) => String(item.id) === id)) {
+    allLoadedProducts.push(pendingDelete.product);
+  }
+  removeUndoDeleteToast(id);
+  renderProductsFromCache();
+  showSuccess('Delete undone');
+};
+
+const renderUndoDeleteToast = (productId, productName) => {
+  let container = document.getElementById('seller-product-undo-toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'seller-product-undo-toast-container';
+    container.style.cssText = 'position:fixed;left:1rem;bottom:1rem;z-index:1300;display:flex;flex-direction:column;gap:.5rem;max-width:calc(100vw - 2rem);';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'card';
+  toast.dataset.undoProductId = String(productId);
+  toast.style.cssText = 'padding:.55rem .7rem;border:1px solid #cfe3d8;background:#fff;box-shadow:0 12px 20px rgba(15,59,40,.14);';
+  toast.innerHTML = `
+    <div class="flex items-center gap-2">
+      <span class="text-sm"><strong>${escapeHtml(productName || 'Product')}</strong> removed.</span>
+      <button type="button" class="btn btn-outline btn-sm ml-auto" data-product-undo="${escapeHtml(productId)}">Undo</button>
+    </div>
+  `;
+  container.appendChild(toast);
+  toast.addEventListener('click', (event) => {
+    const undoButton = event.target.closest('[data-product-undo]');
+    if (!undoButton) return;
+    undoDeleteProduct(undoButton.getAttribute('data-product-undo'));
+  });
+};
+
+const queueDeleteProduct = (productId) => {
+  const id = String(productId);
+  if (productUndoDeletes.has(id)) return;
+
+  const product = allLoadedProducts.find((item) => String(item.id) === id) || currentProducts.find((item) => String(item.id) === id);
+  if (!product) return;
+
+  allLoadedProducts = allLoadedProducts.filter((item) => String(item.id) !== id);
+  selectedProductIds.delete(id);
+  renderProductsFromCache();
+  syncProductSelectionUi();
+  showProductInlineFeedback('Product queued for deletion. Undo is available for 6 seconds.', 'success');
+  renderUndoDeleteToast(id, product.name || 'Product');
+
+  const timeoutId = setTimeout(async () => {
+    try {
+      await deleteProductRequest(id);
+      productUndoDeletes.delete(id);
+      removeUndoDeleteToast(id);
+      showSuccess('Product deleted successfully');
+      await loadDashboardStats();
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      productUndoDeletes.delete(id);
+      removeUndoDeleteToast(id);
+      if (!allLoadedProducts.some((item) => String(item.id) === id)) {
+        allLoadedProducts.push(product);
+      }
+      renderProductsFromCache();
+      showError(error.message || 'Failed to delete product');
+      if (error.status === 500 || error.status === 409) {
+        showWarning('This product has linked orders/data. You can pause it instead.');
+      }
+    }
+  }, 6000);
+
+  productUndoDeletes.set(id, {
+    timeoutId,
+    product
+  });
+};
+
+const handleBulkPauseProducts = async () => {
+  const ids = [...selectedProductIds];
+  if (!ids.length) return;
+  try {
+    const results = await Promise.allSettled(
+      ids.map((id) => updateProduct(id, { status: 'paused' }))
+    );
+    const successCount = results.filter((result) => result.status === 'fulfilled').length;
+    const failCount = results.length - successCount;
+    clearProductSelections();
+    await Promise.all([loadProducts(), loadDashboardStats()]);
+    if (successCount > 0) {
+      showProductInlineFeedback(`${successCount} product(s) paused.${failCount ? ` ${failCount} failed.` : ''}`, failCount ? 'error' : 'success');
+    }
+  } catch (error) {
+    console.error('Error bulk pausing products:', error);
+    showError(error.message || 'Bulk pause failed');
+  }
+};
+
+const handleBulkDeleteProducts = async () => {
+  const ids = [...selectedProductIds];
+  if (!ids.length) return;
+  const modal = createModal({
+    title: 'Delete Selected Products',
+    content: `<p class="text-gray-700">Delete ${ids.length} selected product(s)? You can undo each delete for 6 seconds.</p>`,
+    footer: `
+      <button class="btn btn-outline" data-modal-close>Cancel</button>
+      <button class="btn btn-danger" id="btn-confirm-bulk-delete"><i class="bi bi-trash"></i> Delete Selected</button>
+    `,
+    size: 'sm'
+  });
+  const confirmButton = document.getElementById('btn-confirm-bulk-delete');
+  if (!confirmButton) return;
+  confirmButton.addEventListener('click', () => {
+    ids.forEach((id) => queueDeleteProduct(id));
+    clearProductSelections();
+    modal.close();
+  }, { once: true });
+};
+
+const handleBulkCategoryUpdate = async () => {
+  const ids = [...selectedProductIds];
+  if (!ids.length) return;
+  const select = document.getElementById('bulk-category-select');
+  const category = select?.value || '';
+  if (!category) {
+    showWarning('Select a category first.');
+    return;
+  }
+
+  try {
+    const results = await Promise.allSettled(
+      ids.map((id) => updateProduct(id, { category }))
+    );
+    const successCount = results.filter((result) => result.status === 'fulfilled').length;
+    const failCount = results.length - successCount;
+    clearProductSelections();
+    if (select) select.value = '';
+    await loadProducts();
+    if (successCount > 0) {
+      showProductInlineFeedback(`${successCount} product(s) moved to ${category.replace(/_/g, ' ')}.${failCount ? ` ${failCount} failed.` : ''}`, failCount ? 'error' : 'success');
+    }
+  } catch (error) {
+    console.error('Error bulk updating category:', error);
+    showError(error.message || 'Bulk category update failed');
+  }
 };
 
 // ============ Product Photo Handlers ============
@@ -484,7 +1356,7 @@ window.showProductModal = (productId = null) => {
   const sellerMunicipality = user?.seller_profile?.municipality || 'Not set';
   
   const modalContent = `
-    <form id="product-form" class="space-y-4">
+    <form id="product-form" class="space-y-4 seller-product-form">
       <!-- Basic Info -->
       <div class="form-group">
         <label class="form-label">Product Name <span class="text-danger">*</span></label>
@@ -493,7 +1365,7 @@ window.showProductModal = (productId = null) => {
         <div class="invalid-feedback"></div>
       </div>
       
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-2 gap-4 seller-product-form-grid">
         <div class="form-group">
           <label class="form-label">Category <span class="text-danger">*</span></label>
           <select id="product-category" class="form-select" required>
@@ -521,7 +1393,7 @@ window.showProductModal = (productId = null) => {
       </div>
       
       <!-- Pricing -->
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-2 gap-4 seller-product-form-grid">
         <div class="form-group">
           <label class="form-label">Price per Unit <span class="text-danger">*</span></label>
           <input type="number" id="product-price" class="form-control" 
@@ -581,18 +1453,18 @@ window.showProductModal = (productId = null) => {
       <!-- Tags -->
       <div class="form-group">
         <label class="form-label">Tags</label>
-        <div class="flex gap-2 flex-wrap">
-          <label class="flex items-center gap-1">
+        <div class="seller-product-tags">
+          <label class="seller-product-tag">
             <input type="checkbox" name="tags" value="fresh" 
                    ${editingProduct?.tags?.includes('fresh') ? 'checked' : ''}>
             <span class="text-sm">Fresh</span>
           </label>
-          <label class="flex items-center gap-1">
+          <label class="seller-product-tag">
             <input type="checkbox" name="tags" value="organic"
                    ${editingProduct?.tags?.includes('organic') ? 'checked' : ''}>
             <span class="text-sm">Organic</span>
           </label>
-          <label class="flex items-center gap-1">
+          <label class="seller-product-tag">
             <input type="checkbox" name="tags" value="recently_harvested"
                    ${editingProduct?.tags?.includes('recently_harvested') ? 'checked' : ''}>
             <span class="text-sm">Recently Harvested</span>
@@ -747,13 +1619,29 @@ window.editProduct = (productId) => {
   window.showProductModal(productId);
 };
 
+window.toggleProductStatus = async (productId, nextStatus) => {
+  try {
+    await updateProduct(productId, { status: nextStatus });
+    showSuccess(`Product set to ${nextStatus}`);
+    showProductInlineFeedback(`Listing status updated to ${nextStatus}.`, 'success');
+    await Promise.all([loadProducts(), loadDashboardStats()]);
+  } catch (error) {
+    console.error('Error updating product status:', error);
+    showProductInlineFeedback(error.message || 'Failed to update product status', 'error');
+    showError(error.message || 'Failed to update product status');
+  }
+};
+
 window.deleteProduct = async (productId) => {
-  // Show confirmation modal
+  const targetProduct = currentProducts.find((item) => String(item.id) === String(productId))
+    || allLoadedProducts.find((item) => String(item.id) === String(productId));
+  const productName = targetProduct?.name || 'this product';
+
   const modal = createModal({
-    title: '⚠️ Delete Product',
-    content: '<p class="text-gray-700">Are you sure you want to delete this product? This action cannot be undone.</p>',
+    title: 'Delete Product',
+    content: `<p class="text-gray-700">Delete <strong>${escapeHtml(productName)}</strong>? You can undo this for 6 seconds.</p>`,
     footer: `
-      <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">Cancel</button>
+      <button class="btn btn-outline" data-modal-close>Cancel</button>
       <button class="btn btn-danger" id="btn-confirm-delete">
         <i class="bi bi-trash"></i> Delete
       </button>
@@ -762,78 +1650,185 @@ window.deleteProduct = async (productId) => {
   });
   
   const btnConfirm = document.getElementById('btn-confirm-delete');
+  if (!btnConfirm) return;
   btnConfirm.addEventListener('click', async () => {
-    try {
-      btnConfirm.disabled = true;
-      btnConfirm.innerHTML = '<i class="bi bi-hourglass-split"></i> Deleting...';
-      
-      await deleteProduct(productId);
-      showSuccess('Product deleted successfully');
-      
-      // Close modal
-      document.querySelector('.modal-backdrop').remove();
-      
-      // Reload products
-      await loadProducts();
-      await loadDashboardStats();
-    } catch (error) {
-      console.error('Error deleting product:', error);
-      
-      // Provide more specific feedback for 500 or 409 errors (likely foreign key constraints)
-      if (error.status === 500 || error.status === 409) {
-        // Close delete confirmation modal
-        document.querySelector('.modal-backdrop').remove();
-        
-        // Suggest archiving instead
-        const archiveModal = createModal({
-          title: 'Cannot Delete Product',
-          content: `
-            <div class="text-center">
-              <i class="bi bi-exclamation-triangle text-amber-500 text-5xl mb-3"></i>
-              <p class="text-gray-700 mb-2">This product cannot be deleted because it has associated orders or data.</p>
-              <p class="text-sm text-gray-500 mb-4">You can pause the product instead to hide it from buyers.</p>
-            </div>
-          `,
-          footer: `
-            <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">Close</button>
-            <button class="btn btn-warning" id="btn-pause-product">
-              <i class="bi bi-pause-circle"></i> Pause Product
-            </button>
-          `,
-          size: 'sm'
-        });
-        
-        document.getElementById('btn-pause-product').addEventListener('click', async () => {
-          try {
-            // Find product and update status
-            const product = currentProducts.find(p => p.id === productId);
-            if (product) {
-              const { updateProduct } = await import('../services/product.service.js');
-              await updateProduct(productId, { ...product, status: 'paused' });
-              showSuccess('Product paused successfully');
-              document.querySelector('.modal-backdrop').remove();
-              await loadProducts();
-            }
-          } catch (err) {
-            showError('Failed to pause product');
-          }
-        });
-      } else {
-        showError('Failed to delete product');
-      }
-      
-      if (btnConfirm) {
-        btnConfirm.disabled = false;
-        btnConfirm.innerHTML = '<i class="bi bi-trash"></i> Delete';
-      }
-    }
+    btnConfirm.disabled = true;
+    btnConfirm.innerHTML = '<i class="bi bi-hourglass-split"></i> Queuing...';
+    queueDeleteProduct(productId);
+    modal.close();
   });
 };
 
 // ============ Orders Management ============
 
+const isDesktopSellerViewport = () => window.matchMedia('(min-width: 768px)').matches;
+
+const applyProductsFiltersCollapsedState = () => {
+  const filtersContent = document.getElementById('products-filters-content');
+  const toggleButton = document.getElementById('products-filters-toggle');
+  if (!filtersContent || !toggleButton) return;
+
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  if (!isMobile) {
+    filtersContent.classList.remove('is-collapsed');
+    toggleButton.setAttribute('hidden', 'hidden');
+    toggleButton.setAttribute('aria-expanded', 'true');
+    toggleButton.innerHTML = '<i class="bi bi-chevron-up"></i><span>Hide Filters</span>';
+    return;
+  }
+
+  toggleButton.removeAttribute('hidden');
+  filtersContent.classList.toggle('is-collapsed', productsFiltersCollapsed);
+  toggleButton.setAttribute('aria-expanded', String(!productsFiltersCollapsed));
+  toggleButton.innerHTML = productsFiltersCollapsed
+    ? '<i class="bi bi-chevron-down"></i><span>Show Filters</span>'
+    : '<i class="bi bi-chevron-up"></i><span>Hide Filters</span>';
+};
+
+const applyOrdersStatsCollapsedState = () => {
+  const statsContainer = document.getElementById('orders-stats');
+  const toggleButton = document.getElementById('orders-stats-toggle');
+  if (!statsContainer || !toggleButton) return;
+
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  if (!isMobile) {
+    statsContainer.classList.remove('is-collapsed');
+    toggleButton.setAttribute('hidden', 'hidden');
+    toggleButton.setAttribute('aria-expanded', 'true');
+    toggleButton.innerHTML = '<i class="bi bi-chevron-up"></i><span>Hide Stats</span>';
+    return;
+  }
+
+  toggleButton.removeAttribute('hidden');
+  statsContainer.classList.toggle('is-collapsed', ordersStatsCollapsed);
+  toggleButton.setAttribute('aria-expanded', String(!ordersStatsCollapsed));
+  toggleButton.innerHTML = ordersStatsCollapsed
+    ? '<i class="bi bi-chevron-down"></i><span>Show Stats</span>'
+    : '<i class="bi bi-chevron-up"></i><span>Hide Stats</span>';
+};
+
+const applyIssuesStatsCollapsedState = () => {
+  const statsContainer = document.getElementById('issues-stats');
+  const toggleButton = document.getElementById('issues-stats-toggle');
+  if (!statsContainer || !toggleButton) return;
+
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  if (!isMobile) {
+    statsContainer.classList.remove('is-collapsed');
+    toggleButton.setAttribute('hidden', 'hidden');
+    toggleButton.setAttribute('aria-expanded', 'true');
+    toggleButton.innerHTML = '<i class="bi bi-chevron-up"></i><span>Hide Stats</span>';
+    return;
+  }
+
+  toggleButton.removeAttribute('hidden');
+  statsContainer.classList.toggle('is-collapsed', issuesStatsCollapsed);
+  toggleButton.setAttribute('aria-expanded', String(!issuesStatsCollapsed));
+  toggleButton.innerHTML = issuesStatsCollapsed
+    ? '<i class="bi bi-chevron-down"></i><span>Show Stats</span>'
+    : '<i class="bi bi-chevron-up"></i><span>Hide Stats</span>';
+};
+
+const renderOrdersStatsFallback = () => `
+  <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 seller-stat-card"><p class="text-xs text-gray-500 flex items-center gap-1 seller-stat-label"><i class="bi bi-receipt"></i> Total Orders</p><p class="text-lg font-bold mt-1 seller-stat-value">-</p></div>
+  <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 seller-stat-card"><p class="text-xs text-gray-500 flex items-center gap-1 seller-stat-label"><i class="bi bi-hourglass-split"></i> Pending</p><p class="text-lg font-bold mt-1 seller-stat-value">-</p></div>
+  <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 seller-stat-card"><p class="text-xs text-gray-500 flex items-center gap-1 seller-stat-label"><i class="bi bi-box-seam"></i> Ready</p><p class="text-lg font-bold mt-1 seller-stat-value">-</p></div>
+  <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 seller-stat-card"><p class="text-xs text-gray-500 flex items-center gap-1 seller-stat-label"><i class="bi bi-check-circle"></i> Completed</p><p class="text-lg font-bold mt-1 seller-stat-value">-</p></div>
+`;
+
+const loadOrderStats = async () => {
+  const statsContainer = document.getElementById('orders-stats');
+  if (!statsContainer) return;
+
+  try {
+    const [allRes, pendingRes, readyRes, completedRes] = await Promise.all([
+      getOrders({ page: 1, limit: 1 }).catch(() => null),
+      getOrders({ status: 'pending', page: 1, limit: 1 }).catch(() => null),
+      getOrders({ status: 'ready', page: 1, limit: 1 }).catch(() => null),
+      getOrders({ status: 'completed', page: 1, limit: 1 }).catch(() => null)
+    ]);
+
+    const cards = [
+      { label: 'Total Orders', value: Number.parseInt(allRes?.total, 10) || 0, icon: 'receipt' },
+      { label: 'Pending', value: Number.parseInt(pendingRes?.total, 10) || 0, icon: 'hourglass-split' },
+      { label: 'Ready', value: Number.parseInt(readyRes?.total, 10) || 0, icon: 'box-seam' },
+      { label: 'Completed', value: Number.parseInt(completedRes?.total, 10) || 0, icon: 'check-circle' }
+    ];
+
+    statsContainer.innerHTML = cards.map((card) => `
+      <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 seller-stat-card">
+        <p class="text-xs text-gray-500 flex items-center gap-1 seller-stat-label">
+          <i class="bi bi-${card.icon}"></i> ${card.label}
+        </p>
+        <p class="text-lg font-bold mt-1 seller-stat-value">${card.value}</p>
+      </div>
+    `).join('');
+  } catch (error) {
+    statsContainer.innerHTML = renderOrdersStatsFallback();
+  }
+
+  applyOrdersStatsCollapsedState();
+};
+
+const renderOrdersSkeletons = (count = 3) => {
+  const container = document.getElementById('orders-list');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="card seller-order-card">
+      <div class="card-body">
+        <div class="seller-order-loading-row">
+          <div class="seller-order-loading-col">
+            <div class="home-skeleton shimmer seller-order-loading-title"></div>
+            <div class="home-skeleton shimmer seller-order-loading-line"></div>
+            <div class="home-skeleton shimmer seller-order-loading-line"></div>
+          </div>
+          <div class="seller-order-loading-aside">
+            <div class="home-skeleton shimmer seller-order-loading-line"></div>
+            <div class="home-skeleton shimmer seller-order-loading-title"></div>
+          </div>
+        </div>
+        <div class="home-skeleton shimmer seller-order-loading-actions"></div>
+      </div>
+    </div>
+  `).join('');
+};
+
+const renderOrdersPagination = () => {
+  const paginationContainer = document.getElementById('orders-pagination');
+  if (!paginationContainer) return;
+
+  if (ordersTotalPages <= 1) {
+    paginationContainer.innerHTML = '';
+    return;
+  }
+
+  paginationContainer.innerHTML = `
+    <p class="text-xs sm:text-sm text-gray-600">Page ${orderFilters.page} of ${ordersTotalPages} (${ordersTotalItems} orders)</p>
+    <div class="flex items-center gap-2">
+      <button class="btn btn-sm btn-outline" id="orders-prev-page" ${orderFilters.page <= 1 ? 'disabled' : ''}>Prev</button>
+      <button class="btn btn-sm btn-outline" id="orders-next-page" ${orderFilters.page >= ordersTotalPages ? 'disabled' : ''}>Next</button>
+    </div>
+  `;
+
+  const prevBtn = document.getElementById('orders-prev-page');
+  const nextBtn = document.getElementById('orders-next-page');
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      orderFilters.page = Math.max(1, orderFilters.page - 1);
+      loadOrders();
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      orderFilters.page = Math.min(ordersTotalPages, orderFilters.page + 1);
+      loadOrders();
+    });
+  }
+};
+
 const loadOrders = async () => {
   const container = document.getElementById('orders-list');
+  const paginationContainer = document.getElementById('orders-pagination');
   if (!container) return;
   
   // Update active filter button state
@@ -843,8 +1838,9 @@ const loadOrders = async () => {
       btn.classList.add('active');
     }
   });
-  
-  container.innerHTML = '<div class="text-center py-8"><div class="loading-spinner mx-auto"></div></div>';
+
+  renderOrdersSkeletons(isDesktopSellerViewport() ? 3 : 2);
+  if (paginationContainer) paginationContainer.innerHTML = '';
   
   try {
     // Don't send status if it's 'all' - backend doesn't accept it
@@ -865,6 +1861,9 @@ const loadOrders = async () => {
     const serverLimit = Math.max(1, Number.parseInt(response.limit, 10) || orderFilters.limit || 20);
     orderFilters.page = serverPage;
     orderFilters.limit = serverLimit;
+    ordersTotalItems = totalOrders;
+    ordersTotalPages = totalPages;
+    renderOrdersPagination();
     
     // Update navbar orders badge using global pending count, not current page/filter slice.
     const pendingCount = Math.max(
@@ -908,35 +1907,15 @@ const loadOrders = async () => {
       return;
     }
 
-    const pagination = totalPages > 1 ? `
-      <div class="flex items-center justify-between gap-2 mt-4 pt-2 border-t border-gray-200">
-        <p class="text-xs sm:text-sm text-gray-600">Page ${orderFilters.page} of ${totalPages} (${totalOrders} orders)</p>
-        <div class="flex items-center gap-2">
-          <button class="btn btn-sm btn-outline orders-page-btn" data-page="${Math.max(1, orderFilters.page - 1)}" ${orderFilters.page <= 1 ? 'disabled' : ''}>Prev</button>
-          <button class="btn btn-sm btn-outline orders-page-btn" data-page="${Math.min(totalPages, orderFilters.page + 1)}" ${orderFilters.page >= totalPages ? 'disabled' : ''}>Next</button>
-        </div>
-      </div>
-    ` : '';
-
-    container.innerHTML = `
-      ${currentOrders.map(order => createOrderCard(order)).join('')}
-      ${pagination}
-    `;
+    container.innerHTML = `${currentOrders.map(order => createOrderCard(order)).join('')}`;
     
     // Attach filter listeners after rendering
     attachOrderFilterListeners();
-    container.querySelectorAll('.orders-page-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const nextPage = Number.parseInt(btn.dataset.page, 10);
-        if (!Number.isFinite(nextPage) || nextPage < 1 || nextPage === orderFilters.page) return;
-        orderFilters.page = nextPage;
-        loadOrders();
-      });
-    });
     
   } catch (error) {
     console.error('Error loading orders:', error);
     container.innerHTML = '<div class="text-center py-8 text-danger">Failed to load orders</div>';
+    if (paginationContainer) paginationContainer.innerHTML = '';
   }
 };
 
@@ -953,24 +1932,79 @@ const createOrderCard = (order) => {
   const safeOrderNumber = escapeHtml(order?.order_number || 'N/A');
   const safeBuyerName = escapeHtml(order?.buyer?.user?.full_name || 'Unknown Buyer');
   const safeDeliveryOption = escapeHtml(order?.delivery_option || 'Not specified');
-  const safeOrderId = String(order?.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const canonicalOrderId = getCanonicalOrderId(order);
+  const safeOrderId = String(canonicalOrderId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const safeOrderNumberJs = String(order?.order_number || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const items = Array.isArray(order?.items) ? order.items : [];
+  const itemsCount = items.length;
+  const totalAmount = Number(order?.total_amount || 0);
+  const createdDateLabel = order?.created_at
+    ? new Date(order.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+    : 'N/A';
+  const preferredLabel = order?.preferred_date
+    ? `${new Date(order.preferred_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}${order?.preferred_time ? ` • ${order.preferred_time}` : ''}`
+    : 'Not set';
+  const paymentLabel = order?.payment_method ? String(order.payment_method).toUpperCase() : 'COD';
+  const deliveryOptionLabel = order?.delivery_option === 'pickup'
+    ? 'Pickup'
+    : order?.delivery_option === 'drop-off'
+      ? 'Drop-off'
+      : 'Unspecified';
   
   return `
-    <div class="card mb-4" data-order-id="${escapeHtml(order?.id || '')}">
+    <div class="card seller-order-card" data-order-id="${escapeHtml(canonicalOrderId || '')}">
       <div class="card-body">
-        <div class="flex justify-between items-start mb-4">
-          <div>
-            <h4 class="font-bold text-lg">Order #${safeOrderNumber}</h4>
-            <p class="text-sm text-gray-600">
-              <i class="bi bi-person"></i> ${safeBuyerName}
-            </p>
-            <p class="text-sm text-gray-600">${formatDate(order.created_at)}</p>
+        <div class="seller-order-shell">
+          <div class="seller-order-main">
+            <div class="flex justify-between items-start mb-4 seller-order-head">
+              <div class="seller-order-head-copy">
+                <h4 class="font-bold text-lg seller-order-title">Order #${safeOrderNumber}</h4>
+                <p class="text-sm text-gray-600">${formatRelativeTime(order?.created_at)}</p>
+              </div>
+              <span class="badge badge-${statusClass} seller-order-badge">${escapeHtml(status.toUpperCase())}</span>
+            </div>
+
+            <div class="mb-4 seller-order-meta">
+              <p class="text-sm text-gray-600 mb-2">
+                <i class="bi bi-person"></i> ${safeBuyerName}
+              </p>
+              <p class="text-sm text-gray-600">
+                <i class="bi bi-box"></i> ${itemsCount} item${itemsCount === 1 ? '' : 's'} • ${formatCurrency(totalAmount)}
+              </p>
+              ${order.preferred_date ? `
+                <p class="text-sm text-primary mt-1">
+                  <i class="bi bi-calendar-check"></i> Preferred: ${preferredLabel}
+                </p>
+              ` : ''}
+            </div>
+
+            <div class="seller-order-meta-grid mb-4">
+              <div class="seller-order-meta-chip">
+                <span>Created</span>
+                <strong>${createdDateLabel}</strong>
+              </div>
+              <div class="seller-order-meta-chip">
+                <span>Delivery</span>
+                <strong>${deliveryOptionLabel}</strong>
+              </div>
+              <div class="seller-order-meta-chip">
+                <span>Payment</span>
+                <strong>${paymentLabel}</strong>
+              </div>
+              <div class="seller-order-meta-chip">
+                <span>Preferred</span>
+                <strong>${preferredLabel}</strong>
+              </div>
+            </div>
           </div>
-          <span class="badge badge-${statusClass}">${escapeHtml(status.toUpperCase())}</span>
+
+          <aside class="seller-order-aside">
+            <p class="seller-order-aside-label">Order Total</p>
+            <p class="seller-order-aside-total">${formatCurrency(totalAmount)}</p>
+            <p class="seller-order-aside-items">${itemsCount} item${itemsCount === 1 ? '' : 's'}</p>
+          </aside>
         </div>
-        
+
         <div class="mb-4">
           <p class="text-sm font-semibold mb-2">Order Items:</p>
           <ul class="text-sm space-y-1">
@@ -991,7 +2025,7 @@ const createOrderCard = (order) => {
         ` : ''}
         
         ${order.seller_delivery_proof_url ? `
-          <div class="mb-4 p-3 bg-green-50 rounded-lg border border-green-200">
+          <div class="seller-order-proof seller-order-proof--seller">
             <p class="text-sm font-semibold mb-2 text-green-800">
               <i class="bi bi-check-circle-fill"></i> Delivery Proof Attached
             </p>
@@ -1004,7 +2038,7 @@ const createOrderCard = (order) => {
         ` : ''}
         
         ${order.buyer_delivery_proof_url ? `
-          <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <div class="seller-order-proof seller-order-proof--buyer">
             <p class="text-sm font-semibold mb-2 text-blue-800">
               <i class="bi bi-check-circle-fill"></i> Buyer Receipt Confirmation
             </p>
@@ -1023,7 +2057,7 @@ const createOrderCard = (order) => {
           </p>
         </div>
         
-        <div class="flex gap-2 flex-wrap">
+        <div class="flex gap-2 flex-wrap seller-order-actions seller-order-actions-desktop">
           ${status === 'pending' ? `
             <button class="btn btn-sm btn-success" onclick="window.confirmOrder('${safeOrderId}')">
               <i class="bi bi-check-circle"></i> Confirm Order
@@ -1070,7 +2104,7 @@ window.confirmOrder = async (orderId) => {
   try {
     await updateOrderStatus(orderId, 'confirmed');
     showSuccess('Order confirmed!');
-    await loadOrders();
+    await Promise.all([loadOrders(), loadOrderStats()]);
     await loadDashboardStats();
   } catch (error) {
     console.error('Error confirming order:', error);
@@ -1082,7 +2116,7 @@ window.markOrderReady = async (orderId) => {
   try {
     await updateOrderStatus(orderId, 'ready');
     showSuccess('Order marked as ready for pickup/delivery');
-    await loadOrders();
+    await Promise.all([loadOrders(), loadOrderStats()]);
   } catch (error) {
     console.error('Error updating order:', error);
     showError(error.message || 'Failed to update order');
@@ -1090,9 +2124,14 @@ window.markOrderReady = async (orderId) => {
 };
 
 window.completeOrder = async (orderId) => {
-  const order = currentOrders.find(o => o.id === orderId);
+  const order = findOrderByReference(orderId);
   if (!order) {
     showError('Order not found');
+    return;
+  }
+  const targetOrderId = resolveOrderApiId(orderId);
+  if (!targetOrderId) {
+    showError('Unable to resolve order ID');
     return;
   }
   const safeOrderNumber = escapeHtml(order.order_number || 'N/A');
@@ -1173,14 +2212,14 @@ window.completeOrder = async (orderId) => {
       btnConfirm.disabled = true;
       btnConfirm.innerHTML = '<i class="bi bi-hourglass-split"></i> Uploading & Completing...';
       
-      await confirmOrder(orderId, file);
+      await confirmOrder(targetOrderId, file);
       showSuccess('Order completed with delivery proof!');
       
       // Close modal
       document.querySelector('.modal-backdrop').remove();
       
       // Reload orders
-      await loadOrders();
+      await Promise.all([loadOrders(), loadOrderStats()]);
       await loadDashboardStats();
     } catch (error) {
       console.error('Error completing order:', error);
@@ -1198,52 +2237,197 @@ window.reportOrderIssue = (orderId, orderNumber) => {
 
 // ============ My Issues Management ============
 
+const ISSUE_STATUS_CONFIG = {
+  under_review: { color: 'warning', icon: 'hourglass-split', label: 'Under Review' },
+  resolved: { color: 'success', icon: 'check-circle-fill', label: 'Resolved' },
+  rejected: { color: 'danger', icon: 'x-circle-fill', label: 'Rejected' }
+};
+
+const normalizeIssueStatus = (status) => {
+  const key = String(status || 'under_review').toLowerCase();
+  return ISSUE_STATUS_CONFIG[key] ? key : 'under_review';
+};
+
+const getIssueSearchText = (issue) => {
+  const orderNumber = issue?.order?.order_number || issue?.order_number || '';
+  const buyerName = issue?.order?.buyer?.user?.full_name || issue?.buyer?.user?.full_name || '';
+  return [
+    issue?.id,
+    issue?.issue_type,
+    issue?.description,
+    orderNumber,
+    buyerName
+  ].map(value => String(value || '').toLowerCase()).join(' ');
+};
+
+const getIssueSortTimestamp = (issue) => {
+  const lastUpdated = issue?.updated_at || issue?.resolved_at || issue?.created_at;
+  const ts = Date.parse(lastUpdated);
+  return Number.isFinite(ts) ? ts : 0;
+};
+
+const getIssueResolutionDays = (issue) => {
+  const created = Date.parse(issue?.created_at || '');
+  const resolved = Date.parse(issue?.resolved_at || issue?.updated_at || '');
+  if (!Number.isFinite(created) || !Number.isFinite(resolved) || resolved < created) return null;
+  return Math.max(1, Math.round((resolved - created) / (1000 * 60 * 60 * 24)));
+};
+
+const getIssueExpectedResponseDays = (issue) => {
+  const created = Date.parse(issue?.created_at || '');
+  if (!Number.isFinite(created)) return 3;
+  const elapsed = (Date.now() - created) / (1000 * 60 * 60 * 24);
+  if (elapsed < 1) return 2;
+  if (elapsed < 2) return 1;
+  return 0;
+};
+
+const buildIssueAttachmentsHtml = (issue) => {
+  const attachments = Array.isArray(issue?.evidence_urls) ? issue.evidence_urls : [];
+  if (attachments.length === 0) return '';
+
+  return `
+    <div class="seller-issue-attachments mt-3">
+      <p class="seller-issue-attachments-title"><i class="bi bi-paperclip"></i> Attachments (${attachments.length})</p>
+      <div class="seller-issue-attachments-grid">
+        ${attachments.slice(0, 3).map((url) => {
+      const fullUrl = getIssueEvidenceUrl(url);
+      const ext = String(url || '').split('.').pop()?.toUpperCase() || 'FILE';
+      return `
+          <a class="seller-issue-attachment" href="${fullUrl}" target="_blank" rel="noopener">
+            <img src="${fullUrl}" alt="Issue attachment">
+            <span>${ext} • preview</span>
+          </a>
+        `;
+    }).join('')}
+      </div>
+    </div>
+  `;
+};
+
+const renderIssueStats = (issues = []) => {
+  const container = document.getElementById('issues-stats');
+  if (!container) return;
+
+  const openCount = issues.filter((issue) => normalizeIssueStatus(issue.status) === 'under_review').length;
+  const reviewCount = openCount;
+  const resolvedIssues = issues.filter((issue) => normalizeIssueStatus(issue.status) === 'resolved');
+  const resolvedCount = resolvedIssues.length;
+  const avgResolutionDays = resolvedCount > 0
+    ? Math.round(resolvedIssues.reduce((sum, issue) => sum + (getIssueResolutionDays(issue) || 0), 0) / resolvedCount)
+    : 0;
+
+  const cards = [
+    { label: 'Open', value: openCount, icon: 'inbox' },
+    { label: 'Under Review', value: reviewCount, icon: 'hourglass-split' },
+    { label: 'Resolved', value: resolvedCount, icon: 'check-circle' },
+    { label: 'Avg Resolution', value: `${avgResolutionDays}d`, icon: 'clock-history' }
+  ];
+
+  container.innerHTML = cards.map(card => `
+    <div class="seller-issue-stat-card">
+      <p class="seller-issue-stat-label"><i class="bi bi-${card.icon}"></i> ${card.label}</p>
+      <p class="seller-issue-stat-value">${card.value}</p>
+    </div>
+  `).join('');
+};
+
+const updateIssueFilterCounts = (issues = []) => {
+  const counts = {
+    all: issues.length,
+    under_review: issues.filter(issue => normalizeIssueStatus(issue.status) === 'under_review').length,
+    resolved: issues.filter(issue => normalizeIssueStatus(issue.status) === 'resolved').length,
+    rejected: issues.filter(issue => normalizeIssueStatus(issue.status) === 'rejected').length
+  };
+
+  document.querySelectorAll('.issue-filter').forEach((btn) => {
+    const status = btn.dataset.status || 'all';
+    const baseLabel = btn.dataset.baseLabel || btn.textContent.trim().replace(/\s*\(\d+\)$/, '');
+    btn.dataset.baseLabel = baseLabel;
+    btn.textContent = `${baseLabel} (${counts[status] ?? 0})`;
+  });
+};
+
+const renderIssueSkeletons = (count = 3) => {
+  const container = document.getElementById('issues-list');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="card seller-issue-card">
+      <div class="card-body seller-issue-body">
+        <div class="home-skeleton shimmer home-skeleton-title"></div>
+        <div class="home-skeleton shimmer home-skeleton-line mt-2"></div>
+        <div class="home-skeleton shimmer home-skeleton-line mt-2"></div>
+        <div class="home-skeleton shimmer home-skeleton-actions mt-3"></div>
+      </div>
+    </div>
+  `).join('');
+};
+
 const loadMyIssues = async () => {
   const container = document.getElementById('issues-list');
   if (!container) return;
-  
-  // Update active filter button state
+
   document.querySelectorAll('.issue-filter').forEach(btn => {
     btn.classList.remove('active');
     if (btn.dataset.status === issueFilters.status || (btn.dataset.status === 'all' && !issueFilters.status)) {
       btn.classList.add('active');
     }
   });
-  
-  showSpinner(container, 'md', 'primary', 'Loading issues...');
-  
+
+  renderIssueSkeletons();
+
   try {
     const response = await getMyIssues({ status: issueFilters.status });
-    let issues = response.data?.issues || [];
-    
-    // Filter by status if not 'all'
+    const allIssues = response.data?.issues || [];
+    renderIssueStats(allIssues);
+    applyIssuesStatsCollapsedState();
+    updateIssueFilterCounts(allIssues);
+
+    let issues = [...allIssues];
     if (issueFilters.status && issueFilters.status !== 'all') {
-      issues = issues.filter(issue => issue.status === issueFilters.status);
+      issues = issues.filter(issue => normalizeIssueStatus(issue.status) === issueFilters.status);
     }
-    
+
+    const searchTerm = String(issueFilters.search || '').trim().toLowerCase();
+    if (searchTerm) {
+      issues = issues.filter((issue) => getIssueSearchText(issue).includes(searchTerm));
+    }
+
+    if (issueFilters.sort === 'oldest') {
+      issues.sort((a, b) => getIssueSortTimestamp(a) - getIssueSortTimestamp(b));
+    } else if (issueFilters.sort === 'updated') {
+      issues.sort((a, b) => {
+        const aUpdated = Date.parse(a?.updated_at || a?.created_at || '');
+        const bUpdated = Date.parse(b?.updated_at || b?.created_at || '');
+        return (Number.isFinite(bUpdated) ? bUpdated : 0) - (Number.isFinite(aUpdated) ? aUpdated : 0);
+      });
+    } else {
+      issues.sort((a, b) => getIssueSortTimestamp(b) - getIssueSortTimestamp(a));
+    }
+
     currentIssues = issues;
-    
+    applyIssueFiltersToUi();
+
     if (currentIssues.length === 0) {
-      let emptyMessage = 'No issues reported';
-      if (issueFilters.status === 'under_review') {
-        emptyMessage = 'No issues under review';
-      } else if (issueFilters.status === 'resolved') {
-        emptyMessage = 'No resolved issues';
-      } else if (issueFilters.status === 'rejected') {
-        emptyMessage = 'No rejected issues';
-      }
-      
+      const filteredState = issueFilters.status !== 'all' || searchTerm.length > 0;
       container.innerHTML = `
         <div class="text-center py-12">
           <i class="bi bi-flag text-6xl text-gray-400"></i>
-          <p class="text-gray-500 mt-4">${emptyMessage}</p>
-          ${issueFilters.status !== 'all' ? '<button class="btn btn-primary mt-4" onclick="document.querySelector(\'.issue-filter[data-status=\\\"all\\\"]\').click()">View All Issues</button>' : '<a href="#orders" class="btn btn-primary mt-4">View Orders</a>'}
+          <p class="font-semibold mt-4">${filteredState ? 'No matching issues' : 'No issues reported'}</p>
+          <p class="text-sm text-gray-600 mt-2">Submitted disputes and resolutions will appear here.</p>
+          <p class="text-xs text-gray-500 mt-2">Issues can be filed from completed orders only.</p>
+          <div class="mt-4 flex items-center justify-center gap-2 flex-wrap">
+            ${filteredState
+        ? '<button class="btn btn-primary" onclick="window.resetIssueFilters()">View All Issues</button>'
+        : '<a href="#orders" class="btn btn-primary">View Orders</a>'}
+            <button class="btn btn-outline" onclick="window.openIssueResolutionGuide()">How issue resolution works</button>
+          </div>
         </div>
       `;
       attachIssueFilterListeners();
       return;
     }
-    
+
     container.innerHTML = currentIssues.map(issue => createIssueCard(issue)).join('');
     attachIssueFilterListeners();
   } catch (error) {
@@ -1252,112 +2436,122 @@ const loadMyIssues = async () => {
       <div class="text-center py-12">
         <i class="bi bi-exclamation-circle text-6xl text-red-400"></i>
         <p class="text-red-500 mt-4">Failed to load issues</p>
-        <button class="btn btn-primary mt-4" onclick="window.location.reload()">Retry</button>
+        <button class="btn btn-primary mt-4" onclick="window.loadIssuesFromUI()">Retry</button>
       </div>
     `;
   }
 };
 
 const createIssueCard = (issue) => {
-  const statusColors = {
-    under_review: 'warning',
-    resolved: 'success',
-    rejected: 'danger'
-  };
-  
-  const statusIcons = {
-    under_review: 'hourglass-split',
-    resolved: 'check-circle-fill',
-    rejected: 'x-circle-fill'
-  };
+  const issueStatus = normalizeIssueStatus(issue.status);
+  const statusConfig = ISSUE_STATUS_CONFIG[issueStatus];
+  const priority = String(issue.priority || 'medium').toLowerCase();
+  const priorityLabel = priority.toUpperCase();
+  const priorityClass = priority === 'urgent' || priority === 'high'
+    ? 'seller-issue-priority--high'
+    : priority === 'low'
+      ? 'seller-issue-priority--low'
+      : 'seller-issue-priority--medium';
+  const timelineLabel = issueStatus === 'resolved'
+    ? 'Reported -> Under Review -> Resolved'
+    : issueStatus === 'rejected'
+      ? 'Reported -> Under Review -> Rejected'
+      : 'Reported -> Under Review -> Awaiting Resolution';
+  const assignedRole = issueStatus === 'under_review'
+    ? (issue.assigned_role || 'Support')
+    : 'Resolution Team';
+  const resolutionDays = getIssueResolutionDays(issue);
+  const expectedDays = getIssueExpectedResponseDays(issue);
+  const relatedOrderId = issue?.order_id || issue?.order?.id || '';
+  const updatedAtTs = Date.parse(issue?.updated_at || issue?.created_at || '');
+  const isRecentUpdate = Number.isFinite(updatedAtTs) && (Date.now() - updatedAtTs) <= (1000 * 60 * 60 * 24);
   const safeIssueId = String(issue?.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const safeIssueType = escapeHtml(issue?.issue_type || 'Issue');
-  const safeStatus = escapeHtml(String(issue?.status || 'unknown').replace('_', ' ').toUpperCase());
-  const safeDescription = escapeHtml(issue?.description || '');
-  const safeOrderNumber = escapeHtml(issue?.order?.order_number || 'N/A');
-  const safePriority = escapeHtml(String(issue?.priority || 'medium').toUpperCase());
-  const safeResolution = escapeHtml(issue?.resolution || '');
-  const safeOutcomeAction = escapeHtml(String(issue?.outcome_action || '').replace(/_/g, ' '));
-  const safeOutcomeNotes = escapeHtml(issue?.outcome_notes || '');
-  
+
   return `
-    <div class="card hover:shadow-lg transition-shadow">
-      <div class="card-body">
-        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-          <div class="flex-1">
-            <div class="flex items-start gap-3">
-              <i class="bi bi-flag-fill text-warning text-xl mt-1"></i>
-              <div class="flex-1">
-                <div class="flex items-center gap-2 mb-2">
-                  <h3 class="font-bold text-lg">${safeIssueType}</h3>
-                  <span class="badge badge-${statusColors[issue.status] || 'secondary'}">
-                    <i class="bi bi-${statusIcons[issue.status] || 'circle'}"></i>
-                    ${safeStatus}
-                  </span>
-                </div>
-                
-                <p class="text-sm text-gray-600 mb-3 line-clamp-2">${safeDescription}</p>
-                
-                <div class="flex flex-wrap gap-4 text-sm text-gray-500">
-                  <div>
-                    <i class="bi bi-receipt"></i>
-                    <strong>Order:</strong> #${safeOrderNumber}
-                  </div>
-                  <div>
-                    <i class="bi bi-flag"></i>
-                    <strong>Priority:</strong> ${safePriority}
-                  </div>
-                  <div>
-                    <i class="bi bi-calendar"></i>
-                    <strong>Reported:</strong> ${formatRelativeTime(issue.created_at)}
-                  </div>
-                  ${issue.status === 'under_review' ? `
-                    <div>
-                      <i class="bi bi-alarm"></i>
-                      <strong>SLA:</strong> ${issue.is_overdue ? 'OVERDUE' : 'On Track'}
-                    </div>
-                  ` : ''}
-                  ${issue.evidence_urls && issue.evidence_urls.length > 0 ? `
-                    <div>
-                      <i class="bi bi-paperclip"></i>
-                      <strong>Evidence:</strong> ${issue.evidence_urls.length} file(s)
-                    </div>
-                  ` : ''}
-                </div>
-                
-                ${issue.resolution && issue.status !== 'under_review' ? `
-                  <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p class="text-sm font-semibold text-blue-800 mb-1">
-                      <i class="bi bi-person-badge"></i> Resolution:
-                    </p>
-                    <p class="text-sm text-blue-900">${safeResolution}</p>
-                  </div>
-                ` : ''}
-                ${issue.outcome_action ? `
-                  <div class="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <p class="text-sm font-semibold text-green-800 mb-1">
-                      <i class="bi bi-cash-coin"></i> Outcome Action
-                    </p>
-                    <p class="text-sm text-green-900">
-                      ${safeOutcomeAction}
-                      ${issue.outcome_amount ? ` - ${formatCurrency(issue.outcome_amount)}` : ''}
-                    </p>
-                    ${issue.outcome_notes ? `<p class="text-xs text-green-800 mt-1">${safeOutcomeNotes}</p>` : ''}
-                  </div>
-                ` : ''}
+    <div class="card seller-issue-card hover:shadow-lg transition-shadow ${isRecentUpdate ? 'is-recent-update' : ''}" data-issue-id="${issue.id}">
+      <div class="card-body seller-issue-body">
+        <div class="seller-issue-topline">
+          <div class="seller-issue-head-copy">
+            <h3 class="font-bold text-lg seller-issue-title">${escapeHtml(issue.issue_type || 'Issue')}</h3>
+            <p class="seller-issue-subid">Issue #${escapeHtml(issue.id || 'N/A')} • Order #${escapeHtml(issue.order?.order_number || 'N/A')}</p>
+          </div>
+          <div class="seller-issue-chips">
+            <span class="badge badge-${statusConfig.color} seller-issue-status">
+              <i class="bi bi-${statusConfig.icon}"></i> ${statusConfig.label}
+            </span>
+            <span class="seller-issue-priority ${priorityClass}">${priorityLabel}</span>
+          </div>
+        </div>
+
+        <p class="text-sm text-gray-600 mb-3 seller-issue-desc">${escapeHtml(issue.description || '')}</p>
+
+        <div class="seller-issue-timeline">${timelineLabel}</div>
+
+        <div class="seller-issue-meta-grid">
+          <div class="seller-issue-meta-item"><i class="bi bi-calendar"></i> Reported: ${formatRelativeTime(issue.created_at)}</div>
+          <div class="seller-issue-meta-item"><i class="bi bi-clock-history"></i> Last updated: ${formatRelativeTime(issue.updated_at || issue.created_at)}</div>
+          <div class="seller-issue-meta-item"><i class="bi bi-person-badge"></i> Assigned: ${escapeHtml(assignedRole)}</div>
+          ${issueStatus === 'under_review'
+      ? `<div class="seller-issue-meta-item"><i class="bi bi-alarm"></i> Expected response: ${expectedDays > 0 ? `~${expectedDays} day(s)` : 'within 24 hours'}</div>`
+      : `<div class="seller-issue-meta-item"><i class="bi bi-check2-circle"></i> ${resolutionDays ? `Resolved in ${resolutionDays} day(s)` : 'Resolution posted'}</div>`}
+        </div>
+
+        ${buildIssueAttachmentsHtml(issue)}
+
+        <details class="seller-issue-details mt-3">
+          <summary>Quick details</summary>
+          <div class="seller-issue-details-body">
+            ${issue.resolution ? `
+              <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-2">
+                <p class="text-sm font-semibold text-blue-800 mb-1"><i class="bi bi-person-badge"></i> Resolution</p>
+                <p class="text-sm text-blue-900">${escapeHtml(issue.resolution)}</p>
               </div>
-            </div>
+            ` : ''}
+            ${issue.outcome_action ? `
+              <div class="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p class="text-sm font-semibold text-green-800 mb-1"><i class="bi bi-cash-coin"></i> Outcome Action</p>
+                <p class="text-sm text-green-900">
+                  ${escapeHtml(String(issue.outcome_action).replace(/_/g, ' '))}
+                  ${issue.outcome_amount ? ` - ${formatCurrency(issue.outcome_amount)}` : ''}
+                </p>
+                ${issue.outcome_notes ? `<p class="text-xs text-green-800 mt-1">${escapeHtml(issue.outcome_notes)}</p>` : ''}
+              </div>
+            ` : ''}
           </div>
-          
-          <div class="flex gap-2 flex-wrap sm:flex-col">
-            <button class="btn btn-sm btn-outline" onclick="window.viewSellerIssueDetails('${safeIssueId}')">
-              <i class="bi bi-eye"></i> View Details
+        </details>
+
+        <div class="seller-issue-actions">
+          <button class="btn btn-sm btn-primary" onclick="window.viewSellerIssueDetails('${safeIssueId}')">
+            <i class="bi bi-eye"></i> View Issue
+          </button>
+          ${relatedOrderId ? `
+            <button class="btn btn-sm btn-outline" onclick="window.openOrderChat('${relatedOrderId}')">
+              <i class="bi bi-chat-dots"></i> Open Related Messages
             </button>
-          </div>
+          ` : ''}
         </div>
       </div>
     </div>
   `;
+};
+
+window.openIssueResolutionGuide = () => {
+  createModal({
+    title: 'How Issue Resolution Works',
+    content: `
+      <div class="space-y-3 text-sm text-gray-700">
+        <p><strong>1.</strong> Report issue from a completed order.</p>
+        <p><strong>2.</strong> Include complete details and evidence attachments.</p>
+        <p><strong>3.</strong> Support reviews and coordinates with buyer.</p>
+        <p><strong>4.</strong> Resolution is posted with final action and notes.</p>
+        <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-900">
+          Typical review window is 1-3 business days depending on complexity.
+        </div>
+      </div>
+    `,
+    footer: '<button class="btn btn-primary" data-modal-close>Got it</button>',
+    size: 'md'
+  });
 };
 
 window.viewSellerIssueDetails = async (issueId) => {
@@ -1488,74 +2682,23 @@ window.messageCustomer = (orderId) => {
   stopTypingSignal();
   hideTypingIndicator();
   currentConversation = orderId;
-  
-  // Navigate to messaging page first
+
   window.location.hash = '#messaging';
-  
-  // Wait for the messaging section to be visible, then open the chat
-  setTimeout(async () => {
-    const chatWindow = document.getElementById('chat-window');
-    
-    if (!chatWindow) {
-      console.error('Chat window element not found');
-      return;
-    }
-    
-    try {
-      const response = await getOrderMessages(orderId);
-      const messages = response.data?.messages || [];
-      
-      chatWindow.innerHTML = `
-        <div class="flex flex-col h-96">
-          <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3">
-            ${messages.map(msg => createMessageBubble(msg)).join('')}
-          </div>
-          
-          <div class="border-t p-4">
-            <div class="space-y-2">
-              <div id="message-attachment-preview" class="hidden"></div>
-              <form id="chat-form" class="flex gap-2">
-                <input type="file" id="message-attachment" class="hidden" accept="image/jpeg,image/jpg,image/png">
-                <button type="button" class="btn btn-outline px-3" id="btn-attach-message" title="Attach image">
-                  <i class="bi bi-paperclip"></i>
-                </button>
-                <input type="text" 
-                       id="message-input" 
-                       class="form-control flex-1" 
-                       placeholder="Type a message...">
-                <button type="submit" class="btn btn-primary">
-                  <i class="bi bi-send"></i> Send
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      `;
-      
-      // Auto-scroll to bottom
-      const messagesContainer = document.getElementById('chat-messages');
-      setupLazyMessageRendering(messagesContainer, messages, response.data?.user_role || 'seller');
-      scrollChatToBottom(messagesContainer);
-      initAttachmentPreviewDelegation();
-      
-      // Handle send message
-      const chatForm = document.getElementById('chat-form');
-      chatForm.addEventListener('submit', handleSendMessage);
-      setupMessageAttachmentUI();
-      setupTypingInputHandlers();
-      hideTypingIndicator();
-      
-    } catch (error) {
-      console.error('Error loading messages:', error);
-      showError('Failed to load messages');
-    }
-  }, 100);
+  setMessagingMobileView('chat');
+  setTimeout(() => {
+    window.openOrderChat(orderId);
+  }, 80);
 };
 
 window.viewOrderDetails = async (orderId) => {
   try {
+    const targetOrderId = resolveOrderApiId(orderId);
+    if (!targetOrderId) {
+      showError('Unable to resolve order ID');
+      return;
+    }
     // Fetch fresh order data to get latest delivery proof images
-    const response = await getOrderById(orderId);
+    const response = await getOrderById(targetOrderId);
     const order = response.data?.order;
     
     if (!order) {
@@ -1567,7 +2710,7 @@ window.viewOrderDetails = async (orderId) => {
     let productReviews = [];
     try {
       const token = getToken();
-      const reviewsUrl = buildUrl(`/orders/${orderId}/reviews`);
+      const reviewsUrl = buildUrl(`/orders/${targetOrderId}/reviews`);
       const reviewsResponse = await fetch(reviewsUrl, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -1775,6 +2918,7 @@ let bestTimeChart = null;
 let promoImpactChart = null;
 let analyticsListenersAttached = false;
 let latestAnalyticsSnapshot = null;
+let analyticsExportMenuOpen = false;
 const ANALYTICS_STORAGE_KEY = 'agrimarket_seller_analytics_settings';
 const analyticsState = {
   range: 'last_30_days',
@@ -1786,6 +2930,79 @@ const analyticsState = {
   goalOrders: 0,
   promoStartDate: '',
   promoDiscount: 0
+};
+
+const getAnalyticsRangeLabel = () => {
+  switch (analyticsState.range) {
+    case 'last_7_days':
+      return 'previous 7 days';
+    case 'last_30_days':
+      return 'previous 30 days';
+    case 'last_90_days':
+      return 'previous 90 days';
+    case 'last_365_days':
+      return 'previous year';
+    case 'custom':
+      return analyticsState.customFrom && analyticsState.customTo
+        ? `${analyticsState.customFrom} to ${analyticsState.customTo}`
+        : 'custom period';
+    default:
+      return 'previous period';
+  }
+};
+
+const updateAnalyticsBaselineText = () => {
+  const baselineEl = document.getElementById('analytics-compare-baseline');
+  if (!baselineEl) return;
+  baselineEl.textContent = `vs ${getAnalyticsRangeLabel()}`;
+};
+
+const updateAnalyticsFreshness = ({ loading = false, failed = false } = {}) => {
+  const freshnessEl = document.getElementById('analytics-last-updated');
+  if (!freshnessEl) return;
+  freshnessEl.classList.toggle('is-loading', loading);
+  if (loading) {
+    freshnessEl.textContent = 'Updating data...';
+    return;
+  }
+  if (failed) {
+    freshnessEl.textContent = 'Update failed. Try refresh.';
+    return;
+  }
+  freshnessEl.textContent = `Updated ${new Date().toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}`;
+};
+
+const updateAnalyticsQuickRangeUi = () => {
+  const now = new Date();
+  const ytdStart = toLocalIsoDate(new Date(now.getFullYear(), 0, 1));
+  const ytdEnd = toLocalIsoDate(now);
+  const chips = document.querySelectorAll('[data-analytics-quick-range]');
+  chips.forEach((chip) => {
+    const value = chip.dataset.analyticsQuickRange || '';
+    const isYtd = value === 'ytd'
+      && analyticsState.range === 'custom'
+      && analyticsState.customFrom === ytdStart
+      && analyticsState.customTo === ytdEnd;
+    const isActive = value === analyticsState.range || isYtd;
+    chip.classList.toggle('is-active', Boolean(isActive));
+  });
+};
+
+const closeAnalyticsExportMenu = () => {
+  const menu = document.getElementById('analytics-export-menu');
+  const toggle = document.getElementById('btn-analytics-export-toggle');
+  analyticsExportMenuOpen = false;
+  if (menu) menu.hidden = true;
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+};
+
+const toggleAnalyticsExportMenu = () => {
+  const menu = document.getElementById('analytics-export-menu');
+  const toggle = document.getElementById('btn-analytics-export-toggle');
+  if (!menu || !toggle) return;
+  analyticsExportMenuOpen = !analyticsExportMenuOpen;
+  menu.hidden = !analyticsExportMenuOpen;
+  toggle.setAttribute('aria-expanded', analyticsExportMenuOpen ? 'true' : 'false');
 };
 
 const toNumber = (value) => {
@@ -1986,6 +3203,8 @@ const fetchAnalyticsOrders = async () => {
 const loadAnalytics = async () => {
   try {
     setupAnalyticsEventListeners();
+    updateAnalyticsBaselineText();
+    updateAnalyticsFreshness({ loading: true });
     showSpinner();
 
     const [analyticsRes, productsRes, ordersRes] = await Promise.allSettled([
@@ -2024,6 +3243,7 @@ const loadAnalytics = async () => {
       loadTopProductsChart()
     ]);
 
+    renderAnalyticsPrimaryDeltas();
     renderCompareSummaryCards();
     renderFunnelChartCard();
     renderBestSellingTimeChart();
@@ -2033,10 +3253,12 @@ const loadAnalytics = async () => {
     renderProfitAnalyticsCard();
     renderGoalTrackingCard();
     renderPromoImpactCard();
+    updateAnalyticsFreshness();
     
   } catch (error) {
     console.error('Error loading analytics:', error);
     showError('Failed to load analytics data');
+    updateAnalyticsFreshness({ failed: true });
   } finally {
     hideSpinner();
   }
@@ -2370,7 +3592,11 @@ const setupAnalyticsEventListeners = () => {
   const customFromWrap = document.getElementById('analytics-custom-from-wrap');
   const customToWrap = document.getElementById('analytics-custom-to-wrap');
   const refreshBtn = document.getElementById('btn-analytics-refresh');
+  const quickRangeChips = document.querySelectorAll('[data-analytics-quick-range]');
+  const exportToggleBtn = document.getElementById('btn-analytics-export-toggle');
   const exportCsvBtn = document.getElementById('btn-export-analytics-csv');
+  const exportAllCsvBtn = document.getElementById('btn-export-analytics-csv-all');
+  const exportChartPngBtn = document.getElementById('btn-export-analytics-chart-png');
   const exportPdfBtn = document.getElementById('btn-export-analytics-pdf');
   const marginInput = document.getElementById('analytics-default-margin');
   const goalSales = document.getElementById('goal-sales-target');
@@ -2396,6 +3622,8 @@ const setupAnalyticsEventListeners = () => {
   if (promoStart) promoStart.value = analyticsState.promoStartDate || '';
   if (promoDiscount) promoDiscount.value = analyticsState.promoDiscount || 0;
   toggleCustom();
+  updateAnalyticsQuickRangeUi();
+  updateAnalyticsBaselineText();
 
   if (rangeSelect) {
     rangeSelect.addEventListener('change', async () => {
@@ -2406,6 +3634,8 @@ const setupAnalyticsEventListeners = () => {
       }
       toggleCustom();
       saveAnalyticsSettings();
+      updateAnalyticsQuickRangeUi();
+      updateAnalyticsBaselineText();
       await loadAnalytics();
     });
   }
@@ -2414,7 +3644,9 @@ const setupAnalyticsEventListeners = () => {
     compareSelect.addEventListener('change', async () => {
       analyticsState.compareMode = compareSelect.value;
       saveAnalyticsSettings();
+      updateAnalyticsBaselineText();
       renderCompareSummaryCards();
+      renderAnalyticsPrimaryDeltas();
     });
   }
 
@@ -2422,6 +3654,8 @@ const setupAnalyticsEventListeners = () => {
     customFrom.addEventListener('change', () => {
       analyticsState.customFrom = customFrom.value || '';
       saveAnalyticsSettings();
+      updateAnalyticsQuickRangeUi();
+      updateAnalyticsBaselineText();
     });
   }
 
@@ -2429,6 +3663,8 @@ const setupAnalyticsEventListeners = () => {
     customTo.addEventListener('change', () => {
       analyticsState.customTo = customTo.value || '';
       saveAnalyticsSettings();
+      updateAnalyticsQuickRangeUi();
+      updateAnalyticsBaselineText();
     });
   }
 
@@ -2440,6 +3676,34 @@ const setupAnalyticsEventListeners = () => {
       if (promoDiscount) analyticsState.promoDiscount = Math.min(95, Math.max(0, toNumber(promoDiscount.value)));
       saveAnalyticsSettings();
       await loadAnalytics();
+    });
+  }
+
+  if (quickRangeChips.length) {
+    quickRangeChips.forEach((chip) => {
+      chip.addEventListener('click', async () => {
+        const quickRange = chip.dataset.analyticsQuickRange || '';
+        if (quickRange === 'ytd') {
+          const now = new Date();
+          analyticsState.range = 'custom';
+          analyticsState.customFrom = toLocalIsoDate(new Date(now.getFullYear(), 0, 1));
+          analyticsState.customTo = toLocalIsoDate(now);
+          if (customFrom) customFrom.value = analyticsState.customFrom;
+          if (customTo) customTo.value = analyticsState.customTo;
+        } else if (quickRange) {
+          analyticsState.range = quickRange;
+          analyticsState.customFrom = '';
+          analyticsState.customTo = '';
+          if (customFrom) customFrom.value = '';
+          if (customTo) customTo.value = '';
+        }
+        if (rangeSelect) rangeSelect.value = analyticsState.range;
+        toggleCustom();
+        saveAnalyticsSettings();
+        updateAnalyticsQuickRangeUi();
+        updateAnalyticsBaselineText();
+        await loadAnalytics();
+      });
     });
   }
 
@@ -2478,7 +3742,30 @@ const setupAnalyticsEventListeners = () => {
         showError('No analytics data to export.');
         return;
       }
-      exportAnalyticsCsv();
+      exportAnalyticsCsv({ includeAll: false });
+      closeAnalyticsExportMenu();
+    });
+  }
+
+  if (exportAllCsvBtn) {
+    exportAllCsvBtn.addEventListener('click', () => {
+      if (!latestAnalyticsSnapshot) {
+        showError('No analytics data to export.');
+        return;
+      }
+      exportAnalyticsCsv({ includeAll: true });
+      closeAnalyticsExportMenu();
+    });
+  }
+
+  if (exportChartPngBtn) {
+    exportChartPngBtn.addEventListener('click', () => {
+      if (!latestAnalyticsSnapshot) {
+        showError('No analytics data to export.');
+        return;
+      }
+      exportAnalyticsChartPng();
+      closeAnalyticsExportMenu();
     });
   }
 
@@ -2489,6 +3776,23 @@ const setupAnalyticsEventListeners = () => {
         return;
       }
       exportAnalyticsPdf();
+      closeAnalyticsExportMenu();
+    });
+  }
+
+  if (exportToggleBtn) {
+    exportToggleBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleAnalyticsExportMenu();
+    });
+  }
+
+  if (document.body && document.body.dataset.analyticsExportMenuBound !== '1') {
+    document.body.dataset.analyticsExportMenuBound = '1';
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.seller-analytics-export-wrap')) {
+        closeAnalyticsExportMenu();
+      }
     });
   }
 
@@ -2550,32 +3854,76 @@ const buildProductPerformanceRows = () => {
   return [...map.values()].sort((a, b) => b.revenue - a.revenue || b.orderCount - a.orderCount);
 };
 
+const calculatePeriodSummary = (orders, start, end) => {
+  const scoped = (Array.isArray(orders) ? orders : []).filter(order => {
+    const dt = parseDate(order.created_at);
+    return dt && dt >= start && dt <= end;
+  });
+  const completed = scoped.filter(order => order.status === 'completed');
+  const pending = scoped.filter(order => order.status === 'pending');
+  const sales = completed.reduce((sum, order) => sum + getOrderAmount(order), 0);
+  const completionRate = scoped.length ? (completed.length / scoped.length) * 100 : 0;
+  return { orders: scoped.length, sales, completionRate, pending: pending.length };
+};
+
+const toDeltaText = (curr, prev, suffix = '%') => {
+  if (!Number.isFinite(prev) || prev === 0) return 'No baseline yet';
+  const pct = ((curr - prev) / prev) * 100;
+  const arrow = pct >= 0 ? '↑' : '↓';
+  return `${arrow} ${Math.abs(pct).toFixed(1)}${suffix}`;
+};
+
+const setKpiDeltaElement = (id, curr, prev) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const text = toDeltaText(curr, prev);
+  el.textContent = text;
+  el.classList.remove('is-up', 'is-down');
+  if (text.startsWith('↑')) el.classList.add('is-up');
+  if (text.startsWith('↓')) el.classList.add('is-down');
+};
+
+const renderAnalyticsPrimaryDeltas = () => {
+  if (!latestAnalyticsSnapshot) return;
+  const { currentStart, currentEnd, previousStart, previousEnd } = getPeriodRanges();
+  const current = calculatePeriodSummary(latestAnalyticsSnapshot.allOrders, currentStart, currentEnd);
+  const previous = calculatePeriodSummary(latestAnalyticsSnapshot.allOrders, previousStart, previousEnd);
+  setKpiDeltaElement('stat-sales-delta', current.sales, previous.sales);
+  setKpiDeltaElement('stat-pending-delta', current.pending, previous.pending);
+  const productsDelta = document.getElementById('stat-products-delta');
+  if (productsDelta) {
+    productsDelta.textContent = 'Catalog size';
+    productsDelta.classList.remove('is-up', 'is-down');
+  }
+};
+
 const renderCompareSummaryCards = () => {
   const container = document.getElementById('analytics-compare-summary');
   if (!container || !latestAnalyticsSnapshot) return;
   const { allOrders } = latestAnalyticsSnapshot;
   const { currentStart, currentEnd, previousStart, previousEnd } = getPeriodRanges();
-
-  const calc = (start, end) => {
-    const scoped = allOrders.filter(order => {
-      const dt = parseDate(order.created_at);
-      return dt && dt >= start && dt <= end;
-    });
-    const completed = scoped.filter(order => order.status === 'completed');
-    const sales = completed.reduce((sum, order) => sum + getOrderAmount(order), 0);
-    const completionRate = scoped.length ? (completed.length / scoped.length) * 100 : 0;
-    return { orders: scoped.length, sales, completionRate };
-  };
-
-  const current = calc(currentStart, currentEnd);
-  const previous = calc(previousStart, previousEnd);
+  const current = calculatePeriodSummary(allOrders, currentStart, currentEnd);
+  const previous = calculatePeriodSummary(allOrders, previousStart, previousEnd);
+  const baselineLabel = getAnalyticsRangeLabel();
+  if (!Array.isArray(allOrders) || allOrders.length === 0) {
+    container.innerHTML = `
+      <div class="card md:col-span-3">
+        <div class="card-body">
+          <p class="text-sm text-gray-600 mb-1">No sales yet for this period.</p>
+          <p class="font-semibold mb-1">Tips: add clearer photos, include tags, and keep stock updated.</p>
+          <p class="text-sm text-gray-500 mb-0">Comparison will appear once orders are recorded.</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
   const delta = (curr, prev) => prev === 0 ? 0 : ((curr - prev) / prev) * 100;
   const renderDelta = (pct) => `<span class="text-sm ${pct >= 0 ? 'text-success' : 'text-danger'}"><i class="bi ${pct >= 0 ? 'bi-arrow-up-right' : 'bi-arrow-down-right'}"></i> ${Math.abs(pct).toFixed(1)}%</span>`;
 
   container.innerHTML = `
-    <div class="card"><div class="card-body"><p class="text-sm text-gray-600">Sales Comparison</p><p class="text-2xl font-bold">${formatCurrency(current.sales)}</p>${renderDelta(delta(current.sales, previous.sales))}</div></div>
-    <div class="card"><div class="card-body"><p class="text-sm text-gray-600">Orders Comparison</p><p class="text-2xl font-bold">${current.orders}</p>${renderDelta(delta(current.orders, previous.orders))}</div></div>
-    <div class="card"><div class="card-body"><p class="text-sm text-gray-600">Completion Rate</p><p class="text-2xl font-bold">${current.completionRate.toFixed(1)}%</p>${renderDelta(delta(current.completionRate, previous.completionRate))}</div></div>
+    <div class="card"><div class="card-body"><p class="text-sm text-gray-600">Sales Comparison</p><p class="text-2xl font-bold">${formatCurrency(current.sales)}</p>${renderDelta(delta(current.sales, previous.sales))}<p class="text-xs text-gray-500 mb-0 mt-1">vs ${escapeHtml(baselineLabel)}</p></div></div>
+    <div class="card"><div class="card-body"><p class="text-sm text-gray-600">Orders Comparison</p><p class="text-2xl font-bold">${current.orders}</p>${renderDelta(delta(current.orders, previous.orders))}<p class="text-xs text-gray-500 mb-0 mt-1">vs ${escapeHtml(baselineLabel)}</p></div></div>
+    <div class="card"><div class="card-body"><p class="text-sm text-gray-600">Completion Rate</p><p class="text-2xl font-bold">${current.completionRate.toFixed(1)}%</p>${renderDelta(delta(current.completionRate, previous.completionRate))}<p class="text-xs text-gray-500 mb-0 mt-1">vs ${escapeHtml(baselineLabel)}</p></div></div>
   `;
 };
 
@@ -2898,7 +4246,7 @@ const downloadBlob = (blob, filename) => {
   URL.revokeObjectURL(url);
 };
 
-const exportAnalyticsCsv = () => {
+const exportAnalyticsCsv = ({ includeAll = false } = {}) => {
   if (!latestAnalyticsSnapshot) return;
   const rows = buildProductPerformanceRows();
   const lines = [
@@ -2925,8 +4273,38 @@ const exportAnalyticsCsv = () => {
     ]));
   });
 
-  downloadBlob(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' }), `seller-analytics-${toLocalIsoDate(new Date())}.csv`);
+  if (includeAll) {
+    const { currentStart, currentEnd, previousStart, previousEnd } = getPeriodRanges();
+    const current = calculatePeriodSummary(latestAnalyticsSnapshot.allOrders, currentStart, currentEnd);
+    const previous = calculatePeriodSummary(latestAnalyticsSnapshot.allOrders, previousStart, previousEnd);
+    lines.push('');
+    lines.push(csvLine(['Comparison Metric', 'Current', 'Previous']));
+    lines.push(csvLine(['Sales', current.sales.toFixed(2), previous.sales.toFixed(2)]));
+    lines.push(csvLine(['Orders', current.orders, previous.orders]));
+    lines.push(csvLine(['Pending', current.pending, previous.pending]));
+    lines.push(csvLine(['Completion Rate %', current.completionRate.toFixed(2), previous.completionRate.toFixed(2)]));
+  }
+
+  downloadBlob(
+    new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' }),
+    includeAll ? `seller-analytics-all-${toLocalIsoDate(new Date())}.csv` : `seller-analytics-${toLocalIsoDate(new Date())}.csv`
+  );
   showSuccess('Analytics CSV exported.');
+};
+
+const exportAnalyticsChartPng = () => {
+  const canvas = document.getElementById('sales-chart');
+  if (!canvas || typeof canvas.toDataURL !== 'function') {
+    showError('Sales chart is not available for export.');
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = canvas.toDataURL('image/png');
+  link.download = `sales-chart-${toLocalIsoDate(new Date())}.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  showSuccess('Sales chart exported.');
 };
 
 const exportAnalyticsPdf = () => {
@@ -3083,6 +4461,7 @@ const loadConversations = async () => {
   if (!container) return;
   
   renderConversationsList(container);
+  syncMessagingPanelsVisibility();
 };
 
 const mergeConversationMessages = (messageResponses = []) => {
@@ -3157,15 +4536,76 @@ const setConversationTypingPreview = (orderId, isTyping, displayName = 'Buyer') 
   }
 };
 
+const getConversationSortTimestamp = (conv) => {
+  const candidates = [conv?.last_message_at, conv?.updated_at, conv?.created_at];
+  for (const candidate of candidates) {
+    const ts = Date.parse(candidate || '');
+    if (Number.isFinite(ts)) return ts;
+  }
+  return 0;
+};
+
+const formatConversationTimestamp = (conv) => {
+  const ts = getConversationSortTimestamp(conv);
+  if (!ts) return '';
+  return formatRelativeTime(new Date(ts).toISOString());
+};
+
+const updateConversationCountBadge = (visibleCount, totalCount = visibleCount) => {
+  const countEl = document.getElementById('conversation-count');
+  if (!countEl) return;
+  if (visibleCount === totalCount) {
+    countEl.textContent = `${totalCount} conversation${totalCount === 1 ? '' : 's'}`;
+    return;
+  }
+  countEl.textContent = `${visibleCount} of ${totalCount} conversation${totalCount === 1 ? '' : 's'}`;
+};
+
 // Render conversations list using cached data
 const renderConversationsList = (container) => {
-  if (currentConversations.length === 0) {
-    container.innerHTML = '<p class="text-center text-gray-500 py-4">No conversations yet</p>';
+  const searchTerm = (conversationFilters.search || '').trim().toLowerCase();
+  let filteredConversations = currentConversations.filter((conv) => {
+    if (conversationFilters.unreadOnly && !(conv.unread_count > 0)) return false;
+    if (!searchTerm) return true;
+
+    const haystack = [
+      conv.other_party,
+      conv.last_message,
+      conv.order_number
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+
+    return haystack.includes(searchTerm);
+  });
+
+  if ((conversationFilters.sort || 'newest') === 'unread') {
+    filteredConversations.sort((a, b) => {
+      const unreadA = Number(a.unread_count || 0);
+      const unreadB = Number(b.unread_count || 0);
+      if (unreadA !== unreadB) return unreadB - unreadA;
+      return getConversationSortTimestamp(b) - getConversationSortTimestamp(a);
+    });
+  } else {
+    filteredConversations.sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a));
+  }
+
+  updateConversationCountBadge(filteredConversations.length, currentConversations.length);
+
+  if (filteredConversations.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-4 text-gray-500">
+        ${currentConversations.length === 0 ? 'No conversations yet' : 'No conversations matched your filter'}
+      </div>
+    `;
     return;
   }
 
-  container.innerHTML = currentConversations.map(conv => {
+  container.innerHTML = filteredConversations.map(conv => {
     const userId = conv.other_party_id;
+    const normalizedOrderId = String(conv.order_id || '');
+    const orderIds = (conv.order_ids || []).map(String);
+    const activeThreadOrderIds = currentConversationOrderIds.map(String);
+    const isActiveConversation = orderIds.some(id => activeThreadOrderIds.includes(id))
+      || String(currentConversation) === normalizedOrderId;
     const typingDisplayName = typingPreviewByOrderId.get(String(conv.order_id));
     const previewText = typingDisplayName
       ? `${typingDisplayName} is typing...`
@@ -3173,28 +4613,35 @@ const renderConversationsList = (container) => {
     const previewClass = typingDisplayName
       ? 'text-sm text-primary truncate italic'
       : 'text-sm text-gray-600 truncate';
+    const orderNumber = conv.order_number || `ORD-${normalizedOrderId.padStart(6, '0')}`;
+    const relativeTime = formatConversationTimestamp(conv);
     return `
-      <div class="conversation-item p-3 hover:bg-gray-100 cursor-pointer rounded-lg"
-           data-order-id="${conv.order_id}"
+      <div class="conversation-item buyer-conversation-item p-3 hover:bg-gray-100 cursor-pointer rounded-lg ${isActiveConversation ? 'is-active' : ''}"
+           data-order-id="${normalizedOrderId}"
            data-user-id="${userId}"
            data-order-count="${conv.order_count || 1}"
            data-active-order-count="${conv.active_order_count || 0}"
            data-order-ids="${(conv.order_ids || []).join(',')}"
            data-active-order-ids="${(conv.active_order_ids || []).join(',')}"
            data-latest-order-number="${conv.order_number || ''}"
-           onclick="window.openConversation('${conv.order_id}')">
-        <div class="flex items-center gap-3">
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <p class="font-semibold">${conv.other_party}</p>
+           onclick="window.openConversation('${normalizedOrderId}')">
+        <div class="buyer-conversation-row">
+          <div class="buyer-conversation-main">
+            <div class="buyer-conversation-topline">
+              <p class="font-semibold buyer-conversation-name">${escapeHtml(conv.other_party || 'Buyer')}</p>
               <span class="status-badge-container" data-user-id="${userId}"></span>
+              ${relativeTime ? `<span class="buyer-conversation-time">${escapeHtml(relativeTime)}</span>` : ''}
+            </div>
+            <div class="buyer-conversation-meta-row">
+              <span class="buyer-conversation-order-chip">${escapeHtml(orderNumber)}</span>
+              ${Number(conv.order_count || 0) > 1 ? `<span class="buyer-conversation-thread-count">${Number(conv.order_count)} orders</span>` : ''}
             </div>
             <p class="${previewClass}" data-conversation-preview="${conv.order_id}">${previewText}</p>
           </div>
           ${conv.unread_count > 0 ? `
-            <span class="badge badge-danger" data-conversation-badge="${conv.order_id}">${conv.unread_count}</span>
+            <span class="badge badge-danger buyer-conversation-unread" data-conversation-badge="${conv.order_id}">${conv.unread_count}</span>
           ` : `
-            <span class="badge badge-danger" data-conversation-badge="${conv.order_id}" style="display: none;"></span>
+            <span class="badge badge-danger buyer-conversation-unread" data-conversation-badge="${conv.order_id}" style="display: none;"></span>
           `}
         </div>
       </div>
@@ -3213,6 +4660,33 @@ const renderConversationsList = (container) => {
         container.innerHTML = '<span class="text-xs text-gray-400">-</span>';
       }
     });
+  });
+};
+
+window.openLatestUnreadConversation = () => {
+  if (!Array.isArray(currentConversations) || currentConversations.length === 0) return;
+  const sorted = [...currentConversations].sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a));
+  const target = sorted.find((conv) => Number(conv.unread_count || 0) > 0) || sorted[0];
+  if (target?.order_id) {
+    window.openConversation(String(target.order_id));
+  }
+};
+
+const applyActiveConversationHighlight = () => {
+  const selectedOrderId = currentConversation ? String(currentConversation) : null;
+  const selectedThreadOrderIds = currentConversationOrderIds.map(String);
+
+  document.querySelectorAll('#conversations-list .conversation-item').forEach((item) => {
+    const itemOrderId = String(item.dataset.orderId || '');
+    const itemOrderIds = String(item.dataset.orderIds || '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean);
+
+    const isActive = (selectedOrderId && itemOrderId === selectedOrderId)
+      || itemOrderIds.some(id => selectedThreadOrderIds.includes(id));
+
+    item.classList.toggle('is-active', Boolean(isActive));
   });
 };
 
@@ -3297,7 +4771,9 @@ window.openConversation = async (orderId) => {
     activeOrderIds,
     latestOrderNumber
   };
-  
+  currentConversation = orderId;
+  applyActiveConversationHighlight();
+  setMessagingMobileView('chat');
   window.openOrderChat(orderId, userId);
 };
 
@@ -3305,6 +4781,8 @@ window.openOrderChat = async (orderId, userId) => {
   stopTypingSignal();
   hideTypingIndicator();
   currentConversation = orderId;
+  applyActiveConversationHighlight();
+  setMessagingMobileView('chat');
   
   // Use userId from parameter, global storage, or will get from API response
   if (!userId && window.conversationUserId) {
@@ -3370,6 +4848,8 @@ window.openOrderChat = async (orderId, userId) => {
     
     currentConversationOrderIds = uniqueThreadOrderIds;
     currentConversationSendOrderId = activeThreadOrderIds[0] || orderId;
+    window.currentConversationUnreadCount = Number(activeConversation?.unread_count || 0);
+    applyActiveConversationHighlight();
 
     // Join all order rooms in grouped conversation so real-time updates
     // cover every order in this thread.
@@ -3404,11 +4884,9 @@ window.openOrderChat = async (orderId, userId) => {
     const userRole = response.data?.user_role || 'seller';
     const buyerName = response.data?.buyer_name || 'Buyer';
     const activeOrderCount = activeConversation?.active_order_count ?? activeThreadOrderIds.length;
-    const totalOrderCount = activeConversation?.order_count ?? uniqueThreadOrderIds.length;
     const isCancelled = activeOrderCount === 0;
-    const subtitle = totalOrderCount > 1
-      ? `${activeOrderCount} active of ${totalOrderCount} orders with this buyer`
-      : `${activeOrderCount} active order with this buyer`;
+    const activeOrderNumber = activeConversation?.order_number || response?.data?.order_number || `ORD-${String(orderId).padStart(6, '0')}`;
+    const headerStatusLabel = activeOrderCount === 0 ? 'Order Closed' : 'Active';
     
     // If still no buyerId, get from response
     if (!buyerId && response.data?.buyer_id) {
@@ -3416,21 +4894,30 @@ window.openOrderChat = async (orderId, userId) => {
     }
     
     chatWindow.innerHTML = `
-      <div class="flex flex-col h-96">
+      <div class="buyer-chat-shell flex flex-col">
         <div class="border-b p-4 bg-gray-50" id="chat-header">
-          <div class="flex justify-between items-center">
-            <div>
-              <h3 class="font-bold text-lg" id="chat-user-name">${buyerName}</h3>
-              <p class="text-sm text-gray-600">${subtitle}</p>
+          <div class="flex justify-between items-center gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <button type="button" class="btn btn-outline btn-sm buyer-chat-back" id="chat-back-btn" aria-label="Back to conversations">
+                <i class="bi bi-chevron-left"></i>
+              </button>
+              <div class="buyer-chat-title-wrap">
+                <h3 class="font-bold text-lg" id="chat-user-name">${escapeHtml(buyerName)}</h3>
+                <p class="buyer-chat-submeta">
+                  <span class="buyer-chat-order-chip">${escapeHtml(activeOrderNumber)}</span>
+                  <span class="buyer-chat-thread-count">${activeOrderCount > 1 ? `${activeOrderCount} active orders` : '1 active order'}</span>
+                  <span class="buyer-chat-thread-status">${headerStatusLabel}</span>
+                </p>
+              </div>
             </div>
           </div>
         </div>
-        
+
         <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3">
           ${messages.map(msg => createMessageBubble(msg, userRole)).join('')}
         </div>
-        
-        <div class="border-t p-4">
+
+        <div class="border-t p-4 buyer-chat-composer">
           ${isCancelled ? `
             <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-center text-red-700 text-sm">
               <i class="bi bi-exclamation-circle"></i> This order has been cancelled. No new messages can be sent.
@@ -3438,19 +4925,28 @@ window.openOrderChat = async (orderId, userId) => {
           ` : `
             <div class="space-y-2">
               <div id="message-attachment-preview" class="hidden"></div>
-              <form id="chat-form" class="flex gap-2">
+              <form id="chat-form" class="flex gap-2 buyer-chat-form" autocomplete="off">
                 <input type="file" id="message-attachment" class="hidden" accept="image/jpeg,image/jpg,image/png">
                 <button type="button" class="btn btn-outline px-3" id="btn-attach-message" title="Attach image">
                   <i class="bi bi-paperclip"></i>
                 </button>
-                <input type="text" 
-                       id="message-input" 
-                       class="form-control flex-1" 
-                       placeholder="Type a message...">
-                <button type="submit" class="btn btn-primary">
-                  <i class="bi bi-send"></i> Send
+                <input type="text"
+                       id="message-input"
+                       class="form-control flex-1 buyer-chat-input"
+                       autocomplete="off"
+                       autocorrect="off"
+                       autocapitalize="off"
+                       spellcheck="false"
+                       maxlength="500"
+                       placeholder="Message buyer about ${escapeHtml(activeOrderNumber)}...">
+                <button type="submit" class="btn btn-primary" id="btn-send-message">
+                  <i class="bi bi-send"></i> <span class="buyer-send-label">Send</span>
                 </button>
               </form>
+              <div class="buyer-chat-composer-meta">
+                <span id="message-send-hint" class="buyer-chat-send-hint">Messages are sent securely.</span>
+                <span id="message-char-counter" class="buyer-chat-char-counter">0/500</span>
+              </div>
             </div>
           `}
         </div>
@@ -3465,10 +4961,21 @@ window.openOrderChat = async (orderId, userId) => {
     
     // Handle send message
     const chatForm = document.getElementById('chat-form');
-    chatForm.addEventListener('submit', handleSendMessage);
+    if (chatForm) {
+      chatForm.addEventListener('submit', handleSendMessage);
+    }
+    const chatBackBtn = document.getElementById('chat-back-btn');
+    if (chatBackBtn) {
+      chatBackBtn.addEventListener('click', () => {
+        setMessagingMobileView('list');
+      });
+    }
+    updateMessageComposerHint('Messages are sent securely.', 'neutral');
+    setMessageSendingState(false);
     setupMessageAttachmentUI();
     setupTypingInputHandlers();
     hideTypingIndicator();
+    syncMessagingPanelsVisibility();
     
   } catch (error) {
     console.error('Error loading messages:', error);
@@ -3476,7 +4983,7 @@ window.openOrderChat = async (orderId, userId) => {
   }
 };
 
-const createMessageBubble = (message, userRole) => {
+const createMessageBubble = (message, userRole, options = {}) => {
   const isSender = message.sender?.role === userRole;
   const alignClass = isSender ? 'justify-end' : 'justify-start';
   const bgClass = isSender ? 'bg-primary text-white' : 'bg-gray-200';
@@ -3484,13 +4991,22 @@ const createMessageBubble = (message, userRole) => {
     ? `<p class="text-sm">${escapeHtml(message.message_text)}</p>`
     : '';
   const attachmentMarkup = renderMessageAttachment(message);
+  const deliveryState = options.deliveryState || (isSender ? 'delivered' : '');
+  const deliveryMarkup = isSender
+    ? `<span class="buyer-chat-delivery ${deliveryState === 'failed' ? 'is-failed' : ''}">
+        ${deliveryState === 'failed' ? 'Failed • tap retry' : deliveryState === 'sending' ? 'Sending…' : 'Delivered'}
+      </span>`
+    : '';
   
   return `
-    <div class="flex ${alignClass}">
+    <div class="flex ${alignClass} buyer-chat-row">
       <div class="${bgClass} rounded-lg px-4 py-2 max-w-xs">
         ${textMarkup}
         ${attachmentMarkup}
-        <p class="text-xs opacity-75 mt-1">${formatRelativeTime(message.created_at)}</p>
+        <div class="buyer-chat-bubble-meta">
+          <p class="text-xs opacity-75 mt-1">${formatRelativeTime(message.created_at)}</p>
+          ${deliveryMarkup}
+        </div>
       </div>
     </div>
   `;
@@ -3500,11 +5016,21 @@ const CHAT_MESSAGE_BATCH_SIZE = 40;
 
 const setupLazyMessageRendering = (messagesContainer, messages, userRole) => {
   if (!messagesContainer) return;
+  const unreadCount = Math.max(0, Number(window.currentConversationUnreadCount || 0));
+  const unreadDividerIndex = unreadCount > 0 && unreadCount < messages.length
+    ? messages.length - unreadCount
+    : -1;
 
   let renderedStart = Math.max(0, messages.length - CHAT_MESSAGE_BATCH_SIZE);
   const renderRange = (start, end) => messages
     .slice(start, end)
-    .map(msg => createMessageBubble(msg, userRole))
+    .map((msg, offset) => {
+      const absoluteIndex = start + offset;
+      const withDivider = absoluteIndex === unreadDividerIndex
+        ? '<div class="buyer-chat-unread-divider">New messages</div>'
+        : '';
+      return `${withDivider}${createMessageBubble(msg, userRole)}`;
+    })
     .join('');
 
   messagesContainer.innerHTML = renderRange(renderedStart, messages.length);
@@ -3710,10 +5236,37 @@ const setupTypingInputHandlers = () => {
   if (!input || input.dataset.typingBound === '1') return;
 
   input.dataset.typingBound = '1';
+  const charCounter = document.getElementById('message-char-counter');
+  if (charCounter) {
+    charCounter.textContent = `${(input.value || '').length}/500`;
+  }
   input.addEventListener('input', handleTypingInput);
+  input.addEventListener('input', () => {
+    if (charCounter) {
+      charCounter.textContent = `${(input.value || '').length}/500`;
+    }
+  });
   input.addEventListener('blur', () => {
     stopTypingSignal();
   });
+};
+
+const updateMessageComposerHint = (text, tone = 'neutral') => {
+  const hint = document.getElementById('message-send-hint');
+  if (!hint) return;
+  hint.textContent = text;
+  hint.classList.remove('is-muted', 'is-error');
+  if (tone === 'muted') hint.classList.add('is-muted');
+  if (tone === 'error') hint.classList.add('is-error');
+};
+
+const setMessageSendingState = (isSending) => {
+  const sendBtn = document.getElementById('btn-send-message');
+  if (!sendBtn) return;
+  sendBtn.disabled = Boolean(isSending);
+  sendBtn.innerHTML = isSending
+    ? '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> <span class="buyer-send-label">Sending...</span>'
+    : '<i class="bi bi-send"></i> <span class="buyer-send-label">Send</span>';
 };
 
 const hideTypingIndicator = () => {
@@ -3810,6 +5363,8 @@ const handleSendMessage = async (e) => {
   hideTypingIndicator();
   selectedMessageAttachment = null;
   clearMessageAttachmentUI();
+  setMessageSendingState(true);
+  updateMessageComposerHint('Sending message...', 'muted');
   
   try {
     const targetOrderId = currentConversationSendOrderId || currentConversation;
@@ -3832,11 +5387,21 @@ const handleSendMessage = async (e) => {
       });
     }
     
+    const currentUser = getCurrentUserSync();
+    const optimisticMessage = {
+      order_id: targetOrderId,
+      sender_id: currentUser?.id,
+      sender: {
+        id: currentUser?.id,
+        role: 'seller'
+      },
+      message_text: messageText || (attachment ? 'Sent an attachment.' : ''),
+      created_at: new Date().toISOString()
+    };
+    addMessageBubbleToChat(optimisticMessage);
+
     // Reload conversations list to show the new message
     await loadConversations();
-    
-    // Reopen the chat with the latest messages
-    await window.openOrderChat(currentConversation);
     
     // Focus input for next message
     setTimeout(() => {
@@ -3845,10 +5410,12 @@ const handleSendMessage = async (e) => {
         newInput.focus();
       }
     }, 50);
+    updateMessageComposerHint('Messages are sent securely.', 'neutral');
     
   } catch (error) {
     console.error('Error sending message:', error);
     showError(error.message || 'Failed to send message');
+    updateMessageComposerHint('Failed to send. You can retry.', 'error');
     // Restore message if send failed
     input.value = messageText;
     if (attachment && fileInput) {
@@ -3877,6 +5444,8 @@ const handleSendMessage = async (e) => {
         }
       }
     }
+  } finally {
+    setMessageSendingState(false);
   }
 };
 
@@ -3990,12 +5559,14 @@ const initializeRealTime = async () => {
       on('order:new', (data) => {
         showToast(`New order received: #${data.order_number}`, 'success');
         loadOrders();
+        loadOrderStats();
         loadDashboardStats();
       });
       
       // Listen for cancelled orders
       on('order:cancelled', (data) => {
         loadOrders();
+        loadOrderStats();
       });
       
       // Listen for new messages from socket
@@ -4019,13 +5590,17 @@ const initializeRealTime = async () => {
             renderConversationsList(container);
           }
           
+          const currentUserId = String(getCurrentUserSync()?.id || '');
+          const senderId = String(data?.sender_id || data?.sender?.id || '');
+          const isOwnMessage = Boolean(currentUserId && senderId && currentUserId === senderId);
+
           // Only show notification and update badge if NOT currently viewing this conversation
-          if (!isViewingThisConversation) {
+          if (!isViewingThisConversation && !isOwnMessage) {
             // Update message badge in navbar
             updateMessageBadge();
             // Show toast/sound only once for duplicate realtime sources
             showMessageToastOnce(data.order_id);
-          } else {
+          } else if (!isOwnMessage) {
             // User is viewing the conversation, add the message to chat in real-time
             hideTypingIndicator();
             const chatMessages = document.getElementById('chat-messages');
@@ -4100,32 +5675,14 @@ const addMessageBubbleToChat = (message) => {
   // Get current user from auth
   const currentUser = getCurrentUserSync();
   const currentUserId = currentUser?.id;
-  
-  // Determine if this is a sent message
-  const isSender = message.sender_id === currentUserId;
-  
-  const alignClass = isSender ? 'justify-end' : 'justify-start';
-  const bgClass = isSender ? 'bg-primary text-white' : 'bg-gray-200';
-  
-  // Get sender name - try multiple possible field names
-  const senderName = message.sender?.full_name || message.senderName || message.sender_name || (isSender ? 'You' : 'Buyer');
-  
-  // Format the time properly
-  let timeText = 'now';
-  if (message.created_at) {
-    timeText = formatRelativeTime(message.created_at);
-  }
-  
-  const bubble = `
-    <div class="flex ${alignClass}">
-      <div class="${bgClass} rounded-lg px-4 py-2 max-w-xs">
-        <p class="text-xs opacity-75 mb-1">${isSender ? 'You' : senderName}</p>
-        ${message.message_text ? `<p class="text-sm">${escapeHtml(message.message_text)}</p>` : ''}
-        ${renderMessageAttachment(message)}
-        <p class="text-xs opacity-75 mt-1">${timeText}</p>
-      </div>
-    </div>
-  `;
+  const normalized = {
+    ...message,
+    sender: {
+      ...(message?.sender || {}),
+      role: message?.sender?.role || (message?.sender_id === currentUserId ? 'seller' : 'buyer')
+    }
+  };
+  const bubble = createMessageBubble(normalized, 'seller');
   
   const typingIndicator = chatMessages.querySelector('#typing-indicator');
   if (typingIndicator) {
@@ -4198,6 +5755,142 @@ const attachEventListeners = () => {
     btnCreateProduct.addEventListener('click', createHandler);
     eventListeners.push({ element: btnCreateProduct, event: 'click', handler: createHandler });
   }
+
+  const productsFiltersToggle = document.getElementById('products-filters-toggle');
+  if (productsFiltersToggle) {
+    const productsFiltersToggleHandler = () => {
+      productsFiltersCollapsed = !productsFiltersCollapsed;
+      applyProductsFiltersCollapsedState();
+    };
+    productsFiltersToggle.addEventListener('click', productsFiltersToggleHandler);
+    eventListeners.push({ element: productsFiltersToggle, event: 'click', handler: productsFiltersToggleHandler });
+  }
+
+  const ordersStatsToggle = document.getElementById('orders-stats-toggle');
+  if (ordersStatsToggle) {
+    const orderStatsToggleHandler = () => {
+      ordersStatsCollapsed = !ordersStatsCollapsed;
+      applyOrdersStatsCollapsedState();
+    };
+    ordersStatsToggle.addEventListener('click', orderStatsToggleHandler);
+    eventListeners.push({ element: ordersStatsToggle, event: 'click', handler: orderStatsToggleHandler });
+  }
+
+  const issuesStatsToggle = document.getElementById('issues-stats-toggle');
+  if (issuesStatsToggle) {
+    const issuesStatsToggleHandler = () => {
+      issuesStatsCollapsed = !issuesStatsCollapsed;
+      applyIssuesStatsCollapsedState();
+    };
+    issuesStatsToggle.addEventListener('click', issuesStatsToggleHandler);
+    eventListeners.push({ element: issuesStatsToggle, event: 'click', handler: issuesStatsToggleHandler });
+  }
+
+  const issuesSearch = document.getElementById('issues-search');
+  if (issuesSearch) {
+    const issuesSearchHandler = debounce((e) => {
+      issueFilters.search = (e.target.value || '').trim();
+      if (currentPage === 'my-issues') loadMyIssues();
+    }, 240);
+    issuesSearch.addEventListener('input', issuesSearchHandler);
+    eventListeners.push({ element: issuesSearch, event: 'input', handler: issuesSearchHandler });
+  }
+
+  const issuesSort = document.getElementById('issues-sort');
+  if (issuesSort) {
+    const issuesSortHandler = (e) => {
+      issueFilters.sort = e.target.value || 'newest';
+      if (currentPage === 'my-issues') loadMyIssues();
+    };
+    issuesSort.addEventListener('change', issuesSortHandler);
+    eventListeners.push({ element: issuesSort, event: 'change', handler: issuesSortHandler });
+  }
+
+  const conversationSearch = document.getElementById('conversation-search');
+  const conversationSearchClear = document.getElementById('conversation-search-clear');
+  if (conversationSearch) {
+    const conversationSearchHandler = debounce((e) => {
+      conversationFilters.search = e.target.value || '';
+      if (conversationSearchClear) {
+        conversationSearchClear.classList.toggle('is-visible', Boolean((conversationFilters.search || '').trim()));
+      }
+      if (currentPage === 'messaging') {
+        const container = document.getElementById('conversations-list');
+        if (container) renderConversationsList(container);
+      }
+    }, 250);
+    conversationSearch.addEventListener('input', conversationSearchHandler);
+    eventListeners.push({ element: conversationSearch, event: 'input', handler: conversationSearchHandler });
+  }
+
+  const conversationUnreadOnly = document.getElementById('conversation-unread-only');
+  if (conversationUnreadOnly) {
+    const unreadOnlyHandler = (e) => {
+      conversationFilters.unreadOnly = Boolean(e.target.checked);
+      if (currentPage === 'messaging') {
+        const container = document.getElementById('conversations-list');
+        if (container) renderConversationsList(container);
+      }
+    };
+    conversationUnreadOnly.addEventListener('change', unreadOnlyHandler);
+    eventListeners.push({ element: conversationUnreadOnly, event: 'change', handler: unreadOnlyHandler });
+  }
+
+  const conversationSort = document.getElementById('conversation-sort');
+  if (conversationSort) {
+    const conversationSortHandler = (e) => {
+      conversationFilters.sort = e.target.value || 'newest';
+      if (currentPage === 'messaging') {
+        const container = document.getElementById('conversations-list');
+        if (container) renderConversationsList(container);
+      }
+    };
+    conversationSort.addEventListener('change', conversationSortHandler);
+    eventListeners.push({ element: conversationSort, event: 'change', handler: conversationSortHandler });
+  }
+
+  if (conversationSearchClear && conversationSearch) {
+    const conversationSearchClearHandler = () => {
+      conversationFilters.search = '';
+      conversationSearch.value = '';
+      conversationSearchClear.classList.remove('is-visible');
+      if (currentPage === 'messaging') {
+        const container = document.getElementById('conversations-list');
+        if (container) renderConversationsList(container);
+      }
+    };
+    conversationSearchClear.addEventListener('click', conversationSearchClearHandler);
+    eventListeners.push({ element: conversationSearchClear, event: 'click', handler: conversationSearchClearHandler });
+  }
+};
+
+window.resetIssueFilters = () => {
+  issueFilters = { status: 'all', search: '', sort: 'newest' };
+  applyIssueFiltersToUi();
+  if (currentPage === 'my-issues') {
+    loadMyIssues();
+  }
+};
+
+window.loadIssuesFromUI = () => {
+  loadMyIssues();
+};
+
+window.loadConversationsFromUI = () => {
+  loadConversations();
+};
+
+window.resetConversationFilters = () => {
+  conversationFilters = { search: '', unreadOnly: false, sort: 'newest' };
+  applyConversationFiltersToUi();
+  if (currentPage === 'messaging') {
+    const container = document.getElementById('conversations-list');
+    if (container) renderConversationsList(container);
+  }
+};
+
+window.backToConversationList = () => {
+  setMessagingMobileView('list');
 };
 
 const cleanupEventListeners = () => {

@@ -23,7 +23,8 @@ import {
   updateCartItem,
   removeFromCart,
   clearCart,
-  getCartCount
+  getCartCount,
+  validateCart
 } from '../services/cart.service.js';
 import {
   createOrder,
@@ -31,7 +32,8 @@ import {
   getOrderById,
   cancelOrder,
   confirmOrder,
-  rateOrder
+  rateOrder,
+  getOrderStats
 } from '../services/order.service.js';
 import {
   getConversations,
@@ -41,7 +43,7 @@ import {
   markMessagesAsRead
 } from '../services/message.service.js';
 import { getMyIssues, getIssue } from '../services/issue.service.js';
-import { getProfile } from '../services/user.service.js';
+import { getProfile, updateBuyerProfile } from '../services/user.service.js';
 import { calculateDistance, getRoute, geocodeAddress } from '../services/map.service.js';
 import { getUserId } from '../core/auth.js';
 import { getDeliveryProofUrl, getIssueEvidenceUrl, getMessageAttachmentUrl } from '../utils/image-helpers.js';
@@ -71,11 +73,15 @@ let socketEmit = null;
 let isTypingActive = false;
 let typingStopTimer = null;
 let typingIndicatorHideTimer = null;
+let isSendingMessage = false;
+let lastFailedMessageDraft = null;
 const typingPreviewByOrderId = new Map();
 const typingPreviewTimers = new Map();
+let onlineStatusRenderQueued = false;
 let onlineUsers = new Set(); // Track online users
 let initialOnlineUsersPromise = Promise.resolve(); // Promise that resolves when initial online users are loaded
-let browseFilters = {
+const UI_STATE_STORAGE_KEY = 'agrimarket_buyer_ui_state_v1';
+const DEFAULT_BROWSE_FILTERS = {
   search: '',
   category: '',
   municipality: '',
@@ -85,24 +91,720 @@ let browseFilters = {
   page: 1,
   limit: 12
 };
-let currentView = 'grid'; // 'grid' or 'map'
-let browseMap = null;
-let orderFilters = {
+const DEFAULT_ORDER_FILTERS = {
   status: 'all',
-  page: 1
+  page: 1,
+  limit: 10
 };
+let browseFilters = { ...DEFAULT_BROWSE_FILTERS };
+let draftBrowseFilters = { ...DEFAULT_BROWSE_FILTERS };
+let currentView = 'grid'; // 'grid' or 'map'
+let browseFiltersCollapsed = true;
+let browseDesktopFiltersHidden = false;
+const DESKTOP_BROWSE_FILTERS_TOP = 84;
+let browseMap = null;
+let browseMapMarkerLayer = null;
+let selectedBrowseMarker = null;
+let useMapBounds = false;
+let pendingMapBounds = null;
+let mapBoundsPromptVisible = false;
+let orderFilters = { ...DEFAULT_ORDER_FILTERS };
 let issueFilters = {
-  status: 'all'
+  status: 'all',
+  search: '',
+  sort: 'newest'
 };
+let conversationFilters = {
+  search: '',
+  unreadOnly: false,
+  sort: 'newest'
+};
+let browseTotalPages = 1;
+let browseTotalItems = 0;
+let ordersTotalPages = 1;
+let ordersTotalItems = 0;
 let currentCart = null;
+let cartSelectedItemIds = new Set();
+let cartQuantityUpdateLocks = new Set();
+let cartLastQuantityUpdateAt = new Map();
+let cartItemUpdateErrors = new Map();
+let cartPriceChangeByItemId = new Map();
+let cartLastUpdatedItemId = null;
 let currentOrders = [];
 let currentIssues = [];
 let currentConversations = []; // Cache conversations data
+let messagingMobileView = 'list';
 let productDetailsMap = null;
 let userLocation = null;
 
-// ============ Product Reviews ============
+const isMessagingMobileViewport = () => window.matchMedia('(max-width: 767px)').matches;
 
+const syncMessagingPanelsVisibility = () => {
+  const messagingSection = document.getElementById('messaging');
+  const conversationsPanel = document.getElementById('conversations-panel');
+  const chatPanel = document.getElementById('chat-panel');
+  if (!messagingSection || !conversationsPanel || !chatPanel) return;
+
+  if (!isMessagingMobileViewport()) {
+    conversationsPanel.classList.remove('hidden');
+    chatPanel.classList.remove('hidden');
+    messagingSection.classList.remove('is-mobile-chat-open');
+    return;
+  }
+
+  // Keep chat panel open on mobile if a chat shell is already rendered.
+  // This prevents layout fallback to compact stacked mode during async/race updates.
+  const hasRenderedChat = Boolean(chatPanel.querySelector('.buyer-chat-shell'));
+  const showChat = messagingMobileView === 'chat' && (Boolean(currentConversation) || hasRenderedChat);
+  conversationsPanel.classList.toggle('hidden', showChat);
+  chatPanel.classList.toggle('hidden', !showChat);
+  messagingSection.classList.toggle('is-mobile-chat-open', showChat);
+};
+
+const setMessagingMobileView = (view) => {
+  messagingMobileView = view === 'chat' ? 'chat' : 'list';
+  syncMessagingPanelsVisibility();
+};
+
+const clampToPositiveInt = (value, fallback = 1) => {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const safeString = (value, fallback = '') => {
+  if (typeof value === 'string') return value;
+  return fallback;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normalizeOrderRef = (value) => String(value ?? '').trim();
+
+const isUuidOrderRef = (value) => UUID_PATTERN.test(normalizeOrderRef(value));
+
+const getCanonicalOrderId = (order) => {
+  if (!order || typeof order !== 'object') return '';
+  const candidates = [order.id, order.order_id, order.orderId, order.uuid, order.order_uuid]
+    .map(normalizeOrderRef)
+    .filter(Boolean);
+  const uuidCandidate = candidates.find(isUuidOrderRef);
+  if (uuidCandidate) return uuidCandidate;
+  return candidates[0] || normalizeOrderRef(order.order_number);
+};
+
+const matchesOrderReference = (order, orderRef) => {
+  const normalizedRef = normalizeOrderRef(orderRef);
+  if (!normalizedRef) return false;
+  return [
+    order?.id,
+    order?.order_id,
+    order?.orderId,
+    order?.uuid,
+    order?.order_uuid,
+    order?.order_number
+  ].map(normalizeOrderRef).includes(normalizedRef);
+};
+
+const findOrderByReference = (orderRef) => {
+  const normalizedRef = normalizeOrderRef(orderRef);
+  if (!normalizedRef) return null;
+  return currentOrders.find((order) => matchesOrderReference(order, normalizedRef)) || null;
+};
+
+const resolveOrderApiId = (orderRef) => {
+  const normalizedRef = normalizeOrderRef(orderRef);
+  if (!normalizedRef) return '';
+  if (isUuidOrderRef(normalizedRef)) return normalizedRef;
+
+  const matchedOrder = findOrderByReference(normalizedRef);
+  if (matchedOrder) {
+    const canonical = getCanonicalOrderId(matchedOrder);
+    if (canonical) return canonical;
+  }
+
+  const matchedConversation = currentConversations.find((conv) => {
+    const refs = [
+      conv?.order_id,
+      conv?.order_number,
+      ...(Array.isArray(conv?.order_ids) ? conv.order_ids : [])
+    ].map(normalizeOrderRef);
+    return refs.includes(normalizedRef);
+  });
+
+  if (matchedConversation) {
+    const conversationId = [
+      matchedConversation?.order_id,
+      ...(Array.isArray(matchedConversation?.order_ids) ? matchedConversation.order_ids : [])
+    ].map(normalizeOrderRef).find(Boolean);
+    if (conversationId) return conversationId;
+  }
+
+  return normalizedRef;
+};
+
+let ordersStatsCollapsed = false;
+let issuesStatsCollapsed = false;
+
+const saveBuyerUiState = () => {
+  try {
+    const payload = {
+      currentPage,
+      currentView,
+      browseFiltersCollapsed: Boolean(browseFiltersCollapsed),
+      browseDesktopFiltersHidden: Boolean(browseDesktopFiltersHidden),
+      ordersStatsCollapsed: Boolean(ordersStatsCollapsed),
+      issuesStatsCollapsed: Boolean(issuesStatsCollapsed),
+      browseFilters: {
+        search: safeString(browseFilters.search),
+        category: safeString(browseFilters.category),
+        municipality: safeString(browseFilters.municipality),
+        tags: Array.isArray(browseFilters.tags) ? browseFilters.tags : [],
+        sort_by: safeString(browseFilters.sort_by, DEFAULT_BROWSE_FILTERS.sort_by),
+        sort_order: safeString(browseFilters.sort_order, DEFAULT_BROWSE_FILTERS.sort_order),
+        page: clampToPositiveInt(browseFilters.page, 1),
+        limit: clampToPositiveInt(browseFilters.limit, DEFAULT_BROWSE_FILTERS.limit)
+      },
+      orderFilters: {
+        status: safeString(orderFilters.status, DEFAULT_ORDER_FILTERS.status),
+        page: clampToPositiveInt(orderFilters.page, 1),
+        limit: clampToPositiveInt(orderFilters.limit, DEFAULT_ORDER_FILTERS.limit)
+      },
+      issueFilters: {
+        status: safeString(issueFilters.status, 'all'),
+        search: safeString(issueFilters.search),
+        sort: safeString(issueFilters.sort, 'newest')
+      },
+      conversationFilters: {
+        search: safeString(conversationFilters.search),
+        unreadOnly: Boolean(conversationFilters.unreadOnly),
+        sort: safeString(conversationFilters.sort, 'newest')
+      }
+    };
+    localStorage.setItem(UI_STATE_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    // Ignore storage failures
+  }
+};
+
+const restoreBuyerUiState = () => {
+  try {
+    const raw = localStorage.getItem(UI_STATE_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.browseFilters && typeof parsed.browseFilters === 'object') {
+        browseFilters = {
+          ...DEFAULT_BROWSE_FILTERS,
+          ...parsed.browseFilters,
+          tags: Array.isArray(parsed.browseFilters.tags) ? parsed.browseFilters.tags : [],
+          page: clampToPositiveInt(parsed.browseFilters.page, 1),
+          limit: clampToPositiveInt(parsed.browseFilters.limit, DEFAULT_BROWSE_FILTERS.limit)
+        };
+      }
+
+      if (parsed.orderFilters && typeof parsed.orderFilters === 'object') {
+        orderFilters = {
+          ...DEFAULT_ORDER_FILTERS,
+          ...parsed.orderFilters,
+          page: clampToPositiveInt(parsed.orderFilters.page, 1),
+          limit: clampToPositiveInt(parsed.orderFilters.limit, DEFAULT_ORDER_FILTERS.limit)
+        };
+      }
+
+      if (parsed.issueFilters && typeof parsed.issueFilters === 'object') {
+        issueFilters = {
+          status: safeString(parsed.issueFilters.status, 'all'),
+          search: safeString(parsed.issueFilters.search),
+          sort: safeString(parsed.issueFilters.sort, 'newest')
+        };
+      }
+
+      if (parsed.conversationFilters && typeof parsed.conversationFilters === 'object') {
+        conversationFilters = {
+          search: safeString(parsed.conversationFilters.search),
+          unreadOnly: Boolean(parsed.conversationFilters.unreadOnly),
+          sort: safeString(parsed.conversationFilters.sort, 'newest')
+        };
+      }
+
+      if (parsed.currentView === 'map' || parsed.currentView === 'grid') {
+        currentView = parsed.currentView;
+      }
+
+      if (typeof parsed.browseFiltersCollapsed === 'boolean') {
+        browseFiltersCollapsed = parsed.browseFiltersCollapsed;
+      }
+
+      if (typeof parsed.browseDesktopFiltersHidden === 'boolean') {
+        browseDesktopFiltersHidden = parsed.browseDesktopFiltersHidden;
+      }
+
+      if (typeof parsed.ordersStatsCollapsed === 'boolean') {
+        ordersStatsCollapsed = parsed.ordersStatsCollapsed;
+      }
+
+      if (typeof parsed.issuesStatsCollapsed === 'boolean') {
+        issuesStatsCollapsed = parsed.issuesStatsCollapsed;
+      }
+
+      if (['browse', 'cart', 'orders', 'messaging', 'my-issues'].includes(parsed.currentPage)) {
+        currentPage = parsed.currentPage;
+      }
+    }
+  } catch (error) {
+    // Ignore corrupted state
+  }
+};
+
+const renderSectionEmptyState = ({
+  icon = 'inbox',
+  title = 'No data found',
+  subtitle = '',
+  primaryActionHtml = '',
+  secondaryActionHtml = ''
+} = {}) => {
+  return `
+    <div class="text-center py-12">
+      <i class="bi bi-${icon} text-6xl text-gray-400"></i>
+      <p class="text-gray-600 mt-4 font-semibold">${escapeHtml(title)}</p>
+      ${subtitle ? `<p class="text-sm text-gray-500 mt-2">${escapeHtml(subtitle)}</p>` : ''}
+      ${(primaryActionHtml || secondaryActionHtml) ? `
+        <div class="mt-4 flex flex-wrap justify-center gap-2">
+          ${primaryActionHtml || ''}
+          ${secondaryActionHtml || ''}
+        </div>
+      ` : ''}
+    </div>
+  `;
+};
+
+const renderSectionErrorState = ({
+  title = 'Failed to load data',
+  retryHandler = ''
+} = {}) => {
+  return `
+    <div class="text-center py-12">
+      <i class="bi bi-exclamation-circle text-6xl text-danger"></i>
+      <p class="text-danger mt-4 font-semibold">${escapeHtml(title)}</p>
+      ${retryHandler
+        ? `<button class="btn btn-primary mt-4" onclick="${retryHandler}">Retry</button>`
+        : ''}
+    </div>
+  `;
+};
+
+const renderPaginationControls = ({
+  containerId,
+  currentPageValue,
+  totalPages,
+  totalItems,
+  onPrev,
+  onNext,
+  label = 'items'
+}) => {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  if (!totalPages || totalPages <= 1) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const canPrev = currentPageValue > 1;
+  const canNext = currentPageValue < totalPages;
+  const itemLabel = `${Number(totalItems) || 0} ${label}`;
+
+  container.innerHTML = `
+    <p class="text-sm text-gray-600">${escapeHtml(itemLabel)} • Page ${currentPageValue} of ${totalPages}</p>
+    <div class="flex items-center gap-2">
+      <button class="btn btn-outline btn-sm" id="${containerId}-prev" ${canPrev ? '' : 'disabled'}>
+        <i class="bi bi-chevron-left"></i> Previous
+      </button>
+      <button class="btn btn-outline btn-sm" id="${containerId}-next" ${canNext ? '' : 'disabled'}>
+        Next <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  `;
+
+  const prevBtn = document.getElementById(`${containerId}-prev`);
+  const nextBtn = document.getElementById(`${containerId}-next`);
+  if (prevBtn && canPrev) prevBtn.addEventListener('click', onPrev);
+  if (nextBtn && canNext) nextBtn.addEventListener('click', onNext);
+};
+
+const applyBrowseFiltersToUi = () => {
+  const searchInput = document.getElementById('browse-search');
+  const categorySelect = document.getElementById('browse-category');
+  const municipalitySelect = document.getElementById('browse-municipality');
+  const sortSelect = document.getElementById('browse-sort');
+
+  if (searchInput) searchInput.value = draftBrowseFilters.search || '';
+  if (categorySelect) categorySelect.value = draftBrowseFilters.category || '';
+  if (municipalitySelect) municipalitySelect.value = draftBrowseFilters.municipality || '';
+  if (sortSelect) sortSelect.value = `${browseFilters.sort_by}:${browseFilters.sort_order}`;
+
+  document.querySelectorAll('.product-tag-checkbox').forEach(checkbox => {
+    checkbox.checked = Array.isArray(draftBrowseFilters.tags) && draftBrowseFilters.tags.includes(checkbox.value);
+  });
+};
+
+const syncDraftFiltersFromApplied = () => {
+  draftBrowseFilters = {
+    ...browseFilters,
+    tags: Array.isArray(browseFilters.tags) ? [...browseFilters.tags] : []
+  };
+};
+
+const updateBrowseQueryParams = () => {
+  const params = new URLSearchParams(window.location.search);
+  const setOrDelete = (key, value) => {
+    if (value === '' || value === null || value === undefined) {
+      params.delete(key);
+    } else {
+      params.set(key, String(value));
+    }
+  };
+
+  setOrDelete('search', browseFilters.search);
+  setOrDelete('category', browseFilters.category);
+  setOrDelete('municipality', browseFilters.municipality);
+  setOrDelete('sort_by', browseFilters.sort_by);
+  setOrDelete('sort_order', browseFilters.sort_order);
+  setOrDelete('page', browseFilters.page > 1 ? browseFilters.page : '');
+  setOrDelete('tags', Array.isArray(browseFilters.tags) && browseFilters.tags.length > 0 ? browseFilters.tags.join(',') : '');
+
+  const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash}`;
+  window.history.replaceState({}, '', newUrl);
+};
+
+const applyBrowseFiltersFromQuery = () => {
+  const params = new URLSearchParams(window.location.search);
+  if ([...params.keys()].length === 0) return;
+
+  browseFilters.search = params.get('search') || browseFilters.search;
+  browseFilters.category = params.get('category') || browseFilters.category;
+  browseFilters.municipality = params.get('municipality') || browseFilters.municipality;
+  browseFilters.sort_by = params.get('sort_by') || browseFilters.sort_by;
+  browseFilters.sort_order = params.get('sort_order') || browseFilters.sort_order;
+  browseFilters.page = clampToPositiveInt(params.get('page'), browseFilters.page);
+
+  if (params.has('tags')) {
+    const tagsParam = params.get('tags');
+    browseFilters.tags = tagsParam
+      ? tagsParam.split(',').map(tag => tag.trim()).filter(Boolean)
+      : [];
+  }
+};
+
+const applyBrowseFilters = async ({ resetPage = true } = {}) => {
+  browseFilters = {
+    ...browseFilters,
+    ...draftBrowseFilters,
+    tags: Array.isArray(draftBrowseFilters.tags) ? [...draftBrowseFilters.tags] : []
+  };
+
+  if (resetPage) {
+    browseFilters.page = 1;
+  }
+
+  saveBuyerUiState();
+  updateBrowseQueryParams();
+  renderActiveFilterChips();
+  await loadBrowseProducts();
+
+  if (currentView === 'map') {
+    await loadProductsOnMap();
+  }
+};
+
+const renderActiveFilterChips = () => {
+  const chipsContainer = document.getElementById('active-filter-chips');
+  if (!chipsContainer) return;
+
+  const chips = [];
+
+  if (browseFilters.category) {
+    chips.push({ key: 'category', label: `Category: ${browseFilters.category}` });
+  }
+  if (browseFilters.municipality) {
+    chips.push({ key: 'municipality', label: `Municipality: ${browseFilters.municipality}` });
+  }
+  if (browseFilters.search) {
+    chips.push({ key: 'search', label: `Search: ${browseFilters.search}` });
+  }
+  if (Array.isArray(browseFilters.tags)) {
+    browseFilters.tags.forEach(tag => chips.push({ key: `tag:${tag}`, label: `Tag: ${tag}` }));
+  }
+
+  if (chips.length === 0) {
+    chipsContainer.classList.add('hidden');
+    chipsContainer.innerHTML = '';
+    return;
+  }
+
+  chipsContainer.classList.remove('hidden');
+  chipsContainer.innerHTML = `
+    ${chips.map(chip => `
+      <button class="buyer-filter-chip" data-chip-key="${escapeHtml(chip.key)}">
+        ${escapeHtml(chip.label)} <i class="bi bi-x-lg"></i>
+      </button>
+    `).join('')}
+    <button id="chips-clear-all" class="buyer-filter-chip buyer-filter-chip-clear">Clear all</button>
+  `;
+
+  chipsContainer.querySelectorAll('[data-chip-key]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const chipKey = btn.getAttribute('data-chip-key');
+      if (!chipKey) return;
+      if (chipKey.startsWith('tag:')) {
+        const tag = chipKey.replace('tag:', '');
+        browseFilters.tags = browseFilters.tags.filter(item => item !== tag);
+      } else {
+        browseFilters[chipKey] = '';
+      }
+      syncDraftFiltersFromApplied();
+      applyBrowseFiltersToUi();
+      await applyBrowseFilters({ resetPage: true });
+    });
+  });
+
+  const clearBtn = document.getElementById('chips-clear-all');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', async () => {
+      clearAllFilters({ reload: false });
+      await applyBrowseFilters({ resetPage: true });
+    });
+  }
+};
+
+const applyConversationFiltersToUi = () => {
+  const searchInput = document.getElementById('conversation-search');
+  const unreadOnly = document.getElementById('conversation-unread-only');
+  const sortSelect = document.getElementById('conversation-sort');
+  const clearBtn = document.getElementById('conversation-search-clear');
+  if (searchInput) searchInput.value = conversationFilters.search || '';
+  if (unreadOnly) unreadOnly.checked = Boolean(conversationFilters.unreadOnly);
+  if (sortSelect) sortSelect.value = conversationFilters.sort || 'newest';
+  if (clearBtn) clearBtn.classList.toggle('is-visible', Boolean((conversationFilters.search || '').trim()));
+};
+
+const applyIssueFiltersToUi = () => {
+  const searchInput = document.getElementById('issues-search');
+  const sortSelect = document.getElementById('issues-sort');
+  if (searchInput) searchInput.value = issueFilters.search || '';
+  if (sortSelect) sortSelect.value = issueFilters.sort || 'newest';
+};
+
+const applyBrowseFiltersCollapsedState = () => {
+  const filtersCard = document.getElementById('browse-filters-card');
+  const filtersToggle = document.getElementById('browse-filters-toggle');
+  const desktopFiltersToggle = document.getElementById('browse-filters-toggle-desktop');
+  const browseLayout = document.getElementById('browse-layout');
+  if (!filtersCard || !browseLayout) return;
+
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
+
+  if (isMobile) {
+    browseLayout.classList.remove('filters-hidden');
+    filtersToggle?.removeAttribute('hidden');
+    desktopFiltersToggle?.setAttribute('hidden', 'hidden');
+    filtersCard.classList.toggle('is-collapsed', browseFiltersCollapsed);
+    if (filtersToggle) {
+      filtersToggle.setAttribute('aria-expanded', String(!browseFiltersCollapsed));
+      filtersToggle.innerHTML = browseFiltersCollapsed
+        ? '<i class="bi bi-chevron-down"></i> Show Filters'
+        : '<i class="bi bi-chevron-up"></i> Hide Filters';
+    }
+    syncBrowseDesktopFiltersStickyFallback();
+    return;
+  }
+
+  filtersCard.classList.remove('is-collapsed');
+
+  if (isDesktop) {
+    browseLayout.classList.toggle('filters-hidden', browseDesktopFiltersHidden);
+    filtersToggle?.setAttribute('hidden', 'hidden');
+    if (desktopFiltersToggle) {
+      desktopFiltersToggle.removeAttribute('hidden');
+      desktopFiltersToggle.setAttribute('aria-expanded', String(!browseDesktopFiltersHidden));
+      desktopFiltersToggle.innerHTML = browseDesktopFiltersHidden
+        ? '<i class="bi bi-layout-sidebar-inset"></i> Show Filters'
+        : '<i class="bi bi-layout-sidebar"></i> Hide Filters';
+    }
+    syncBrowseDesktopFiltersStickyFallback();
+    return;
+  }
+
+  browseLayout.classList.remove('filters-hidden');
+  filtersToggle?.setAttribute('hidden', 'hidden');
+  desktopFiltersToggle?.setAttribute('hidden', 'hidden');
+  if (filtersToggle) {
+    filtersToggle.setAttribute('aria-expanded', 'true');
+    filtersToggle.innerHTML = '<i class="bi bi-chevron-up"></i> Hide Filters';
+  }
+  syncBrowseDesktopFiltersStickyFallback();
+};
+
+const resetBrowseDesktopFiltersStickyFallback = () => {
+  const sidebar = document.getElementById('browse-filters-sidebar');
+  const filtersCard = document.getElementById('browse-filters-card');
+  if (!sidebar || !filtersCard) return;
+
+  sidebar.style.removeProperty('min-height');
+  filtersCard.style.removeProperty('position');
+  filtersCard.style.removeProperty('top');
+  filtersCard.style.removeProperty('left');
+  filtersCard.style.removeProperty('width');
+  filtersCard.style.removeProperty('max-height');
+  filtersCard.style.removeProperty('overflow-y');
+  filtersCard.style.removeProperty('z-index');
+};
+
+const syncBrowseDesktopFiltersStickyFallback = () => {
+  const sidebar = document.getElementById('browse-filters-sidebar');
+  const filtersCard = document.getElementById('browse-filters-card');
+  if (!sidebar || !filtersCard) return;
+
+  const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
+  const shouldUseFallback = isDesktop && currentPage === 'browse' && !browseDesktopFiltersHidden;
+
+  if (!shouldUseFallback) {
+    resetBrowseDesktopFiltersStickyFallback();
+    return;
+  }
+
+  const sidebarRect = sidebar.getBoundingClientRect();
+  const shouldFix = sidebarRect.top <= DESKTOP_BROWSE_FILTERS_TOP;
+
+  if (!shouldFix) {
+    resetBrowseDesktopFiltersStickyFallback();
+    return;
+  }
+
+  const sidebarWidth = Math.round(sidebarRect.width || sidebar.offsetWidth || 0);
+  const sidebarLeft = Math.round(sidebarRect.left);
+  if (!sidebarWidth) {
+    resetBrowseDesktopFiltersStickyFallback();
+    return;
+  }
+
+  sidebar.style.minHeight = `${Math.ceil(filtersCard.offsetHeight)}px`;
+  filtersCard.style.setProperty('position', 'fixed', 'important');
+  filtersCard.style.setProperty('top', `${DESKTOP_BROWSE_FILTERS_TOP}px`, 'important');
+  filtersCard.style.setProperty('left', `${sidebarLeft}px`, 'important');
+  filtersCard.style.setProperty('width', `${sidebarWidth}px`, 'important');
+  filtersCard.style.setProperty('max-height', `calc(100vh - ${DESKTOP_BROWSE_FILTERS_TOP + 12}px)`, 'important');
+  filtersCard.style.setProperty('overflow-y', 'auto', 'important');
+  filtersCard.style.setProperty('z-index', '40', 'important');
+};
+
+const refreshBrowseDesktopUiImmediate = () => {
+  applyBrowseFiltersCollapsedState();
+  syncBrowseDesktopFiltersStickyFallback();
+  updateBrowseBackToTopVisibility();
+
+  requestAnimationFrame(() => {
+    syncBrowseDesktopFiltersStickyFallback();
+    updateBrowseBackToTopVisibility();
+  });
+
+  setTimeout(() => {
+    syncBrowseDesktopFiltersStickyFallback();
+    updateBrowseBackToTopVisibility();
+  }, 90);
+};
+
+const applyOrdersStatsCollapsedState = () => {
+  const statsContainer = document.getElementById('orders-stats');
+  const toggleButton = document.getElementById('orders-stats-toggle');
+  if (!statsContainer || !toggleButton) return;
+
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+  if (!isMobile) {
+    statsContainer.classList.remove('is-collapsed');
+    toggleButton.setAttribute('hidden', 'hidden');
+    toggleButton.setAttribute('aria-expanded', 'true');
+    toggleButton.innerHTML = '<i class="bi bi-chevron-up"></i><span>Hide Stats</span>';
+    return;
+  }
+
+  toggleButton.removeAttribute('hidden');
+  statsContainer.classList.toggle('is-collapsed', ordersStatsCollapsed);
+  toggleButton.setAttribute('aria-expanded', String(!ordersStatsCollapsed));
+  toggleButton.innerHTML = ordersStatsCollapsed
+    ? '<i class="bi bi-chevron-down"></i><span>Show Stats</span>'
+    : '<i class="bi bi-chevron-up"></i><span>Hide Stats</span>';
+};
+
+const applyIssuesStatsCollapsedState = () => {
+  const statsContainer = document.getElementById('issues-stats');
+  const toggleButton = document.getElementById('issues-stats-toggle');
+  if (!statsContainer || !toggleButton) return;
+
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+  if (!isMobile) {
+    statsContainer.classList.remove('is-collapsed');
+    toggleButton.setAttribute('hidden', 'hidden');
+    toggleButton.setAttribute('aria-expanded', 'true');
+    toggleButton.innerHTML = '<i class="bi bi-chevron-up"></i><span>Hide Stats</span>';
+    return;
+  }
+
+  toggleButton.removeAttribute('hidden');
+  statsContainer.classList.toggle('is-collapsed', issuesStatsCollapsed);
+  toggleButton.setAttribute('aria-expanded', String(!issuesStatsCollapsed));
+  toggleButton.innerHTML = issuesStatsCollapsed
+    ? '<i class="bi bi-chevron-down"></i><span>Show Stats</span>'
+    : '<i class="bi bi-chevron-up"></i><span>Hide Stats</span>';
+};
+
+const updateBrowseBackToTopVisibility = () => {
+  const button = document.getElementById('browse-back-to-top-btn');
+  if (!button) return;
+
+  const browseSection = document.getElementById('browse');
+  const isBrowseVisible = Boolean(
+    browseSection &&
+    currentPage === 'browse' &&
+    browseSection.style.display !== 'none' &&
+    currentView === 'grid'
+  );
+
+  if (!isBrowseVisible) {
+    button.classList.remove('is-visible');
+    button.setAttribute('aria-hidden', 'true');
+    return;
+  }
+
+  const sectionTop = (browseSection.getBoundingClientRect().top || 0) + window.scrollY;
+  const firstCard = document.querySelector('#browse-products .product-card, #browse-products > *');
+  const cardHeight = Math.max(140, Math.round(firstCard?.getBoundingClientRect?.().height || 180));
+  const revealAfter = Math.max(sectionTop + (cardHeight * 5), sectionTop + 720);
+  const show = window.scrollY > revealAfter;
+
+  button.classList.toggle('is-visible', show);
+  button.setAttribute('aria-hidden', show ? 'false' : 'true');
+};
+
+const scrollBrowseToTop = () => {
+  const browseSection = document.getElementById('browse');
+  if (!browseSection) return;
+
+  const navbar = document.getElementById('main-navbar');
+  const navbarHeight = Math.max(0, Math.round(navbar?.getBoundingClientRect?.().height || 0));
+  const targetTop = Math.max(
+    0,
+    Math.round((browseSection.getBoundingClientRect().top || 0) + window.scrollY - navbarHeight - 8)
+  );
+
+  window.scrollTo({ top: targetTop, behavior: 'smooth' });
+};
+
+// ============ Product Reviews ============
 async function viewProductReviews(productId, productName) {
   try {
     showSpinner(null, 'md', 'primary', 'Loading reviews...');
@@ -137,7 +839,6 @@ async function viewProductReviews(productId, productName) {
           <h4 class="font-semibold text-lg">${productName}</h4>
           <p class="text-sm text-gray-600">${reviews.length} ${reviews.length === 1 ? 'review' : 'reviews'}</p>
         </div>
-        
         <div class="space-y-4 max-h-96 overflow-y-auto">
           ${reviews.map(review => `
             <div class="border-b pb-3 last:border-b-0">
@@ -151,14 +852,10 @@ async function viewProductReviews(productId, productName) {
     })}</p>
                 </div>
                 <div class="flex gap-1 text-warning">
-                  ${[1, 2, 3, 4, 5].map(star =>
-      `<i class="bi bi-star${star <= review.rating ? '-fill' : ''}"></i>`
-    ).join('')}
+                  ${[1, 2, 3, 4, 5].map(star => `<i class="bi bi-star${star <= review.rating ? '-fill' : ''}"></i>`).join('')}
                 </div>
               </div>
-              ${review.comment ? `
-                <p class="text-sm text-gray-700 mt-2">${review.comment}</p>
-              ` : ''}
+              ${review.comment ? `<p class="text-sm text-gray-700 mt-2">${review.comment}</p>` : ''}
             </div>
           `).join('')}
         </div>
@@ -171,7 +868,6 @@ async function viewProductReviews(productId, productName) {
       size: 'lg',
       footer: '<button class="btn btn-secondary" data-modal-close>Close</button>'
     });
-
   } catch (error) {
     hideSpinner();
     console.error('Error loading reviews:', error);
@@ -179,7 +875,6 @@ async function viewProductReviews(productId, productName) {
   }
 }
 
-// Make it globally accessible
 window.viewProductReviews = viewProductReviews;
 
 // ============ Initialization ============
@@ -187,6 +882,10 @@ window.viewProductReviews = viewProductReviews;
 const init = async () => {
   // Check authentication
   if (!requireAuth(['buyer'])) return;
+
+  restoreBuyerUiState();
+  applyBrowseFiltersFromQuery();
+  syncDraftFiltersFromApplied();
 
   // Initialize cart store
   cartStore.init();
@@ -219,13 +918,27 @@ const init = async () => {
 
   // Populate municipality filter
   populateMunicipalityFilter();
+  applyBrowseFiltersToUi();
+  renderActiveFilterChips();
+  applyConversationFiltersToUi();
+  applyIssueFiltersToUi();
+  applyIssuesStatsCollapsedState();
+
+  // Restore saved section when no explicit hash is provided
+  if (!window.location.hash || window.location.hash === '#') {
+    window.location.hash = currentPage || 'browse';
+  }
 
   // Load initial data (products will be loaded by showPage via navigation)
   await updateCartUI();
   await updateMessageBadge();
+  loadOrderStats();
 
   // Attach event listeners
   attachEventListeners();
+  updateBrowseBackToTopVisibility();
+  requestAnimationFrame(() => applyCartSummaryStickyState());
+  setTimeout(() => applyCartSummaryStickyState(), 120);
 };
 
 // ============ Navigation ============
@@ -238,6 +951,7 @@ const setupNavigation = () => {
   };
 
   window.addEventListener('hashchange', handleHashChange);
+  window.addEventListener('resize', syncMessagingPanelsVisibility);
 
   // Call initial navigation immediately (DOM is ready since init() is called after DOMContentLoaded)
   handleHashChange();
@@ -262,9 +976,19 @@ const showPage = (page) => {
     currentConversation = null;
     currentConversationOrderIds = [];
     currentConversationSendOrderId = null;
+    messagingMobileView = 'list';
     const chatWindow = document.getElementById('chat-window');
     if (chatWindow) {
-      chatWindow.innerHTML = '<p class="text-center text-gray-500 py-12">Select a conversation to start messaging</p>';
+      chatWindow.innerHTML = `
+        <div class="buyer-chat-empty-state">
+          <i class="bi bi-chat-left-text"></i>
+          <p class="title">Select a conversation to start messaging</p>
+          <p class="subtitle">Choose a thread on the left or jump to your latest unread conversation.</p>
+          <button type="button" class="btn btn-outline btn-sm" onclick="window.openLatestUnreadConversation?.()">
+            <i class="bi bi-lightning-charge"></i> Open latest unread
+          </button>
+        </div>
+      `;
     }
   }
 
@@ -280,28 +1004,23 @@ const showPage = (page) => {
   const section = document.getElementById(page);
 
   if (section && validSections.includes(page)) {
+    saveBuyerUiState();
     section.style.setProperty('display', 'block', 'important');
 
     // Load page-specific data
     switch (page) {
       case 'browse':
         loadBrowseProducts();
-        if (currentView === 'map') {
-          setTimeout(() => {
-            if (!browseMap) {
-              initBrowseMap();
-              return;
-            }
-
-            browseMap.invalidateSize();
-            loadProductsOnMap();
-          }, 0);
-        }
+        toggleView(currentView);
+        refreshBrowseDesktopUiImmediate();
         break;
       case 'cart':
         loadCart();
+        startCartSummaryStickyEnforcer();
+        requestAnimationFrame(() => applyCartSummaryStickyState());
         break;
       case 'orders':
+        loadOrderStats();
         loadOrders();
         break;
       case 'messaging':
@@ -320,8 +1039,23 @@ const showPage = (page) => {
         break;
       case 'my-issues':
         loadMyIssues();
+        stopCartSummaryStickyEnforcer();
         break;
     }
+
+    if (page !== 'cart') {
+      stopCartSummaryStickyEnforcer();
+    }
+
+    if (page === 'messaging') {
+      syncMessagingPanelsVisibility();
+    }
+
+    if (page !== 'browse') {
+      resetBrowseDesktopFiltersStickyFallback();
+    }
+
+    updateBrowseBackToTopVisibility();
   } else {
     // Section not found or invalid route - redirect to 404 page
     window.location.href = '/404.html';
@@ -330,11 +1064,213 @@ const showPage = (page) => {
 
 // ============ Browse Products ============
 
-const loadBrowseProducts = async () => {
+const renderBrowseSkeletons = (count = 6) => {
+  const container = document.getElementById('browse-products');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="home-product-skeleton">
+      <div class="home-skeleton shimmer home-skeleton-image"></div>
+      <div class="home-skeleton-body">
+        <div class="home-skeleton shimmer home-skeleton-title"></div>
+        <div class="home-skeleton shimmer home-skeleton-line"></div>
+        <div class="home-skeleton shimmer home-skeleton-price"></div>
+        <div class="home-skeleton shimmer home-skeleton-actions"></div>
+      </div>
+    </div>
+  `).join('');
+};
+
+const isDesktopBuyerViewport = () => window.matchMedia('(min-width: 1024px)').matches;
+
+const applyCartSummaryStickyState = () => {
+  const cartSection = document.getElementById('cart');
+  if (!cartSection) return;
+
+  const summaryWrap = document.querySelector('#cart .buyer-cart-summary-wrap');
+  const summaryCard = document.querySelector('#cart .buyer-cart-summary-wrap .card');
+  if (!summaryWrap || !summaryCard) {
+    if (summaryWrap) {
+      summaryWrap.style.removeProperty('min-height');
+    }
+    cartSection.style.removeProperty('padding-bottom');
+    return;
+  }
+
+  const isCartVisible = cartSection.getClientRects().length > 0
+    && window.getComputedStyle(cartSection).display !== 'none'
+    && !cartSection.hidden;
+
+  if (!isCartVisible) {
+    summaryCard.style.removeProperty('position');
+    summaryCard.style.removeProperty('top');
+    summaryCard.style.removeProperty('left');
+    summaryCard.style.removeProperty('right');
+    summaryCard.style.removeProperty('bottom');
+    summaryCard.style.removeProperty('width');
+    summaryCard.style.removeProperty('z-index');
+    summaryWrap.style.removeProperty('min-height');
+    cartSection.style.removeProperty('padding-bottom');
+    return;
+  }
+
+  const isMobileViewport = window.matchMedia('(max-width: 767.98px)').matches;
+  cartSection.style.setProperty('transform', 'none', 'important');
+
+  if (isMobileViewport) {
+    const summaryHeight = Math.ceil(summaryCard.getBoundingClientRect().height || 0);
+    const extraBottomPadding = Math.max(summaryHeight + 20, 170);
+
+    summaryCard.style.setProperty('position', 'fixed', 'important');
+    summaryCard.style.setProperty('left', '0.5rem', 'important');
+    summaryCard.style.setProperty('right', '0.5rem', 'important');
+    summaryCard.style.setProperty('bottom', 'max(0.5rem, env(safe-area-inset-bottom))', 'important');
+    summaryCard.style.setProperty('top', 'auto', 'important');
+    summaryCard.style.setProperty('z-index', '1200', 'important');
+    summaryCard.style.setProperty('height', 'auto', 'important');
+    summaryCard.style.setProperty('max-height', 'none', 'important');
+    summaryCard.style.setProperty('overflow', 'visible', 'important');
+    summaryCard.style.removeProperty('width');
+    summaryWrap.style.removeProperty('min-height');
+    cartSection.style.setProperty('padding-bottom', `${extraBottomPadding}px`, 'important');
+    return;
+  }
+
+  summaryCard.style.setProperty('height', 'auto', 'important');
+  summaryCard.style.setProperty('max-height', 'none', 'important');
+  summaryCard.style.setProperty('overflow', 'visible', 'important');
+
+  const wrapRect = summaryWrap.getBoundingClientRect();
+  const fixedLeft = Math.max(8, Math.round(wrapRect.left));
+  const fixedWidth = Math.max(220, Math.round(wrapRect.width));
+  const summaryHeight = Math.ceil(summaryCard.getBoundingClientRect().height || 0);
+
+  summaryCard.style.setProperty('position', 'fixed', 'important');
+  summaryCard.style.setProperty('top', '84px', 'important');
+  summaryCard.style.setProperty('left', `${fixedLeft}px`, 'important');
+  summaryCard.style.setProperty('right', 'auto', 'important');
+  summaryCard.style.setProperty('bottom', 'auto', 'important');
+  summaryCard.style.setProperty('width', `${fixedWidth}px`, 'important');
+  summaryCard.style.setProperty('z-index', '10', 'important');
+  summaryWrap.style.setProperty('min-height', `${summaryHeight}px`, 'important');
+  cartSection.style.removeProperty('padding-bottom');
+};
+
+let cartSummaryStickyEnforcerId = null;
+
+const startCartSummaryStickyEnforcer = () => {
+  if (cartSummaryStickyEnforcerId) return;
+  cartSummaryStickyEnforcerId = window.setInterval(() => {
+    applyCartSummaryStickyState();
+  }, 280);
+};
+
+const stopCartSummaryStickyEnforcer = () => {
+  if (!cartSummaryStickyEnforcerId) return;
+  window.clearInterval(cartSummaryStickyEnforcerId);
+  cartSummaryStickyEnforcerId = null;
+};
+
+const renderCartSkeletons = (count = 3) => {
+  const container = document.getElementById('cart-items');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="card buyer-cart-card">
+      <div class="card-body">
+        <div class="buyer-loading-skeleton-row">
+          <div class="home-skeleton shimmer buyer-loading-skeleton-thumb"></div>
+          <div class="buyer-loading-skeleton-col">
+            <div class="home-skeleton shimmer buyer-loading-skeleton-title"></div>
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-60"></div>
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-40"></div>
+          </div>
+          <div class="buyer-loading-skeleton-actions">
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-32"></div>
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-24"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+};
+
+const renderOrdersSkeletons = (count = 3) => {
+  const container = document.getElementById('orders-list');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="card buyer-order-card">
+      <div class="card-body">
+        <div class="buyer-loading-skeleton-row">
+          <div class="buyer-loading-skeleton-col">
+            <div class="home-skeleton shimmer buyer-loading-skeleton-title"></div>
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-50"></div>
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-70"></div>
+          </div>
+          <div class="buyer-loading-skeleton-aside">
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-24"></div>
+            <div class="home-skeleton shimmer buyer-loading-skeleton-title"></div>
+          </div>
+        </div>
+        <div class="home-skeleton shimmer buyer-loading-skeleton-actions-bar"></div>
+      </div>
+    </div>
+  `).join('');
+};
+
+const renderConversationSkeletons = (count = 6) => {
+  const container = document.getElementById('conversations-list');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="buyer-conversation-item p-3">
+      <div class="buyer-loading-skeleton-row">
+        <div class="home-skeleton shimmer buyer-loading-skeleton-avatar"></div>
+        <div class="buyer-loading-skeleton-col">
+          <div class="home-skeleton shimmer buyer-loading-skeleton-line w-55"></div>
+          <div class="home-skeleton shimmer buyer-loading-skeleton-line w-75"></div>
+          <div class="home-skeleton shimmer buyer-loading-skeleton-line w-45"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+};
+
+const renderChatWindowSkeleton = () => {
+  const chatWindow = document.getElementById('chat-window');
+  if (!chatWindow) return;
+  const sellerSkeletonRows = [70, 55, 60, 50];
+  const buyerSkeletonRows = [45, 32];
+  chatWindow.innerHTML = `
+    <div class="buyer-chat-shell flex flex-col">
+      <div class="border-b p-4 bg-gray-50">
+        <div class="home-skeleton shimmer buyer-loading-skeleton-title"></div>
+      </div>
+      <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3" aria-busy="true" aria-live="polite">
+        ${sellerSkeletonRows.map((width) => `
+          <div class="buyer-loading-skeleton-message">
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-${width}"></div>
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-40"></div>
+          </div>
+        `).join('')}
+        ${buyerSkeletonRows.map((width) => `
+          <div class="buyer-loading-skeleton-message is-self">
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-${width}"></div>
+            <div class="home-skeleton shimmer buyer-loading-skeleton-line w-30"></div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="border-t p-4">
+        <div class="home-skeleton shimmer buyer-loading-skeleton-actions-bar"></div>
+      </div>
+    </div>
+  `;
+};
+
+const loadBrowseProducts = async ({ append = false } = {}) => {
   const container = document.getElementById('browse-products');
   if (!container) return;
 
-  showSpinner(container, 'md', 'primary', 'Loading products...');
+  if (!append) {
+    renderBrowseSkeletons(window.innerWidth >= 1200 ? 6 : 3);
+  }
 
   try {
     // Prepare filters, handling tags array
@@ -347,39 +1283,58 @@ const loadBrowseProducts = async () => {
 
     const response = await listProducts(filters);
     const products = response.data?.products || [];
-    const total = response.total || products.length;
+    browseTotalItems = Number(response.total) || products.length;
+    browseTotalPages = Math.max(1, Number(response.total_pages) || Math.ceil(browseTotalItems / (browseFilters.limit || 12)));
 
     // Update products count
-    updateProductsCount(total);
+    updateProductsCount(browseTotalItems);
+    renderBrowsePagination();
+    updateBrowseQueryParams();
+    saveBuyerUiState();
 
     if (products.length === 0) {
-      container.innerHTML = `
-        <div class="text-center py-12 col-span-full">
-          <i class="bi bi-inbox text-6xl text-gray-400"></i>
-          <p class="text-gray-500 mt-4">No products found</p>
-          <p class="text-sm text-gray-400 mt-2">Try adjusting your filters or search terms</p>
-        </div>
-      `;
+      container.innerHTML = renderSectionEmptyState({
+        icon: 'inbox',
+        title: 'No products found',
+        subtitle: 'Try removing tags or municipality filters.',
+        primaryActionHtml: '<button class="btn btn-primary" onclick="window.clearBrowseFilters()">Clear Filters</button>'
+      });
+      updateBrowseBackToTopVisibility();
       return;
     }
 
-    renderProductCards(products, container, {
-      showActions: true,
-      showSeller: true,
-      onView: viewProductDetails,
-      onAddToCart: handleAddToCart,
-      onViewReviews: viewProductReviews
-    });
+    if (append) {
+      products.forEach(product => {
+        const card = createProductCard(product, {
+          showActions: true,
+          showSeller: true,
+          enableMobileDetailsCollapse: true,
+          onView: viewProductDetails,
+          onAddToCart: handleAddToCart,
+          onViewReviews: viewProductReviews
+        });
+        container.appendChild(card);
+      });
+    } else {
+      renderProductCards(products, container, {
+        showActions: true,
+        showSeller: true,
+        enableMobileDetailsCollapse: true,
+        onView: viewProductDetails,
+        onAddToCart: handleAddToCart,
+        onViewReviews: viewProductReviews
+      });
+    }
+
+    updateBrowseBackToTopVisibility();
 
   } catch (error) {
     console.error('Error loading products:', error);
-    container.innerHTML = `
-      <div class="text-center py-12 col-span-full">
-        <i class="bi bi-exclamation-circle text-6xl text-danger"></i>
-        <p class="text-danger mt-4">Failed to load products</p>
-        <button class="btn btn-primary mt-4" onclick="location.reload()">Retry</button>
-      </div>
-    `;
+    container.innerHTML = renderSectionErrorState({
+      title: 'Failed to load products',
+      retryHandler: 'window.loadBrowseProductsFromUI?.()'
+    });
+    updateBrowseBackToTopVisibility();
   }
 };
 
@@ -389,6 +1344,45 @@ const updateProductsCount = (count) => {
   if (countEl) {
     countEl.textContent = `${count} product${count !== 1 ? 's' : ''} found`;
   }
+};
+
+const renderBrowsePagination = () => {
+  renderPaginationControls({
+    containerId: 'browse-pagination',
+    currentPageValue: browseFilters.page,
+    totalPages: browseTotalPages,
+    totalItems: browseTotalItems,
+    label: 'products',
+    onPrev: () => {
+      browseFilters.page = Math.max(1, browseFilters.page - 1);
+      syncDraftFiltersFromApplied();
+      loadBrowseProducts();
+      if (currentView === 'map') loadProductsOnMap();
+    },
+    onNext: () => {
+      browseFilters.page = Math.min(browseTotalPages, browseFilters.page + 1);
+      syncDraftFiltersFromApplied();
+      loadBrowseProducts();
+      if (currentView === 'map') loadProductsOnMap();
+    }
+  });
+
+  const container = document.getElementById('browse-pagination');
+  if (!container) return;
+
+  const canLoadMore = browseFilters.page < browseTotalPages;
+  if (!canLoadMore) return;
+
+  const loadMoreBtn = document.createElement('button');
+  loadMoreBtn.id = 'browse-load-more';
+  loadMoreBtn.className = 'btn btn-primary btn-sm';
+  loadMoreBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Load more';
+  loadMoreBtn.addEventListener('click', async () => {
+    browseFilters.page = Math.min(browseTotalPages, browseFilters.page + 1);
+    syncDraftFiltersFromApplied();
+    await loadBrowseProducts({ append: true });
+  });
+  container.appendChild(loadMoreBtn);
 };
 
 // Populate municipality filter dropdown
@@ -403,47 +1397,31 @@ const populateMunicipalityFilter = () => {
 };
 
 // Clear all filters
-const clearAllFilters = () => {
+const clearAllFilters = ({ reload = true } = {}) => {
   // Reset filter values
-  browseFilters = {
-    search: '',
-    category: '',
-    municipality: '',
-    tags: [],
-    sort_by: 'created_at',
-    sort_order: 'desc',
-    page: 1,
-    limit: 12
-  };
+  browseFilters = { ...DEFAULT_BROWSE_FILTERS };
+  syncDraftFiltersFromApplied();
 
   // Reset UI
-  const searchInput = document.getElementById('browse-search');
-  if (searchInput) searchInput.value = '';
+  applyBrowseFiltersToUi();
+  renderActiveFilterChips();
 
-  const categorySelect = document.getElementById('browse-category');
-  if (categorySelect) categorySelect.value = '';
-
-  const municipalitySelect = document.getElementById('browse-municipality');
-  if (municipalitySelect) municipalitySelect.value = '';
-
-  const sortSelect = document.getElementById('browse-sort');
-  if (sortSelect) sortSelect.value = 'created_at:desc';
-
-  // Uncheck all tag checkboxes
-  document.querySelectorAll('.product-tag-checkbox').forEach(checkbox => {
-    checkbox.checked = false;
-  });
+  updateBrowseQueryParams();
+  saveBuyerUiState();
 
   // Reload products
-  loadBrowseProducts();
-  if (currentView === 'map') {
-    loadProductsOnMap();
+  if (reload) {
+    loadBrowseProducts();
+    if (currentView === 'map') {
+      loadProductsOnMap();
+    }
   }
 };
 
 // Toggle between grid and map view
 const toggleView = (view) => {
   currentView = view;
+  saveBuyerUiState();
 
   const gridContainer = document.getElementById('browse-products');
   const mapContainer = document.getElementById('browse-map-container');
@@ -455,11 +1433,15 @@ const toggleView = (view) => {
     mapContainer?.classList.add('hidden');
     gridBtn?.classList.add('active');
     mapBtn?.classList.remove('active');
+    gridBtn?.setAttribute('aria-selected', 'true');
+    mapBtn?.setAttribute('aria-selected', 'false');
   } else {
     gridContainer?.classList.add('hidden');
     mapContainer?.classList.remove('hidden');
     gridBtn?.classList.remove('active');
     mapBtn?.classList.add('active');
+    gridBtn?.setAttribute('aria-selected', 'false');
+    mapBtn?.setAttribute('aria-selected', 'true');
 
     // Initialize map if not already done
     if (!browseMap) {
@@ -469,6 +1451,63 @@ const toggleView = (view) => {
       loadProductsOnMap();
     }
   }
+
+  updateBrowseBackToTopVisibility();
+  syncBrowseDesktopFiltersStickyFallback();
+  requestAnimationFrame(() => syncBrowseDesktopFiltersStickyFallback());
+};
+
+const escapeAttribute = (text) => escapeHtml(text).replace(/"/g, '&quot;');
+
+const getProductCountLabel = (count, includePrefix = true) => {
+  const numericCount = Number(count) || 0;
+  const unitLabel = numericCount === 1 ? 'product' : 'products';
+  return includePrefix ? `View All ${numericCount} ${unitLabel}` : `${numericCount} ${unitLabel}`;
+};
+
+const getSellerActivityLabel = (products = []) => {
+  const latestTimestamp = products.reduce((latest, product) => {
+    const value = product.updated_at || product.created_at;
+    const ts = value ? Date.parse(value) : NaN;
+    if (!Number.isFinite(ts)) return latest;
+    return ts > latest ? ts : latest;
+  }, 0);
+
+  if (!latestTimestamp) return 'Updated recently';
+  const hoursAgo = (Date.now() - latestTimestamp) / (1000 * 60 * 60);
+  if (hoursAgo <= 24) return 'Active today';
+  if (hoursAgo <= 72) return 'Active this week';
+  return 'Updated recently';
+};
+
+const createBrowseMarkerIcon = ({ sellerName, productsCount }) => {
+  const label = `${sellerName} • ${productsCount} ${productsCount === 1 ? 'product' : 'products'}`;
+  return L.divIcon({
+    className: 'browse-marker-wrap',
+    html: `
+      <button type="button" class="browse-marker-btn" aria-label="${escapeAttribute(label)}">
+        <i class="bi bi-shop"></i>
+        <span class="browse-marker-count">${productsCount}</span>
+      </button>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -14]
+  });
+};
+
+const applyBrowseMarkerState = (marker, state = 'default') => {
+  const icon = marker?._icon;
+  if (!icon) return;
+  icon.classList.remove('is-hover', 'is-selected');
+  if (state === 'hover') icon.classList.add('is-hover');
+  if (state === 'selected') icon.classList.add('is-selected');
+};
+
+const setBrowseMapLoading = (isLoading) => {
+  const loadingEl = document.getElementById('browse-map-loading');
+  if (!loadingEl) return;
+  loadingEl.classList.toggle('hidden', !isLoading);
 };
 
 // Initialize browse map
@@ -492,12 +1531,69 @@ const initBrowseMap = () => {
       // Silently handle tile errors
     });
 
+    const zoomInBtn = mapContainer.querySelector('.leaflet-control-zoom-in');
+    const zoomOutBtn = mapContainer.querySelector('.leaflet-control-zoom-out');
+    zoomInBtn?.setAttribute('aria-label', 'Zoom in');
+    zoomOutBtn?.setAttribute('aria-label', 'Zoom out');
+
     // Load and display products on map
     setTimeout(() => browseMap?.invalidateSize(), 0);
+    browseMap.on('moveend', () => {
+      if (!useMapBounds) return;
+      pendingMapBounds = browseMap.getBounds();
+      toggleMapSearchPrompt(true);
+    });
+    browseMap.on('popupopen', (event) => {
+      selectedBrowseMarker = event?.popup?._source || null;
+      if (selectedBrowseMarker) {
+        applyBrowseMarkerState(selectedBrowseMarker, 'selected');
+        browseMap.panInside(selectedBrowseMarker.getLatLng(), {
+          paddingTopLeft: [26, 86],
+          paddingBottomRight: [26, 42]
+        });
+      }
+      const closeBtn = event?.popup?._container?.querySelector('.leaflet-popup-close-button');
+      closeBtn?.setAttribute('aria-label', 'Close popup');
+    });
+    browseMap.on('popupclose', () => {
+      if (selectedBrowseMarker) {
+        applyBrowseMarkerState(selectedBrowseMarker, 'default');
+      }
+      selectedBrowseMarker = null;
+    });
     loadProductsOnMap();
   } catch (error) {
     console.error('Error initializing browse map:', error);
   }
+};
+
+const toggleMapSearchPrompt = (show) => {
+  const btn = document.getElementById('search-map-area');
+  const resetBtn = document.getElementById('reset-map-area');
+  const statusChip = document.getElementById('map-bounds-status');
+  if (!btn || !resetBtn || !statusChip) return;
+  mapBoundsPromptVisible = Boolean(show);
+  btn.classList.toggle('hidden', !mapBoundsPromptVisible);
+  resetBtn.classList.toggle('hidden', !useMapBounds);
+  statusChip.classList.toggle('hidden', !useMapBounds);
+};
+
+const resetMapAreaView = async () => {
+  if (!browseMap) return;
+  browseMap.setView([14.6037, 121.3084], 11);
+  pendingMapBounds = null;
+  toggleMapSearchPrompt(false);
+  await loadProductsOnMap();
+};
+
+const filterProductsByBounds = (products) => {
+  if (!useMapBounds || !pendingMapBounds) return products;
+
+  return products.filter(product => {
+    const coords = MUNICIPALITY_COORDINATES[product.municipality];
+    if (!coords) return false;
+    return pendingMapBounds.contains([coords.latitude, coords.longitude]);
+  });
 };
 
 const fetchAllProductsForMap = async (filters) => {
@@ -531,6 +1627,7 @@ const fetchAllProductsForMap = async (filters) => {
 const loadProductsOnMap = async () => {
   if (!browseMap) return;
 
+  setBrowseMapLoading(true);
   try {
     // Get current products
     const filters = { ...browseFilters };
@@ -542,14 +1639,14 @@ const loadProductsOnMap = async () => {
 
     delete filters.page;
     delete filters.limit;
-    const products = await fetchAllProductsForMap(filters);
+    const allMapProducts = await fetchAllProductsForMap(filters);
+    const products = filterProductsByBounds(allMapProducts);
 
-    // Clear existing markers
-    browseMap.eachLayer((layer) => {
-      if (layer instanceof L.Marker) {
-        browseMap.removeLayer(layer);
-      }
-    });
+    if (browseMapMarkerLayer) {
+      browseMap.removeLayer(browseMapMarkerLayer);
+      browseMapMarkerLayer = null;
+    }
+    selectedBrowseMarker = null;
 
     // Group products by seller and municipality
     const sellerGroups = {};
@@ -573,6 +1670,8 @@ const loadProductsOnMap = async () => {
       sellerGroups[key].products.push(product);
     });
 
+    const markers = [];
+
     // Add one marker per seller per location
     Object.values(sellerGroups).forEach(sellerGroup => {
       const { seller_name, seller_verified, municipality, coordinates, products } = sellerGroup;
@@ -580,88 +1679,126 @@ const loadProductsOnMap = async () => {
       const safeMunicipality = escapeHtml(municipality);
       const encodedSellerName = encodeURIComponent(String(seller_name ?? ''));
       const encodedMunicipality = encodeURIComponent(String(municipality ?? ''));
+      const productsCount = products.length;
+      const topProducts = products.slice(0, 2);
+      const activityLabel = getSellerActivityLabel(products);
+      const ratingValue = Number(products[0]?.seller?.rating);
+      const reviewCountValue = Number(products[0]?.seller?.reviews_count);
+      const ratingLabel = Number.isFinite(ratingValue) ? `${ratingValue.toFixed(1)} • ${Number.isFinite(reviewCountValue) ? reviewCountValue : 0} reviews` : '';
 
-      const marker = L.marker([coordinates.latitude, coordinates.longitude]);
+      const marker = L.marker([coordinates.latitude, coordinates.longitude], {
+        icon: createBrowseMarkerIcon({
+          sellerName: seller_name || 'Seller',
+          productsCount
+        }),
+        keyboard: true
+      });
 
-      let popupContent;
-
-      if (products.length > 0) {
-        // Create popup content showing all products from this seller
-        const productList = products.map(product => `
-          <div class="border-b border-gray-200 pb-2 mb-2 last:border-b-0 last:pb-0 last:mb-0">
-            <h5 class="font-semibold text-sm text-gray-800">${escapeHtml(product.name || 'Unnamed Product')}</h5>
-            <p class="text-xs text-gray-600 mb-1">${escapeHtml(product.description || '')}</p>
-            <div class="flex justify-between items-center">
-              <span class="text-sm font-bold text-primary">${formatCurrency(product.price_per_unit)}/${escapeHtml(product.unit_type || 'unit')}</span>
-              <button 
-                class="btn btn-xs btn-outline-primary" 
-                onclick="window.viewProductFromMap('${encodeURIComponent(String(product.id ?? ''))}')"
-              >
-                View
-              </button>
+      const productRows = topProducts.map((product) => `
+        <div class="product-row">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="product-name">${escapeHtml(product.name || 'Unnamed Product')}</div>
+              <div class="product-price">${formatCurrency(product.price_per_unit)}/${escapeHtml(product.unit_type || 'unit')}</div>
             </div>
+            <button
+              class="quick-link"
+              type="button"
+              aria-label="Quick view ${escapeAttribute(product.name || 'product')}"
+              onclick="window.viewProductFromMap('${encodeURIComponent(String(product.id ?? ''))}')"
+            >
+              Quick View
+            </button>
           </div>
-        `).join('');
+        </div>
+      `).join('');
 
-        popupContent = `
-          <div class="p-3" style="min-width: 280px; max-width: 320px;">
-            <div class="flex items-center gap-2 mb-3">
-              <i class="bi bi-shop text-primary"></i>
-              <h4 class="font-bold text-base text-gray-800">${safeSellerName}</h4>
-              ${seller_verified ? '<i class="bi bi-patch-check-fill text-success" title="Verified Seller"></i>' : ''}
-            </div>
-            
-            <p class="text-xs text-gray-600 mb-3">
-              <i class="bi bi-geo-alt"></i> ${safeMunicipality}
-            </p>
-            
-            <div class="mb-3">
-              <h5 class="font-semibold text-sm text-gray-700 mb-2">Products (${products.length}):</h5>
-              <div class="max-h-60 overflow-y-auto">
-                ${productList}
-              </div>
-            </div>
-            
-            <div class="text-center">
-              <button 
-                class="btn btn-sm btn-primary w-full" 
-                onclick="window.viewAllSellerProducts('${encodedSellerName}', '${encodedMunicipality}')"
-              >
-                <i class="bi bi-grid-3x3-gap"></i> View All ${products.length} Products
-              </button>
-            </div>
+      const popupContent = `
+        <div class="browse-seller-popup">
+          <div class="head">
+            <h4 class="seller-name">${safeSellerName}</h4>
+            ${seller_verified ? '<i class="bi bi-patch-check-fill text-success" title="Verified seller"></i>' : ''}
           </div>
-        `;
-      } else {
-        // No products available
-        popupContent = `
-          <div class="p-3" style="min-width: 280px; max-width: 320px;">
-            <div class="flex items-center gap-2 mb-3">
-              <i class="bi bi-shop text-primary"></i>
-              <h4 class="font-bold text-base text-gray-800">${safeSellerName}</h4>
-              ${seller_verified ? '<i class="bi bi-patch-check-fill text-success" title="Verified Seller"></i>' : ''}
-            </div>
-            
-            <p class="text-xs text-gray-600 mb-3">
-              <i class="bi bi-geo-alt"></i> ${safeMunicipality}
-            </p>
-            
-            <div class="text-center p-4 bg-gray-100 rounded">
-              <i class="bi bi-inbox text-gray-400" style="font-size: 2rem;"></i>
-              <p class="text-sm text-gray-600 mt-2">No products yet</p>
-            </div>
+          <div class="meta"><i class="bi bi-geo-alt"></i> ${safeMunicipality}</div>
+          <div class="trust">
+            <i class="bi bi-activity"></i> ${activityLabel}
+            ${ratingLabel ? `<span>• ${escapeHtml(ratingLabel)}</span>` : ''}
           </div>
-        `;
-      }
+          ${productRows || '<div class="text-sm text-gray-500 mb-2">No products yet</div>'}
+          <button
+            class="btn btn-primary primary-cta"
+            type="button"
+            aria-label="${escapeAttribute(getProductCountLabel(productsCount))}"
+            onclick="window.viewAllSellerProducts('${encodedSellerName}', '${encodedMunicipality}')"
+          >
+            <i class="bi bi-grid-3x3-gap"></i> ${getProductCountLabel(productsCount)}
+          </button>
+        </div>
+      `;
 
       marker.bindPopup(popupContent, {
         maxWidth: 320,
-        className: 'seller-popup'
+        className: 'seller-popup',
+        autoPan: true,
+        autoPanPaddingTopLeft: [24, 88],
+        autoPanPaddingBottomRight: [24, 24]
       });
-      marker.addTo(browseMap);
+
+      marker.on('mouseover', () => {
+        if (selectedBrowseMarker === marker) return;
+        applyBrowseMarkerState(marker, 'hover');
+      });
+      marker.on('mouseout', () => {
+        if (selectedBrowseMarker === marker) return;
+        applyBrowseMarkerState(marker, 'default');
+      });
+      marker.on('click', () => {
+        if (selectedBrowseMarker && selectedBrowseMarker !== marker) {
+          applyBrowseMarkerState(selectedBrowseMarker, 'default');
+        }
+        selectedBrowseMarker = marker;
+        applyBrowseMarkerState(marker, 'selected');
+      });
+      marker.on('add', () => {
+        const markerButton = marker?._icon?.querySelector('.browse-marker-btn');
+        if (!markerButton) return;
+        markerButton.tabIndex = 0;
+        markerButton.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            marker.openPopup();
+          }
+        });
+      });
+
+      markers.push(marker);
     });
+
+    if (markers.length > 0) {
+      if (typeof L.markerClusterGroup === 'function') {
+        const clusterLayer = L.markerClusterGroup({
+          showCoverageOnHover: false,
+          spiderfyOnMaxZoom: true,
+          removeOutsideVisibleBounds: true,
+          maxClusterRadius: 45
+        });
+        markers.forEach(marker => clusterLayer.addLayer(marker));
+        browseMapMarkerLayer = clusterLayer;
+      } else {
+        browseMapMarkerLayer = L.layerGroup(markers);
+      }
+      browseMap.addLayer(browseMapMarkerLayer);
+    }
+
+    if (useMapBounds && products.length === 0) {
+      showToast('No sellers in this map area. Try zooming out.', 'info');
+    }
+
+    toggleMapSearchPrompt(false);
   } catch (error) {
     console.error('Error loading products on map:', error);
+  } finally {
+    setBrowseMapLoading(false);
   }
 };
 
@@ -726,41 +1863,98 @@ window.viewAllSellerProducts = async (sellerName, municipality) => {
       return;
     }
 
-    // Create modal to show all seller products
-    const modal = createModal({
+    const primarySellerProduct = sellerProducts[0] || {};
+    const primarySeller = primarySellerProduct?.seller || {};
+    const sellerRating = Number(primarySeller?.rating);
+    const sellerReviewCount = Number(primarySeller?.reviews_count);
+    const summaryRating = Number.isFinite(sellerRating) ? `${sellerRating.toFixed(1)} (${Number.isFinite(sellerReviewCount) ? sellerReviewCount : 0})` : 'N/A';
+    const sellerSinceRaw =
+      primarySeller?.verified_since ||
+      primarySeller?.verified_at ||
+      primarySeller?.created_at ||
+      primarySellerProduct?.created_at;
+    const parsedSellerSince = sellerSinceRaw ? Date.parse(sellerSinceRaw) : NaN;
+    const sellerSince = Number.isFinite(parsedSellerSince)
+      ? String(new Date(parsedSellerSince).getFullYear())
+      : (primarySellerProduct.seller_verified ? 'Verified' : 'N/A');
+    const isSingleProduct = sellerProducts.length === 1;
+
+    const modalInstance = createModal({
       title: `${safeSellerName} - ${safeMunicipality}`,
       content: `
-        <div class="space-y-4">
-          <div class="text-sm text-gray-600 mb-4">
-            <i class="bi bi-shop"></i> ${sellerProducts[0].seller_verified ? '<span class="text-success"><i class="bi bi-patch-check-fill"></i> Verified Seller</span>' : 'Seller'}
+        <div class="space-y-3">
+          <div class="seller-products-summary">
+            <div class="item">
+              <div class="label">Status</div>
+              <div class="value">${primarySellerProduct.seller_verified ? 'Verified' : 'Seller'}</div>
+            </div>
+            <div class="item">
+              <div class="label">Rating</div>
+              <div class="value">${escapeHtml(summaryRating)}</div>
+            </div>
+            <div class="item">
+              <div class="label">Verified Since</div>
+              <div class="value">${escapeHtml(String(sellerSince))}</div>
+            </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+
+          <div class="seller-products-grid ${isSingleProduct ? 'single' : ''}">
             ${sellerProducts.map(product => `
-              <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                <h5 class="font-semibold text-gray-800 mb-2">${escapeHtml(product.name || 'Unnamed Product')}</h5>
-                <p class="text-xs text-gray-600 mb-2">${escapeHtml(product.description || '')}</p>
-                <p class="text-sm font-bold text-primary mb-3">${formatCurrency(product.price_per_unit)} per ${escapeHtml(product.unit_type || 'unit')}</p>
-                <div class="flex gap-2">
-                  <button 
-                    class="btn btn-xs btn-outline-primary flex-1" 
-                    onclick="window.viewProductFromModal('${product.id}')"
-                  >
-                    <i class="bi bi-eye"></i> View
-                  </button>
-                  <button 
-                    class="btn btn-xs btn-primary flex-1" 
-                    onclick="window.addToCartFromModal('${product.id}')"
-                  >
-                    <i class="bi bi-cart-plus"></i> Add
-                  </button>
-                </div>
+              <div class="seller-product-card">
+                <div class="seller-product-title">${escapeHtml(product.name || 'Unnamed Product')}</div>
+                <div class="seller-product-desc">${escapeHtml(product.description || 'No description available')}</div>
+                <div class="seller-product-price">${formatCurrency(product.price_per_unit)} per ${escapeHtml(product.unit_type || 'unit')}</div>
+                ${isSingleProduct ? '' : `
+                  <div class="seller-product-actions">
+                    <button
+                      type="button"
+                      class="btn btn-outline"
+                      aria-label="View Product ${escapeAttribute(product.name || 'item')}"
+                      onclick="window.viewProductFromModal('${product.id}')"
+                    >
+                      <i class="bi bi-eye"></i> View Product
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      aria-label="Add to Cart ${escapeAttribute(product.name || 'item')}"
+                      onclick="window.addToCartFromModal('${product.id}')"
+                    >
+                      <i class="bi bi-cart-plus"></i> Add to Cart
+                    </button>
+                  </div>
+                `}
               </div>
             `).join('')}
           </div>
         </div>
       `,
-      size: 'lg'
+      size: 'lg',
+      footer: isSingleProduct
+        ? `
+          <button
+            type="button"
+            class="btn btn-outline"
+            aria-label="View Product ${escapeAttribute(sellerProducts[0]?.name || 'item')}"
+            onclick="window.viewProductFromModal('${sellerProducts[0]?.id || ''}')"
+          >
+            <i class="bi bi-eye"></i> View Product
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            aria-label="Add to Cart ${escapeAttribute(sellerProducts[0]?.name || 'item')}"
+            onclick="window.addToCartFromModal('${sellerProducts[0]?.id || ''}')"
+          >
+            <i class="bi bi-cart-plus"></i> Add to Cart
+          </button>
+        `
+        : null
     });
+
+    modalInstance.backdrop.classList.add('seller-products-modal');
+    const closeButton = modalInstance.backdrop.querySelector('.modal-close');
+    closeButton?.setAttribute('aria-label', 'Close seller products modal');
 
   } catch (error) {
     console.error('Error viewing seller products:', error);
@@ -909,50 +2103,53 @@ const renderProductInfo = (product, container) => {
         <h3 class="text-3xl font-bold">${product.name || 'Unknown Product'}</h3>
         ${product.seller_verified ? '<span class="verified-badge"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
       </div>
-      
-      <p class="product-price">${formatCurrency(product.price_per_unit || 0)} <span class="text-lg font-normal">per ${product.unit_type || 'unit'}</span></p>
-      
-      <div class="product-description">
-        <h4 class="font-bold text-lg mb-3"><i class="bi bi-info-circle"></i> Description</h4>
-        <p>${product.description || 'No description available'}</p>
-      </div>
-      
-      <div class="product-details-grid">
-        <div class="product-detail-item">
-          <div class="label">Seller</div>
-          <div class="value"><i class="bi bi-shop"></i> ${product.seller_name || 'Unknown Seller'}</div>
-        </div>
-        
-        <div class="product-detail-item">
-          <div class="label">Available Stock</div>
-          <div class="value"><i class="bi bi-box"></i> ${product.available_quantity || 0}</div>
-        </div>
-        
-        <div class="product-detail-item">
-          <div class="label">Category</div>
-          <div class="value"><i class="bi bi-tag"></i> ${product.category || 'Uncategorized'}</div>
-        </div>
-      
-        <div class="product-detail-item">
-          <div class="label">Location</div>
-          <div class="value"><i class="bi bi-geo-alt"></i> ${product.municipality || 'Unknown'}</div>
-        </div>
-      </div>
-      
-      <div class="product-actions">
-        <div class="quantity-selector">
-          <label>Quantity:</label>
-          <div class="flex items-center gap-2">
-            <button type="button" class="btn btn-sm btn-outline" onclick="decrementQuantity('product-quantity')">-</button>
-            <input type="number" id="product-quantity" value="1" min="1" max="${product.available_quantity || 1}" class="form-control" style="width: 80px; text-align: center;">
-            <span class="text-sm text-gray-600">${product.unit_type || 'units'}</span>
-            <button type="button" class="btn btn-sm btn-outline" onclick="incrementQuantity('product-quantity', ${product.available_quantity || 1})">+</button>
+
+      <div class="product-primary-panel">
+        <p class="product-price">${formatCurrency(product.price_per_unit || 0)} <span class="text-lg font-normal">per ${product.unit_type || 'unit'}</span></p>
+        <div class="product-primary-meta">
+          <div class="product-primary-meta-item">
+            <span class="label">Available Stock</span>
+            <span class="value">${product.available_quantity || 0}</span>
+          </div>
+          <div class="quantity-selector product-qty-row">
+            <label>Quantity:</label>
+            <div class="flex items-center gap-2 product-qty-controls">
+              <button type="button" class="btn btn-sm btn-outline product-qty-btn" onclick="decrementQuantity('product-quantity')">-</button>
+              <input type="number" id="product-quantity" value="1" min="1" max="${product.available_quantity || 1}" class="form-control product-qty-input" style="width: 80px; text-align: center;">
+              <span class="text-sm text-gray-600 product-qty-unit">${product.unit_type || 'units'}</span>
+              <button type="button" class="btn btn-sm btn-outline product-qty-btn" onclick="incrementQuantity('product-quantity', ${product.available_quantity || 1})">+</button>
+            </div>
           </div>
         </div>
+        <div class="product-cta-wrap">
+          <button id="add-to-cart-btn" class="btn btn-primary w-full" onclick="handleAddToCartFromModal('${product.id}')">
+            <i class="bi bi-cart-plus"></i> Add to Cart
+          </button>
+        </div>
+      </div>
+
+      <div class="product-secondary-panel">
+        <div class="product-description">
+          <h4 class="font-bold text-lg mb-3"><i class="bi bi-info-circle"></i> Description</h4>
+          <p>${product.description || 'No description available'}</p>
+        </div>
+
+        <div class="product-details-grid">
+          <div class="product-detail-item">
+            <div class="label">Seller</div>
+            <div class="value"><i class="bi bi-shop"></i> ${product.seller_name || 'Unknown Seller'}</div>
+          </div>
+          
+          <div class="product-detail-item">
+            <div class="label">Category</div>
+            <div class="value"><i class="bi bi-tag"></i> ${product.category || 'Uncategorized'}</div>
+          </div>
         
-        <button id="add-to-cart-btn" class="btn btn-primary w-full" onclick="handleAddToCartFromModal('${product.id}')">
-          <i class="bi bi-cart-plus"></i> Add to Cart
-        </button>
+          <div class="product-detail-item">
+            <div class="label">Location</div>
+            <div class="value"><i class="bi bi-geo-alt"></i> ${product.municipality || 'Unknown'}</div>
+          </div>
+        </div>
       </div>
     `;
   } catch (error) {
@@ -1123,6 +2320,60 @@ const initProductMap = async (product) => {
   const mapContainer = document.getElementById('product-map');
 
   try {
+    const forceDistancePanelVisible = () => {
+      const mapSection = document.querySelector('#product-details-modal .product-map-section');
+      const distanceInfo = document.querySelector('#product-details-modal .distance-info');
+      const distanceDisplay = document.getElementById('distance-display');
+      const distanceContext = document.getElementById('distance-context');
+      if (!mapSection || !distanceInfo || !distanceDisplay) return;
+
+      const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
+      if (!isDesktop) return;
+
+      mapSection.style.setProperty('position', 'relative', 'important');
+      distanceInfo.style.setProperty('position', 'absolute', 'important');
+      distanceInfo.style.setProperty('left', '0.75rem', 'important');
+      distanceInfo.style.setProperty('right', '0.75rem', 'important');
+      distanceInfo.style.setProperty('top', 'auto', 'important');
+      distanceInfo.style.setProperty('bottom', '0.75rem', 'important');
+      distanceInfo.style.setProperty('transform', 'none', 'important');
+      distanceInfo.style.setProperty('z-index', '1200', 'important');
+      distanceInfo.style.setProperty('padding', '0', 'important');
+      distanceInfo.style.setProperty('background', 'transparent', 'important');
+      distanceInfo.style.setProperty('border-top', 'none', 'important');
+      distanceInfo.style.setProperty('display', 'block', 'important');
+      distanceInfo.style.setProperty('visibility', 'visible', 'important');
+      distanceInfo.style.setProperty('opacity', '1', 'important');
+      distanceInfo.style.setProperty('pointer-events', 'none', 'important');
+
+      distanceDisplay.style.setProperty('display', 'flex', 'important');
+      distanceDisplay.style.setProperty('width', '100%', 'important');
+      distanceDisplay.style.setProperty('max-width', '420px', 'important');
+      distanceDisplay.style.setProperty('margin', '0 auto', 'important');
+      distanceDisplay.style.setProperty('min-height', '64px', 'important');
+      distanceDisplay.style.setProperty('padding', '0.65rem 0.8rem', 'important');
+      distanceDisplay.style.setProperty('border-radius', '12px', 'important');
+      distanceDisplay.style.setProperty('font-weight', '800', 'important');
+      distanceDisplay.style.setProperty('text-align', 'center', 'important');
+      distanceDisplay.style.setProperty('line-height', '1.35', 'important');
+      distanceDisplay.style.setProperty('color', '#ffffff', 'important');
+      distanceDisplay.style.setProperty('background', 'linear-gradient(180deg, #1b7a3d 0%, #146334 100%)', 'important');
+      distanceDisplay.style.setProperty('box-shadow', '0 12px 24px rgba(9, 49, 30, 0.32)', 'important');
+      distanceDisplay.style.setProperty('visibility', 'visible', 'important');
+      distanceDisplay.style.setProperty('opacity', '1', 'important');
+      distanceDisplay.style.setProperty('pointer-events', 'auto', 'important');
+
+      if (distanceContext) {
+        distanceContext.style.setProperty('margin-top', '0.36rem', 'important');
+        distanceContext.style.setProperty('text-align', 'center', 'important');
+        distanceContext.style.setProperty('font-size', '0.74rem', 'important');
+        distanceContext.style.setProperty('color', 'rgba(232, 247, 237, 0.96)', 'important');
+        distanceContext.style.setProperty('text-shadow', '0 1px 2px rgba(0, 0, 0, 0.24)', 'important');
+        distanceContext.style.setProperty('visibility', 'visible', 'important');
+        distanceContext.style.setProperty('opacity', '1', 'important');
+      }
+    };
+    forceDistancePanelVisible();
 
 
     // Get seller coordinates (from product data or fallback to municipality)
@@ -1185,27 +2436,56 @@ const initProductMap = async (product) => {
 
     const markers = [];
 
-    // Add seller marker with red icon
+    const safeSellerName = escapeHtml(product.seller_name || 'Seller');
+    const safeMunicipality = escapeHtml(product.municipality || 'Unknown');
+    const safeProductName = escapeHtml(product.name || 'Product');
+    const safeUnitType = escapeHtml(product.unit_type || 'unit');
+    const sellerProductCount = Number(product.seller_product_count || product.total_products || 1);
+    const productCountLabel = sellerProductCount === 1 ? '1 product available' : `${sellerProductCount} products available`;
+    const updatedDateRaw = product.updated_at || product.created_at;
+    const updatedDate = updatedDateRaw ? new Date(updatedDateRaw) : null;
+    const updatedLabel = Number.isFinite(updatedDate?.getTime())
+      ? updatedDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+      : 'Recently updated';
+
+    // Add seller marker with primary icon
     if (sellerCoords) {
       const sellerIcon = L.divIcon({
         className: 'custom-marker seller-marker',
-        html: '<div class="marker-pin seller-pin"><i class="bi bi-shop-window"></i></div>',
-        iconSize: [30, 40],
-        iconAnchor: [15, 40]
+        html: `
+          <button class="marker-pin seller-pin" type="button" aria-label="Seller location: ${escapeAttribute(product.seller_name || 'Seller')}">
+            <i class="bi bi-shop-window"></i>
+            <span class="marker-ring" aria-hidden="true"></span>
+          </button>
+        `,
+        iconSize: [40, 46],
+        iconAnchor: [20, 44],
+        popupAnchor: [0, -34]
       });
 
       const sellerMarker = L.marker([sellerCoords.lat, sellerCoords.lng], { icon: sellerIcon })
         .addTo(productDetailsMap)
         .bindPopup(`
-          <div class="p-3 min-w-48">
-            <h4 class="font-bold text-lg text-red-600 mb-2">
-              <i class="bi bi-shop-window"></i> ${product.seller_name || 'Seller'}
-            </h4>
-            <p class="text-sm mb-1"><i class="bi bi-box"></i> ${product.name}</p>
-            <p class="text-sm mb-1"><i class="bi bi-geo-alt"></i> ${product.municipality}</p>
-            <p class="text-sm text-gray-600">📍 Seller Location</p>
+          <div class="product-modal-map-popup seller-popup-card">
+            <div class="popup-topline">
+              <span class="popup-badge"><i class="bi bi-patch-check-fill"></i> Verified seller</span>
+              <span class="popup-updated">Updated ${updatedLabel}</span>
+            </div>
+            <h4 class="popup-title">${safeSellerName}</h4>
+            <p class="popup-meta"><i class="bi bi-geo-alt"></i> ${safeMunicipality}</p>
+            <div class="popup-product">
+              <strong>${safeProductName}</strong>
+              <span>${formatCurrency(product.price_per_unit || 0)} / ${safeUnitType}</span>
+            </div>
+            <p class="popup-trust"><i class="bi bi-box-seam"></i> ${productCountLabel}</p>
           </div>
-        `);
+        `, {
+          className: 'product-modal-popup',
+          maxWidth: 310,
+          autoPan: true,
+          autoPanPaddingTopLeft: [24, 88],
+          autoPanPaddingBottomRight: [24, 24]
+        });
 
       markers.push(sellerMarker);
 
@@ -1215,22 +2495,31 @@ const initProductMap = async (product) => {
     if (userLocation) {
       const userIcon = L.divIcon({
         className: 'custom-marker user-marker',
-        html: '<div class="marker-pin user-pin"><i class="bi bi-person-fill"></i></div>',
-        iconSize: [30, 40],
-        iconAnchor: [15, 40]
+        html: `
+          <button class="marker-pin user-pin" type="button" aria-label="Your location">
+            <i class="bi bi-person-fill"></i>
+          </button>
+        `,
+        iconSize: [38, 42],
+        iconAnchor: [19, 40],
+        popupAnchor: [0, -30]
       });
 
       const userMarker = L.marker([userLocation.latitude, userLocation.longitude], { icon: userIcon })
         .addTo(productDetailsMap)
         .bindPopup(`
-          <div class="p-3 min-w-48">
-            <h4 class="font-bold text-lg text-blue-600 mb-2">
-              <i class="bi bi-person-fill"></i> Your Location
-            </h4>
-            <p class="text-sm mb-1"><i class="bi bi-geo-alt"></i> ${userLocation.address || 'Current Location'}</p>
-            <p class="text-sm text-gray-600">📍 Buyer Location</p>
+          <div class="product-modal-map-popup user-popup-card">
+            <h4 class="popup-title"><i class="bi bi-person-fill"></i> Your Location</h4>
+            <p class="popup-meta"><i class="bi bi-geo-alt"></i> ${escapeHtml(userLocation.address || 'Current Location')}</p>
+            <p class="popup-trust"><i class="bi bi-signpost-2"></i> Buyer pin</p>
           </div>
-        `);
+        `, {
+          className: 'product-modal-popup',
+          maxWidth: 290,
+          autoPan: true,
+          autoPanPaddingTopLeft: [24, 88],
+          autoPanPaddingBottomRight: [24, 24]
+        });
 
       markers.push(userMarker);
 
@@ -1260,8 +2549,11 @@ const initProductMap = async (product) => {
     setTimeout(() => {
       if (productDetailsMap) {
         productDetailsMap.invalidateSize();
+        forceDistancePanelVisible();
       }
     }, 150);
+    window.requestAnimationFrame(forceDistancePanelVisible);
+    setTimeout(forceDistancePanelVisible, 420);
 
   } catch (error) {
     console.error('Error initializing product map:', error);
@@ -1373,6 +2665,11 @@ const getUserLocation = async () => {
 
 const calculateProductDistance = async (userLoc, product) => {
   const distanceDisplay = document.getElementById('distance-display');
+  const distanceContext = document.getElementById('distance-context');
+  if (distanceContext) {
+    const addressLabel = userLoc?.address || 'your saved location';
+    distanceContext.innerHTML = `From ${escapeHtml(addressLabel)}. <button type="button" onclick="window.refreshBuyerLocation?.()">Set location</button>`;
+  }
 
   try {
     distanceDisplay.innerHTML = '<i class="bi bi-geo-alt"></i> Calculating distance...';
@@ -1728,93 +3025,273 @@ const loadCart = async () => {
   const container = document.getElementById('cart-items');
   if (!container) return;
 
-  showSpinner(container, 'md', 'primary', 'Loading cart...');
+  renderCartSkeletons(isDesktopBuyerViewport() ? 3 : 2);
+  requestAnimationFrame(() => applyCartSummaryStickyState());
 
   try {
+    const previousPrices = new Map((currentCart?.items || []).map((item) => [
+      item.id,
+      Number(item.product?.price_per_unit || 0)
+    ]));
     const response = await getCart();
     currentCart = response.data?.cart || { items: [], total: 0 };
+    const nextItems = currentCart?.items || [];
+
+    cartPriceChangeByItemId = new Map();
+    nextItems.forEach((item) => {
+      const prev = previousPrices.get(item.id);
+      const next = Number(item.product?.price_per_unit || 0);
+      if (Number.isFinite(prev) && Number.isFinite(next) && prev > 0 && Math.abs(prev - next) > 0.0001) {
+        cartPriceChangeByItemId.set(item.id, { oldPrice: prev, newPrice: next });
+      }
+    });
+    const existingSelection = new Set(nextItems.map((item) => item.id).filter((id) => cartSelectedItemIds.has(id)));
+    cartSelectedItemIds = existingSelection.size > 0
+      ? existingSelection
+      : new Set(nextItems.map((item) => item.id));
 
     renderCart();
+    requestAnimationFrame(() => applyCartSummaryStickyState());
 
   } catch (error) {
     console.error('Error loading cart:', error);
     showError('Failed to load cart');
+    container.innerHTML = renderSectionErrorState({
+      title: 'Failed to load cart',
+      retryHandler: 'window.loadCartFromUI?.()'
+    });
+    requestAnimationFrame(() => applyCartSummaryStickyState());
   }
+};
+
+const getUnitPrice = (item) => Number(item?.product?.price_per_unit || 0);
+
+const getCartItemSubtotal = (item) => getUnitPrice(item) * Number(item?.quantity || 0);
+
+const getSelectedCartItems = () => {
+  const items = currentCart?.items || [];
+  return items.filter((item) => cartSelectedItemIds.has(item.id));
+};
+
+const calculateCartSummary = () => {
+  const selectedItems = getSelectedCartItems();
+  const subtotal = selectedItems.reduce((sum, item) => sum + getCartItemSubtotal(item), 0);
+  const shippingEstimate = selectedItems.length > 0 ? 49 : 0;
+  const serviceFee = subtotal > 0 ? Number((subtotal * 0.015).toFixed(2)) : 0;
+  const grandTotal = subtotal + shippingEstimate + serviceFee;
+  return { selectedItems, subtotal, shippingEstimate, serviceFee, grandTotal };
+};
+
+const pulseElement = (el) => {
+  if (!el) return;
+  el.classList.remove('buyer-cart-total-pulse');
+  void el.offsetWidth;
+  el.classList.add('buyer-cart-total-pulse');
+};
+
+const refreshCartSummaryUI = () => {
+  const subtotalEl = document.getElementById('cart-subtotal');
+  const totalEl = document.getElementById('cart-total');
+  const shippingEl = document.getElementById('cart-shipping-estimate');
+  const serviceFeeEl = document.getElementById('cart-service-fee');
+  const grandTotalEl = document.getElementById('cart-grand-total');
+  const selectedInfoEl = document.getElementById('cart-selected-info');
+  const btnCheckout = document.getElementById('btn-checkout');
+  const cartItems = currentCart?.items || [];
+  const {
+    selectedItems,
+    subtotal,
+    shippingEstimate,
+    serviceFee,
+    grandTotal
+  } = calculateCartSummary();
+
+  if (subtotalEl) {
+    subtotalEl.textContent = formatCurrency(subtotal);
+    pulseElement(subtotalEl);
+  }
+  if (shippingEl) shippingEl.textContent = formatCurrency(shippingEstimate);
+  if (serviceFeeEl) serviceFeeEl.textContent = formatCurrency(serviceFee);
+  if (grandTotalEl) {
+    grandTotalEl.textContent = formatCurrency(grandTotal);
+    pulseElement(grandTotalEl);
+  }
+  if (totalEl) totalEl.textContent = formatCurrency(grandTotal);
+  if (selectedInfoEl) {
+    selectedInfoEl.textContent = `${selectedItems.length} selected item${selectedItems.length === 1 ? '' : 's'} of ${cartItems.length}`;
+  }
+
+  if (btnCheckout) {
+    const allSelected = selectedItems.length === cartItems.length;
+    btnCheckout.disabled = selectedItems.length === 0;
+    btnCheckout.innerHTML = selectedItems.length === 0
+      ? '<i class="bi bi-slash-circle"></i> Select item(s) first'
+      : allSelected
+        ? '<i class="bi bi-bag-check"></i> Proceed to Checkout'
+        : '<i class="bi bi-info-circle"></i> Partial checkout preview';
+  }
+};
+
+const getSellerGroups = (items = []) => {
+  const map = new Map();
+  items.forEach((item) => {
+    const sellerId = item?.seller_id || 'unknown-seller';
+    if (!map.has(sellerId)) {
+      map.set(sellerId, {
+        sellerId,
+        sellerName: item?.product?.seller?.user?.full_name || 'Unknown Seller',
+        items: []
+      });
+    }
+    map.get(sellerId).items.push(item);
+  });
+  return Array.from(map.values());
+};
+
+const getCartItemAlerts = (item) => {
+  const alerts = [];
+  const stock = Number(item?.product?.available_quantity || 0);
+  const quantity = Number(item?.quantity || 0);
+  const priceChange = cartPriceChangeByItemId.get(item.id);
+  const updateError = cartItemUpdateErrors.get(item.id);
+
+  if (Number.isFinite(stock) && stock > 0 && stock <= 5) {
+    alerts.push(`<div class="buyer-cart-alert buyer-cart-alert--warn"><i class="bi bi-exclamation-circle"></i> Low stock: ${stock} left</div>`);
+  }
+  if (Number.isFinite(stock) && stock <= 0) {
+    alerts.push('<div class="buyer-cart-alert buyer-cart-alert--danger"><i class="bi bi-x-octagon"></i> Out of stock right now</div>');
+  } else if (Number.isFinite(stock) && quantity > stock) {
+    alerts.push(`<div class="buyer-cart-alert buyer-cart-alert--danger"><i class="bi bi-exclamation-triangle"></i> Quantity exceeds stock (${stock} available)</div>`);
+  }
+  if (priceChange) {
+    alerts.push(`<div class="buyer-cart-alert buyer-cart-alert--info"><i class="bi bi-arrow-repeat"></i> Price updated: ${formatCurrency(priceChange.oldPrice)} -> ${formatCurrency(priceChange.newPrice)}</div>`);
+  }
+  if (updateError?.message) {
+    alerts.push(`
+      <div class="buyer-cart-alert buyer-cart-alert--danger">
+        <i class="bi bi-wifi-off"></i> ${escapeHtml(updateError.message)}
+        <button class="btn btn-sm btn-outline ml-2" onclick="window.retryCartItemUpdate('${item.id}')">Retry</button>
+      </div>
+    `);
+  }
+  return alerts.join('');
 };
 
 const renderCart = () => {
   const container = document.getElementById('cart-items');
-  const subtotalEl = document.getElementById('cart-subtotal');
-  const totalEl = document.getElementById('cart-total');
+  if (!container) return;
+  const items = currentCart?.items || [];
 
-  if (!currentCart || currentCart.items.length === 0) {
-    container.innerHTML = `
-      <div class="text-center py-12">
-        <i class="bi bi-cart-x text-6xl text-gray-400"></i>
-        <p class="text-gray-500 mt-4">Your cart is empty</p>
-        <a href="#browse" class="btn btn-primary mt-4">
-          <i class="bi bi-grid"></i> Browse Products
-        </a>
-      </div>
-    `;
-    subtotalEl.textContent = formatCurrency(0);
-    totalEl.textContent = formatCurrency(0);
+  if (!currentCart || items.length === 0) {
+    container.innerHTML = renderSectionEmptyState({
+      icon: 'cart-x',
+      title: 'Your cart is empty',
+      subtitle: 'Add products first before checking out. We will keep your totals synced here.',
+      primaryActionHtml: '<a href="#browse" class="btn btn-primary"><i class="bi bi-grid"></i> Browse Products</a>'
+    });
+    cartSelectedItemIds.clear();
+    refreshCartSummaryUI();
     attachCheckoutListener();
     return;
   }
 
-  container.innerHTML = currentCart.items.map(item => `
-    <div class="card" data-item-id="${item.id}">
-      <div class="card-body">
-        <div class="flex gap-4">
-          <img src="${item.product?.photo_path || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2220%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'}" 
-               alt="${item.product?.name}"
-               class="w-24 h-24 object-cover rounded-lg">
-          
-          <div class="flex-1">
-            <h4 class="font-bold text-lg">${item.product?.name}</h4>
-            <p class="text-gray-600 text-sm">${item.product?.seller?.user?.full_name}</p>
-            <p class="text-primary font-bold mt-2">${formatCurrency(item.product?.price_per_unit)} per ${item.product?.unit_type}</p>
+  const allSelected = items.every((item) => cartSelectedItemIds.has(item.id));
+  const sellerGroups = getSellerGroups(items);
+  const cartWarnings = items.filter((item) => {
+    const stock = Number(item?.product?.available_quantity || 0);
+    return cartPriceChangeByItemId.has(item.id) || stock <= 0 || item.quantity > stock;
+  });
+  container.innerHTML = `
+    <div class="buyer-cart-toolbar">
+      <label class="buyer-cart-select-all">
+        <input type="checkbox" class="buyer-cart-checkbox-input" ${allSelected ? 'checked' : ''} onchange="window.toggleSelectAllCartItems(this.checked)">
+        <span>Select all items</span>
+      </label>
+      <span class="buyer-cart-toolbar-meta">${sellerGroups.length} seller${sellerGroups.length === 1 ? '' : 's'}</span>
+    </div>
+    ${cartWarnings.length > 0 ? `
+      <div class="buyer-cart-alert buyer-cart-alert--warn mb-2">
+        <i class="bi bi-exclamation-diamond"></i>
+        ${cartWarnings.length} cart update${cartWarnings.length === 1 ? '' : 's'} need your review before checkout.
+      </div>
+    ` : ''}
+    ${sellerGroups.map((group) => {
+      const sellerSubtotal = group.items.reduce((sum, item) => sum + getCartItemSubtotal(item), 0);
+      return `
+        <div class="buyer-seller-group">
+          <div class="buyer-seller-group__head">
+            <h4><i class="bi bi-shop"></i> ${escapeHtml(group.sellerName)}</h4>
+            <p>${group.items.length} item${group.items.length === 1 ? '' : 's'} • Subtotal ${formatCurrency(sellerSubtotal)}</p>
           </div>
-          
-          <div class="flex flex-col items-end gap-2">
-            <div class="flex items-center gap-2">
-              <button class="btn btn-sm btn-outline" onclick="window.updateCartQuantity('${item.id}', ${item.quantity - 1})">
-                <i class="bi bi-dash"></i>
-              </button>
-              <input type="number" 
-                     value="${item.quantity}" 
-                     min="1" 
-                     max="${item.product?.available_quantity}"
-                     class="w-16 text-center form-control"
-                     onchange="window.updateCartQuantity('${item.id}', this.value)">
-              <button class="btn btn-sm btn-outline" onclick="window.updateCartQuantity('${item.id}', ${item.quantity + 1})">
-                <i class="bi bi-plus"></i>
-              </button>
-            </div>
-            
-            <p class="text-lg font-bold">${formatCurrency(item.product?.price_per_unit * item.quantity)}</p>
-            
-            <button class="btn btn-sm btn-danger" onclick="window.removeCartItem('${item.id}')">
-              <i class="bi bi-trash"></i> Remove
-            </button>
+          <div class="space-y-3">
+            ${group.items.map((item) => {
+              const unitPrice = getUnitPrice(item);
+              const lineTotal = getCartItemSubtotal(item);
+              const isSelected = cartSelectedItemIds.has(item.id);
+              const maxStock = Number(item?.product?.available_quantity || 0);
+              const isUpdating = cartQuantityUpdateLocks.has(item.id);
+              return `
+                <div class="card buyer-cart-card ${isUpdating ? 'is-updating' : ''}" data-item-id="${item.id}">
+                  <div class="card-body">
+                    <div class="flex gap-4 buyer-cart-layout">
+                      <div class="buyer-cart-check">
+                        <input type="checkbox" class="buyer-cart-checkbox-input" ${isSelected ? 'checked' : ''} onchange="window.toggleCartItemSelection('${item.id}', this.checked)">
+                      </div>
+                      <img src="${item.product?.photo_path || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2220%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'}"
+                           alt="${escapeHtml(item.product?.name || 'Product')}"
+                           class="w-24 h-24 object-cover rounded-lg buyer-cart-thumb">
+                      <div class="flex-1 buyer-cart-meta">
+                        <h4 class="font-bold text-lg">${escapeHtml(item.product?.name || 'Product')}</h4>
+                        <p class="buyer-cart-seller text-sm">${escapeHtml(group.sellerName)}</p>
+                        <p class="buyer-cart-unit-price mt-2"><span>Unit:</span> ${formatCurrency(unitPrice)} / ${escapeHtml(item.product?.unit_type || 'unit')}</p>
+                        ${getCartItemAlerts(item)}
+                      </div>
+                      <div class="flex flex-col items-end gap-2 buyer-cart-actions">
+                        <div class="flex items-center gap-2 buyer-qty-controls">
+                          <button class="btn btn-sm btn-outline" ${isUpdating ? 'disabled' : ''} onclick="window.updateCartQuantity('${item.id}', ${item.quantity - 1})">
+                            <i class="bi bi-dash"></i>
+                          </button>
+                          <input type="number"
+                                 value="${item.quantity}"
+                                 min="1"
+                                 max="${maxStock}"
+                                 ${isUpdating ? 'disabled' : ''}
+                                 class="w-16 text-center form-control buyer-qty-input"
+                                 onchange="window.updateCartQuantity('${item.id}', this.value)">
+                          <button class="btn btn-sm btn-outline" ${isUpdating ? 'disabled' : ''} onclick="window.updateCartQuantity('${item.id}', ${item.quantity + 1})">
+                            <i class="bi bi-plus"></i>
+                          </button>
+                        </div>
+                        <p class="buyer-cart-line-total-label">Subtotal</p>
+                        <p class="text-lg font-bold buyer-cart-line-total">${formatCurrency(lineTotal)}</p>
+                        <button class="btn btn-sm btn-danger buyer-cart-remove" title="Remove item" aria-label="Remove item" onclick="window.removeCartItem('${item.id}')">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
           </div>
         </div>
-      </div>
-    </div>
-  `).join('');
+      `;
+    }).join('')}
+  `;
 
-  // Calculate totals
-  const subtotal = currentCart.items.reduce((sum, item) => {
-    const itemTotal = (item.product?.price_per_unit || 0) * item.quantity;
-    return sum + itemTotal;
-  }, 0);
-
-  subtotalEl.textContent = formatCurrency(subtotal);
-  totalEl.textContent = formatCurrency(subtotal);
-
-  // Attach checkout button listener
+  refreshCartSummaryUI();
   attachCheckoutListener();
+  applyCartSummaryStickyState();
+  if (cartLastUpdatedItemId) {
+    const updatedRow = container.querySelector(`[data-item-id="${cartLastUpdatedItemId}"]`);
+    if (updatedRow) {
+      updatedRow.classList.add('just-updated');
+      setTimeout(() => {
+        updatedRow.classList.remove('just-updated');
+      }, 900);
+    }
+    cartLastUpdatedItemId = null;
+  }
 };
 
 // Attach checkout button listener
@@ -1841,10 +3318,47 @@ const updateCartUI = async () => {
 };
 
 // Global functions for cart operations
+window.toggleCartItemSelection = (itemId, checked) => {
+  if (checked) {
+    cartSelectedItemIds.add(itemId);
+  } else {
+    cartSelectedItemIds.delete(itemId);
+  }
+  refreshCartSummaryUI();
+};
+
+window.toggleSelectAllCartItems = (checked) => {
+  const items = currentCart?.items || [];
+  if (checked) {
+    cartSelectedItemIds = new Set(items.map((item) => item.id));
+  } else {
+    cartSelectedItemIds.clear();
+  }
+  renderCart();
+};
+
+window.retryCartItemUpdate = async (itemId) => {
+  const retryMeta = cartItemUpdateErrors.get(itemId);
+  if (!retryMeta || !Number.isFinite(retryMeta.retryQuantity)) return;
+  await window.updateCartQuantity(itemId, retryMeta.retryQuantity);
+};
+
 window.updateCartQuantity = async (itemId, quantity) => {
   quantity = parseInt(quantity, 10);
+  const now = Date.now();
+  const lastAttempt = cartLastQuantityUpdateAt.get(itemId) || 0;
+
+  if (now - lastAttempt < 350 || cartQuantityUpdateLocks.has(itemId)) {
+    return;
+  }
+  cartLastQuantityUpdateAt.set(itemId, now);
+
   if (!Number.isFinite(quantity) || quantity < 1) {
-    showError('Please enter a valid quantity (minimum 1).');
+    cartItemUpdateErrors.set(itemId, {
+      message: 'Please enter a valid quantity (minimum 1).',
+      retryQuantity: 1
+    });
+    renderCart();
     await loadCart();
     return;
   }
@@ -1852,18 +3366,31 @@ window.updateCartQuantity = async (itemId, quantity) => {
   const item = currentCart?.items?.find(cartItem => cartItem.id === itemId);
   const maxQty = parseInt(item?.product?.available_quantity, 10);
   if (Number.isFinite(maxQty) && maxQty > 0 && quantity > maxQty) {
-    quantity = maxQty;
-    showError(`Only ${maxQty} item${maxQty !== 1 ? 's are' : ' is'} available.`);
+    cartItemUpdateErrors.set(itemId, {
+      message: `Only ${maxQty} item${maxQty !== 1 ? 's are' : ' is'} available.`,
+      retryQuantity: maxQty
+    });
+    renderCart();
+    return;
   }
 
   try {
+    cartQuantityUpdateLocks.add(itemId);
+    cartItemUpdateErrors.delete(itemId);
+    renderCart();
     await updateCartItem(itemId, quantity);
     await loadCart();
     await updateCartUI();
-    showSuccess('Cart updated');
+    cartLastUpdatedItemId = itemId;
   } catch (error) {
     console.error('Error updating cart:', error);
-    showError('Failed to update cart');
+    cartItemUpdateErrors.set(itemId, {
+      message: error?.message || 'Failed to update cart. Please retry.',
+      retryQuantity: quantity
+    });
+    renderCart();
+  } finally {
+    cartQuantityUpdateLocks.delete(itemId);
   }
 };
 
@@ -1921,6 +3448,64 @@ window.removeCartItem = async (itemId) => {
 
 // ============ Checkout ============
 
+const promptCartWarnings = async (warnings = [], contextTitle = 'Cart updates found') => {
+  if (!Array.isArray(warnings) || warnings.length === 0) return true;
+
+  return new Promise((resolve) => {
+    const warningItems = warnings.map((warning) => {
+      const type = warning?.type === 'price_increase'
+        ? '<span class="text-danger"><i class="bi bi-arrow-up-right"></i> Price Increased</span>'
+        : warning?.type === 'price_decrease'
+          ? '<span class="text-success"><i class="bi bi-arrow-down-right"></i> Price Decreased</span>'
+          : '<span class="text-warning"><i class="bi bi-info-circle"></i> Update</span>';
+      const oldPrice = Number(warning?.oldPrice);
+      const newPrice = Number(warning?.newPrice);
+
+      return `
+        <div class="border rounded-lg p-3">
+          <div class="flex items-center justify-between gap-2">
+            <p class="font-semibold text-sm">${escapeHtml(warning?.product || 'Product')}</p>
+            <p class="text-xs">${type}</p>
+          </div>
+          ${Number.isFinite(oldPrice) && Number.isFinite(newPrice) ? `
+            <p class="text-sm text-gray-700 mt-1">${formatCurrency(oldPrice)} -> ${formatCurrency(newPrice)}</p>
+          ` : ''}
+          ${warning?.message ? `<p class="text-xs text-gray-600 mt-1">${escapeHtml(warning.message)}</p>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    const continueId = `btn-warnings-continue-${Date.now()}`;
+    const cancelId = `btn-warnings-cancel-${Date.now()}`;
+    const modal = createModal({
+      title: contextTitle,
+      content: `
+        <div class="space-y-3">
+          <p class="text-sm text-gray-700">We found updates in your cart. Please review before continuing.</p>
+          <div class="space-y-2 max-h-72 overflow-y-auto">${warningItems}</div>
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-outline" id="${cancelId}">Review Cart</button>
+        <button class="btn btn-primary" id="${continueId}">Continue</button>
+      `,
+      size: 'md'
+    });
+
+    const continueBtn = document.getElementById(continueId);
+    const cancelBtn = document.getElementById(cancelId);
+
+    continueBtn?.addEventListener('click', () => {
+      modal.close();
+      resolve(true);
+    });
+    cancelBtn?.addEventListener('click', () => {
+      modal.close();
+      resolve(false);
+    });
+  });
+};
+
 const handleCheckout = async () => {
   // Cart state should be validated first so users get the correct message.
   if (!currentCart || currentCart.items.length === 0) {
@@ -1928,8 +3513,53 @@ const handleCheckout = async () => {
     return;
   }
 
+  const selectedItems = getSelectedCartItems();
+  if (selectedItems.length === 0) {
+    showError('Select at least one item before checkout.');
+    return;
+  }
+
+  const selectedSellerIds = [...new Set(selectedItems.map(item => item.seller_id))];
+  const hasPartialSellerSelection = selectedSellerIds.some((sellerId) => {
+    const allSellerItems = currentCart.items.filter(item => item.seller_id === sellerId);
+    const selectedSellerItems = selectedItems.filter(item => item.seller_id === sellerId);
+    return selectedSellerItems.length !== allSellerItems.length;
+  });
+  if (hasPartialSellerSelection) {
+    showError('Partial checkout per seller is not available yet. Select all items from the same seller to continue.');
+    return;
+  }
+
+  try {
+    const validationResponse = await validateCart();
+    const validation = validationResponse?.data?.validation;
+
+    if (validation) {
+      if (Array.isArray(validation.warnings) && validation.warnings.length > 0) {
+        const continueCheckout = await promptCartWarnings(validation.warnings, 'Cart changes before checkout');
+        if (!continueCheckout) {
+          await loadCart();
+          await updateCartUI();
+          return;
+        }
+      }
+
+      if (!validation.valid) {
+        const firstIssue = validation.issues?.[0] || 'Some items in your cart are no longer available.';
+        showError(`${firstIssue} Please review your cart and try again.`);
+        await loadCart();
+        await updateCartUI();
+        return;
+      }
+    }
+  } catch (validationError) {
+    console.error('Failed to validate cart before checkout:', validationError);
+    showError('Unable to validate your cart right now. Please try again.');
+    return;
+  }
+
   // Get unique sellers in cart
-  const uniqueSellers = [...new Set(currentCart.items.map(item => item.seller_id))];
+  const uniqueSellers = [...new Set(selectedItems.map(item => item.seller_id))];
 
   if (uniqueSellers.length === 0) {
     showError('No items in cart');
@@ -1958,9 +3588,9 @@ const handleCheckout = async () => {
 
   // If only one seller, proceed directly
   if (uniqueSellers.length === 1) {
-    const sellerItem = currentCart.items.find(item => item.seller_id === uniqueSellers[0]);
+    const sellerItem = selectedItems.find(item => item.seller_id === uniqueSellers[0]);
     const sellerName = sellerItem?.product?.seller?.user?.full_name || 'Unknown Seller';
-    showCheckoutModal(uniqueSellers[0], sellerName);
+    showCheckoutModal(uniqueSellers[0], sellerName, selectedItems);
     return;
   }
 
@@ -1971,15 +3601,16 @@ const handleCheckout = async () => {
       <p class="text-sm text-gray-600">Please select a seller to place an order. You can place separate orders for items from other sellers.</p>
       <div id="seller-list" class="space-y-2">
         ${uniqueSellers.map(sellerId => {
-    const sellerItem = currentCart.items.find(item => item.seller_id === sellerId);
+    const sellerItem = selectedItems.find(item => item.seller_id === sellerId);
     const sellerName = sellerItem?.product?.seller?.user?.full_name || 'Unknown Seller';
-    const sellerItems = currentCart.items.filter(item => item.seller_id === sellerId);
+    const safeSellerName = escapeHtml(sellerName);
+    const sellerItems = selectedItems.filter(item => item.seller_id === sellerId);
     const subtotal = sellerItems.reduce((sum, item) => sum + ((item.product?.price_per_unit || 0) * item.quantity), 0);
     return `
             <div class="border rounded-lg p-4 cursor-pointer hover:bg-gray-50" onclick="window.selectSellerForCheckout('${sellerId}', '${encodeURIComponent(sellerName)}')">
               <div class="flex justify-between items-center">
                 <div>
-                  <p class="font-semibold">${sellerName}</p>
+                  <p class="font-semibold">${safeSellerName}</p>
                   <p class="text-sm text-gray-600">${sellerItems.length} item${sellerItems.length !== 1 ? 's' : ''}</p>
                 </div>
                 <p class="font-bold text-primary">${formatCurrency(subtotal)}</p>
@@ -1991,8 +3622,9 @@ const handleCheckout = async () => {
     </div>
   `;
 
+  const selectSellerCancelId = `btn-select-seller-cancel-${Date.now()}`;
   const footer = `
-    <button class="btn btn-outline" onclick="document.querySelector('.modal-backdrop').remove()">Cancel</button>
+    <button class="btn btn-outline" id="${selectSellerCancelId}">Cancel</button>
   `;
 
   const modal = createModal({
@@ -2001,24 +3633,30 @@ const handleCheckout = async () => {
     footer: footer,
     size: 'md'
   });
+  const selectSellerCancelBtn = document.getElementById(selectSellerCancelId);
+  selectSellerCancelBtn?.addEventListener('click', () => modal.close());
 };
 
 window.selectSellerForCheckout = async (sellerId, sellerNameEncoded) => {
   const sellerName = decodeURIComponent(sellerNameEncoded || '');
-  document.querySelector('.modal-backdrop').remove();
-  showCheckoutModal(sellerId, sellerName);
+  closeTopModalBackdrop();
+  showCheckoutModal(sellerId, sellerName, getSelectedCartItems());
 };
 
-const showCheckoutModal = (sellerId, sellerName) => {
+const showCheckoutModal = (sellerId, sellerName, checkoutItems = null) => {
+  const safeSellerName = escapeHtml(sellerName || 'Unknown Seller');
+  const sourceItems = Array.isArray(checkoutItems) && checkoutItems.length > 0
+    ? checkoutItems
+    : (currentCart?.items || []);
   // Filter cart items for this seller
-  const sellerItems = currentCart.items.filter(item => item.seller_id === sellerId);
+  const sellerItems = sourceItems.filter(item => item.seller_id === sellerId);
   const subtotal = sellerItems.reduce((sum, item) => sum + ((item.product?.price_per_unit || 0) * item.quantity), 0);
 
   const modalContent = `
     <form id="checkout-form" class="space-y-4">
       <div class="alert alert-info">
         <p class="font-semibold">Order Summary</p>
-        <p class="text-sm">${sellerItems.length} item${sellerItems.length !== 1 ? 's' : ''} from <strong>${sellerName}</strong></p>
+        <p class="text-sm">${sellerItems.length} item${sellerItems.length !== 1 ? 's' : ''} from <strong>${safeSellerName}</strong></p>
         <p class="text-sm mt-2">Subtotal: ${formatCurrency(subtotal)}</p>
       </div>
       
@@ -2068,8 +3706,9 @@ const showCheckoutModal = (sellerId, sellerName) => {
     </form>
   `;
 
+  const checkoutCancelId = `btn-checkout-cancel-${Date.now()}`;
   const footer = `
-    <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">Cancel</button>
+    <button class="btn btn-outline" id="${checkoutCancelId}">Cancel</button>
     <button class="btn btn-primary" id="btn-place-order">
       <i class="bi bi-check-circle"></i> Place Order
     </button>
@@ -2081,9 +3720,12 @@ const showCheckoutModal = (sellerId, sellerName) => {
     footer: footer,
     size: 'md'
   });
+  const checkoutCancelBtn = document.getElementById(checkoutCancelId);
+  checkoutCancelBtn?.addEventListener('click', () => modal.close());
 
   // Store user coordinates for order creation
   let userDeliveryCoordinates = { latitude: null, longitude: null };
+  let savedPreferredDeliveryOption = 'drop-off';
 
   // Load and populate user's address from profile
   const loadUserAddress = async () => {
@@ -2095,6 +3737,15 @@ const showCheckoutModal = (sellerId, sellerName) => {
       const addressField = document.getElementById('delivery-address');
 
       if (addressField && userData) {
+        const preferredOption = userData.buyer_profile?.preferred_delivery_option || userData.preferred_delivery_option;
+        if (preferredOption === 'pickup' || preferredOption === 'drop-off') {
+          savedPreferredDeliveryOption = preferredOption;
+          const deliveryOptionSelect = document.getElementById('delivery-option');
+          if (deliveryOptionSelect) {
+            deliveryOptionSelect.value = preferredOption;
+          }
+        }
+
         // For buyers, the address is stored in buyer_profile.delivery_address
         const fullAddress = userData.buyer_profile?.delivery_address || userData.delivery_address || userData.address || '';
 
@@ -2182,6 +3833,32 @@ const showCheckoutModal = (sellerId, sellerName) => {
       return;
     }
 
+    try {
+      const validationResponse = await validateCart();
+      const validation = validationResponse?.data?.validation;
+
+      if (Array.isArray(validation?.warnings) && validation.warnings.length > 0) {
+        const continuePlaceOrder = await promptCartWarnings(validation.warnings, 'Cart changes before placing order');
+        if (!continuePlaceOrder) {
+          await loadCart();
+          await updateCartUI();
+          return;
+        }
+      }
+
+      if (validation && !validation.valid) {
+        const firstIssue = validation.issues?.[0] || 'Some items in your cart are no longer available.';
+        showError(`${firstIssue} Please review your cart and try again.`);
+        await loadCart();
+        await updateCartUI();
+        return;
+      }
+    } catch (validationError) {
+      console.error('Failed to validate cart before placing order:', validationError);
+      showError('Unable to validate your cart right now. Please try again.');
+      return;
+    }
+
     const orderData = {
       seller_id: sellerId,
       delivery_option: deliveryOption,
@@ -2201,6 +3878,12 @@ const showCheckoutModal = (sellerId, sellerName) => {
     orderData.preferred_time = preferredTimeValue;
     orderData.order_notes = orderNotesValue;
 
+    if ((deliveryOption === 'pickup' || deliveryOption === 'drop-off') && deliveryOption !== savedPreferredDeliveryOption) {
+      updateBuyerProfile({ preferred_delivery_option: deliveryOption }).catch(() => {
+        // Non-blocking preference save
+      });
+    }
+
 
     try {
       btnPlaceOrder.disabled = true;
@@ -2217,6 +3900,7 @@ const showCheckoutModal = (sellerId, sellerName) => {
 
         // Reload cart and navigate to orders (don't await to avoid blocking)
         loadCart().then(() => updateCartUI()).catch(err => console.error('Error refreshing cart:', err));
+        loadOrderStats();
 
         // Navigate to orders page
         setTimeout(() => {
@@ -2246,6 +3930,64 @@ const showCheckoutModal = (sellerId, sellerName) => {
 
 // ============ Orders Management ============
 
+const loadOrderStats = async () => {
+  const statsContainer = document.getElementById('orders-stats');
+  if (!statsContainer) return;
+
+  try {
+    const response = await getOrderStats();
+    const stats = response?.data?.stats || {};
+    const cards = [
+      { label: 'Total Orders', value: stats.total_orders || 0, icon: 'receipt' },
+      { label: 'Pending', value: stats.pending_orders || 0, icon: 'hourglass-split' },
+      { label: 'Completed', value: stats.completed_orders || 0, icon: 'check-circle' },
+      { label: 'Total Spent', value: formatCurrency(stats.total_spent || 0), icon: 'cash-stack' }
+    ];
+
+    statsContainer.innerHTML = cards.map(card => `
+      <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 buyer-stat-card">
+        <p class="text-xs text-gray-500 flex items-center gap-1 buyer-stat-label">
+          <i class="bi bi-${card.icon}"></i> ${card.label}
+        </p>
+        <p class="text-lg font-bold mt-1 buyer-stat-value">${card.value}</p>
+      </div>
+    `).join('');
+    applyOrdersStatsCollapsedState();
+  } catch (error) {
+    statsContainer.innerHTML = cardsFallback();
+    applyOrdersStatsCollapsedState();
+  }
+};
+
+const cardsFallback = () => {
+  return `
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 buyer-stat-card"><p class="text-xs text-gray-500 buyer-stat-label">Total Orders</p><p class="text-lg font-bold mt-1 buyer-stat-value">-</p></div>
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 buyer-stat-card"><p class="text-xs text-gray-500 buyer-stat-label">Pending</p><p class="text-lg font-bold mt-1 buyer-stat-value">-</p></div>
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 buyer-stat-card"><p class="text-xs text-gray-500 buyer-stat-label">Completed</p><p class="text-lg font-bold mt-1 buyer-stat-value">-</p></div>
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-3 buyer-stat-card"><p class="text-xs text-gray-500 buyer-stat-label">Total Spent</p><p class="text-lg font-bold mt-1 buyer-stat-value">-</p></div>
+  `;
+};
+
+const renderOrdersPagination = () => {
+  renderPaginationControls({
+    containerId: 'orders-pagination',
+    currentPageValue: orderFilters.page,
+    totalPages: ordersTotalPages,
+    totalItems: ordersTotalItems,
+    label: 'orders',
+    onPrev: () => {
+      orderFilters.page = Math.max(1, orderFilters.page - 1);
+      saveBuyerUiState();
+      loadOrders();
+    },
+    onNext: () => {
+      orderFilters.page = Math.min(ordersTotalPages, orderFilters.page + 1);
+      saveBuyerUiState();
+      loadOrders();
+    }
+  });
+};
+
 const loadOrders = async () => {
   const container = document.getElementById('orders-list');
   if (!container) return;
@@ -2258,17 +4000,23 @@ const loadOrders = async () => {
     }
   });
 
-  showSpinner(container, 'md', 'primary', 'Loading orders...');
+  renderOrdersSkeletons(isDesktopBuyerViewport() ? 3 : 2);
 
   try {
     // Don't send status if it's 'all' - backend doesn't accept it
     const filters = { ...orderFilters };
+    filters.page = clampToPositiveInt(orderFilters.page, 1);
+    filters.limit = clampToPositiveInt(orderFilters.limit, DEFAULT_ORDER_FILTERS.limit);
     if (filters.status === 'all') {
       delete filters.status;
     }
 
     const response = await getOrders(filters);
     currentOrders = response.data?.orders || [];
+    ordersTotalItems = Number(response.total) || currentOrders.length;
+    ordersTotalPages = Math.max(1, Number(response.total_pages) || Math.ceil(ordersTotalItems / (filters.limit || DEFAULT_ORDER_FILTERS.limit)));
+    renderOrdersPagination();
+    saveBuyerUiState();
 
     if (currentOrders.length === 0) {
       // Dynamic empty state message based on filter
@@ -2285,15 +4033,14 @@ const loadOrders = async () => {
         emptyMessage = 'No cancelled orders yet';
       }
 
-      container.innerHTML = `
-        <div class="text-center py-12">
-          <i class="bi bi-inbox text-6xl text-gray-400"></i>
-          <p class="text-gray-500 mt-4">${emptyMessage}</p>
-          ${orderFilters.status !== 'all'
-      ? '<button class="btn btn-primary mt-4" onclick="window.resetOrderFilters()">View All Orders</button>'
-      : '<a href="#browse" class="btn btn-primary mt-4">Start Shopping</a>'}
-        </div>
-      `;
+      container.innerHTML = renderSectionEmptyState({
+        icon: 'receipt',
+        title: emptyMessage,
+        subtitle: 'Your orders will appear here after checkout.',
+        primaryActionHtml: orderFilters.status !== 'all'
+          ? '<button class="btn btn-primary" onclick="window.resetOrderFilters()">View All Orders</button>'
+          : '<a href="#browse" class="btn btn-primary">Start Shopping</a>'
+      });
       // Still attach filter listeners even if no orders
       attachOrderFilterListeners();
       return;
@@ -2307,13 +4054,10 @@ const loadOrders = async () => {
   } catch (error) {
     console.error('Error loading orders:', error);
     showError('Failed to load orders');
-    container.innerHTML = `
-      <div class="text-center py-12">
-        <i class="bi bi-exclamation-circle text-6xl text-danger"></i>
-        <p class="text-danger mt-4">Failed to load orders</p>
-        <button class="btn btn-primary mt-4" onclick="window.loadOrdersFromUI?.()">Retry</button>
-      </div>
-    `;
+    container.innerHTML = renderSectionErrorState({
+      title: 'Failed to load orders',
+      retryHandler: 'window.loadOrdersFromUI?.()'
+    });
   }
 };
 
@@ -2328,38 +4072,84 @@ const createOrderCard = (order) => {
 
   const statusColor = statusColors[order.status] || 'secondary';
   const sellerName = order.seller?.user?.full_name || 'Seller';
+  const safeSellerName = escapeHtml(sellerName);
   const isCompleted = order.status === 'completed';
   const hasRating = order.buyer_rating && order.buyer_rating > 0;
+  const itemsCount = order.items?.length || 0;
+  const totalAmount = Number(order.total_amount || 0);
+  const createdDateLabel = new Date(order.created_at).toLocaleDateString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+  const preferredLabel = order.preferred_date
+    ? `${new Date(order.preferred_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}${order.preferred_time ? ` • ${order.preferred_time}` : ''}`
+    : 'Not set';
+  const deliveryOptionLabel = order.delivery_option === 'pickup'
+    ? 'Pickup'
+    : order.delivery_option === 'drop-off'
+      ? 'Drop-off'
+      : 'Unspecified';
+  const paymentLabel = order.payment_method ? String(order.payment_method).toUpperCase() : 'COD';
 
   // Debug log for completed orders
   if (isCompleted) {
   }
 
   return `
-    <div class="card" data-order-id="${order.id}">
+    <div class="card buyer-order-card" data-order-id="${order.id}">
       <div class="card-body">
-        <div class="flex justify-between items-start mb-4">
-          <div>
-            <h4 class="font-bold text-lg">Order #${order.order_number}</h4>
-            <p class="text-sm text-gray-600">${formatRelativeTime(order.created_at)}</p>
+        <div class="buyer-order-shell">
+          <div class="buyer-order-main">
+            <div class="flex justify-between items-start mb-4 buyer-order-head">
+              <div class="buyer-order-head-copy">
+                <h4 class="font-bold text-lg buyer-order-title">Order #${order.order_number}</h4>
+                <p class="text-sm text-gray-600">${formatRelativeTime(order.created_at)}</p>
+              </div>
+              <span class="badge badge-${statusColor} buyer-order-badge">${order.status.toUpperCase()}</span>
+            </div>
+
+            <div class="mb-4 buyer-order-meta">
+              <p class="text-sm text-gray-600 mb-2">
+                <i class="bi bi-shop"></i> ${safeSellerName}
+              </p>
+              <p class="text-sm text-gray-600">
+                <i class="bi bi-box"></i> ${itemsCount} item${itemsCount === 1 ? '' : 's'} • ${formatCurrency(totalAmount)}
+              </p>
+              ${order.preferred_date ? `
+                <p class="text-sm text-primary mt-1">
+                  <i class="bi bi-calendar-check"></i> Preferred: ${preferredLabel}
+                </p>
+              ` : ''}
+            </div>
+
+            <div class="buyer-order-meta-grid mb-4">
+              <div class="buyer-order-meta-chip">
+                <span>Created</span>
+                <strong>${createdDateLabel}</strong>
+              </div>
+              <div class="buyer-order-meta-chip">
+                <span>Delivery</span>
+                <strong>${deliveryOptionLabel}</strong>
+              </div>
+              <div class="buyer-order-meta-chip">
+                <span>Payment</span>
+                <strong>${paymentLabel}</strong>
+              </div>
+              <div class="buyer-order-meta-chip">
+                <span>Preferred</span>
+                <strong>${preferredLabel}</strong>
+              </div>
+            </div>
           </div>
-          <span class="badge badge-${statusColor}">${order.status.toUpperCase()}</span>
+
+          <aside class="buyer-order-aside">
+            <p class="buyer-order-aside-label">Order Total</p>
+            <p class="buyer-order-aside-total">${formatCurrency(totalAmount)}</p>
+            <p class="buyer-order-aside-items">${itemsCount} item${itemsCount === 1 ? '' : 's'}</p>
+          </aside>
         </div>
-        
-        <div class="mb-4">
-          <p class="text-sm text-gray-600 mb-2">
-            <i class="bi bi-shop"></i> ${sellerName}
-          </p>
-          <p class="text-sm text-gray-600">
-            <i class="bi bi-box"></i> ${order.items?.length || 0} items • ${formatCurrency(order.total_amount)}
-          </p>
-          ${order.preferred_date ? `
-            <p class="text-sm text-primary mt-1">
-              <i class="bi bi-calendar-check"></i> Preferred: ${new Date(order.preferred_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}${order.preferred_time ? ` • ${order.preferred_time}` : ''}
-            </p>
-          ` : ''}
-        </div>
-        
+
         ${order.seller_delivery_proof_url ? `
           <div class="mb-4 p-3 bg-green-50 rounded-lg border border-green-200">
             <p class="text-sm font-semibold mb-2 text-green-800">
@@ -2404,48 +4194,53 @@ const createOrderCard = (order) => {
             </button>
           </div>
         ` : ''}
-        
-        <div class="flex gap-2 flex-wrap">
-          <button class="btn btn-sm btn-outline" onclick="window.viewOrderDetails('${order.id}')">
+
+        <div class="flex gap-2 flex-wrap buyer-order-actions buyer-order-actions-desktop">
+          <button class="btn btn-sm btn-outline buyer-order-action-main" onclick="window.viewOrderDetails('${order.id}')">
             <i class="bi bi-eye"></i> View Details
           </button>
           ${order.status !== 'cancelled' && order.status !== 'completed' ? `
-            <button class="btn btn-sm btn-primary" onclick="window.openOrderChat('${order.id}')">
+            <button class="btn btn-sm btn-primary buyer-order-action-main" onclick="window.openOrderChat('${order.id}')">
               <i class="bi bi-chat"></i> Message Seller
             </button>
           ` : ''}
           ${order.status === 'pending' ? `
-            <button class="btn btn-sm btn-danger" onclick="window.cancelOrder('${order.id}')">
+            <button class="btn btn-sm btn-danger buyer-order-action-danger" onclick="window.cancelOrder('${order.id}')">
               <i class="bi bi-x-circle"></i> Cancel
             </button>
           ` : ''}
           ${order.status === 'ready' && !order.buyer_confirmed ? `
-            <button class="btn btn-sm btn-success" onclick="window.confirmOrderReceived('${order.id}')">
+            <button class="btn btn-sm btn-success buyer-order-action-main" onclick="window.confirmOrderReceived('${order.id}')">
               <i class="bi bi-check-circle"></i> Confirm Received
             </button>
           ` : ''}
           ${order.status === 'ready' && order.buyer_confirmed && !order.seller_confirmed ? `
-            <div class="btn btn-sm btn-outline cursor-default">
+            <div class="btn btn-sm btn-outline cursor-default buyer-order-action-main">
               <i class="bi bi-hourglass-split"></i> Waiting for Seller Confirmation
             </div>
           ` : ''}
           ${isCompleted ? `
-            <div class="btn btn-sm btn-success cursor-default">
+            <div class="btn btn-sm btn-success cursor-default buyer-order-action-main">
               <i class="bi bi-check-circle-fill"></i> Order Completed
             </div>
           ` : ''}
+          ${isCompleted ? `
+            <button class="btn btn-sm btn-outline buyer-order-action-main" onclick="window.orderAgain('${order.id}')">
+              <i class="bi bi-arrow-repeat"></i> Order Again
+            </button>
+          ` : ''}
           ${isCompleted && !hasRating ? `
-            <button class="btn btn-sm btn-warning" onclick="window.rateOrderModal('${order.id}', '${order.order_number}')">
+            <button class="btn btn-sm btn-warning buyer-order-action-main" onclick="window.rateOrderModal('${order.id}', '${order.order_number}')">
               <i class="bi bi-star"></i> Rate Order
             </button>
           ` : ''}
           ${isCompleted && hasRating ? `
-            <div class="btn btn-sm btn-outline cursor-default">
+            <div class="btn btn-sm btn-outline cursor-default buyer-order-action-main">
               <i class="bi bi-star-fill text-warning"></i> Rated ${order.buyer_rating}/5
             </div>
           ` : ''}
           ${isCompleted ? `
-            <button class="btn btn-sm btn-danger" onclick="window.reportOrderIssue('${order.id}', '${order.order_number}')">
+            <button class="btn btn-sm btn-danger buyer-order-action-danger" onclick="window.reportOrderIssue('${order.id}', '${order.order_number}')">
               <i class="bi bi-flag"></i> Report Issue
             </button>
           ` : ''}
@@ -2457,7 +4252,13 @@ const createOrderCard = (order) => {
 
 window.viewOrderDetails = async (orderId) => {
   try {
-    const response = await getOrderById(orderId);
+    const targetOrderId = resolveOrderApiId(orderId);
+    if (!targetOrderId) {
+      showError('Unable to resolve order ID');
+      return;
+    }
+
+    const response = await getOrderById(targetOrderId);
     const order = response.data?.order;
 
     if (!order) {
@@ -2465,142 +4266,167 @@ window.viewOrderDetails = async (orderId) => {
       return;
     }
 
+    const statusColors = {
+      pending: 'warning',
+      confirmed: 'info',
+      ready: 'primary',
+      completed: 'success',
+      cancelled: 'danger'
+    };
+    const statusClass = statusColors[order.status] || 'secondary';
+
     const modalContent = `
-      <div class="space-y-4">
-        <div class="flex justify-between items-center">
-          <h3 class="text-xl font-bold">Order #${order.order_number}</h3>
-          <span class="badge badge-${order.status === 'completed' ? 'success' : 'warning'}">
-            ${order.status.toUpperCase()}
-          </span>
-        </div>
-        
-        <div class="border-t pt-4">
-          <h4 class="font-semibold mb-2">Seller Information</h4>
-          <p class="text-sm"><i class="bi bi-shop"></i> ${order.seller?.user?.full_name || 'Unknown Seller'}</p>
-          <p class="text-sm"><i class="bi bi-geo-alt"></i> ${order.seller?.municipality || 'Not provided'}</p>
-          ${order.seller?.rating && order.seller.rating > 0 ? `
-            <div class="flex items-center gap-2 mt-2">
-              <div class="flex gap-1 text-warning text-sm">
-                ${[1, 2, 3, 4, 5].map(star =>
-      `<i class="bi bi-star${star <= Math.round(order.seller.rating) ? '-fill' : ''}"></i>`
-    ).join('')}
-              </div>
-              <span class="text-sm font-semibold">${order.seller.rating.toFixed(1)} / 5.0</span>
-              <button class="btn btn-sm btn-outline text-xs" onclick="window.viewSellerReviews('${order.seller.id}', '${encodeURIComponent(order.seller.user.full_name)}')">
-                View Reviews
-              </button>
-            </div>
-          ` : ''}
-        </div>
-        
-        <div class="border-t pt-4">
-          <h4 class="font-semibold mb-2">Order Items</h4>
-          ${order.has_unavailable_product && order.status === 'pending' ? `
-            <div class="mb-3 p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-400">
-              <p class="text-sm font-semibold text-yellow-800 mb-2">
-                <i class="bi bi-exclamation-triangle"></i> Product Unavailable
-              </p>
-              <p class="text-sm text-yellow-700 mb-2">
-                The following product(s) have been ${order.unavailable_products[0]?.status === 'draft' ? 'temporarily unavailable (draft)' : 'paused'} by the seller:
-              </p>
-              <ul class="text-sm text-yellow-700 ml-4">
-                ${order.unavailable_products.map(prod => `
-                  <li><i class="bi bi-dash"></i> ${prod.name} <span class="text-xs italic">(${prod.status})</span></li>
-                `).join('')}
-              </ul>
-            </div>
-          ` : ''}
-          <div class="space-y-2">
-            ${order.items.map(item => `
-              <div class="flex justify-between text-sm ${item.product_status === 'paused' || item.product_status === 'draft' ? 'text-yellow-700 bg-yellow-50 p-2 rounded' : ''}">
-                <span>${item.product_name} (${item.quantity} ${item.unit_type})${item.product_status === 'paused' || item.product_status === 'draft' ? ` <span class="text-xs italic">[${item.product_status}]</span>` : ''}</span>
-                <span class="font-semibold">${formatCurrency(item.subtotal)}</span>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-        
-        <div class="border-t pt-4">
-          <div class="flex justify-between font-bold text-lg">
-            <span>Total</span>
-            <span class="text-primary">${formatCurrency(order.total_amount)}</span>
-          </div>
-        </div>
-        
-        <div class="border-t pt-4">
-          <h4 class="font-semibold mb-2">Delivery Details</h4>
-          <p class="text-sm"><strong>Option:</strong> ${order.delivery_option}</p>
-          <p class="text-sm"><strong>Address:</strong> ${order.delivery_address}</p>
-          ${order.preferred_date ? `<p class="text-sm"><strong>Preferred Date:</strong> ${new Date(order.preferred_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })}</p>` : ''}
-          ${order.preferred_time ? `<p class="text-sm"><strong>Preferred Time:</strong> ${order.preferred_time.charAt(0).toUpperCase() + order.preferred_time.slice(1)}</p>` : ''}
-          <p class="text-sm"><strong>Payment:</strong> ${order.payment_method}</p>
-          ${order.order_notes ? `<p class="text-sm mt-2"><strong>Notes:</strong> ${order.order_notes}</p>` : ''}
+      <div class="buyer-order-details-modal">
+        <div class="buyer-order-details-topbar">
+          <h3 class="buyer-order-details-title">Order #${order.order_number}</h3>
+          <button type="button" class="buyer-order-details-close" data-modal-close aria-label="Close order details">
+            <i class="bi bi-x-lg"></i>
+          </button>
         </div>
 
-        ${order.buyer_rating ? `
-          <div class="border-t pt-4">
-            <h4 class="font-semibold mb-2">
-              <i class="bi bi-star-fill text-warning"></i> Your Rating
-            </h4>
-            <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-              <div class="flex items-center gap-2 mb-2">
-                <div class="flex gap-1 text-warning">
+        <div class="buyer-order-details-scroll space-y-3">
+          <div class="buyer-order-details-status">
+            <span class="badge badge-${statusClass}">${order.status.toUpperCase()}</span>
+          </div>
+
+          <section class="buyer-order-details-card">
+            <h4 class="buyer-order-details-section-title">Seller Information</h4>
+            <p class="text-sm"><i class="bi bi-shop"></i> ${order.seller?.user?.full_name || 'Unknown Seller'}</p>
+            <p class="text-sm"><i class="bi bi-geo-alt"></i> ${order.seller?.municipality || 'Not provided'}</p>
+            ${order.seller?.rating && order.seller.rating > 0 ? `
+              <div class="flex items-center gap-2 mt-2 flex-wrap">
+                <div class="flex gap-1 text-warning text-sm">
                   ${[1, 2, 3, 4, 5].map(star =>
-      `<i class="bi bi-star${star <= order.buyer_rating ? '-fill' : ''}"></i>`
-    ).join('')}
+        `<i class="bi bi-star${star <= Math.round(order.seller.rating) ? '-fill' : ''}"></i>`
+      ).join('')}
                 </div>
-                <span class="font-semibold">${order.buyer_rating}/5</span>
+                <span class="text-sm font-semibold">${order.seller.rating.toFixed(1)} / 5.0</span>
+                <button class="btn btn-sm btn-outline text-xs" onclick="window.viewSellerReviews('${order.seller.id}', '${encodeURIComponent(order.seller.user.full_name)}')">
+                  View Reviews
+                </button>
               </div>
-              ${order.buyer_rating_comment ? `
-                <p class="text-sm text-gray-700 italic">"${order.buyer_rating_comment}"</p>
-              ` : ''}
-              <p class="text-xs text-gray-600 mt-2">
-                Rated on ${new Date(order.buyer_rated_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })}
-              </p>
-            </div>
-          </div>
-        ` : ''}
+            ` : ''}
+          </section>
 
-        ${order.seller_delivery_proof_url ? `
-          <div class="border-t pt-4">
-            <h4 class="font-semibold mb-2">
-              <i class="bi bi-image"></i> Seller's Delivery Proof
-            </h4>
-            <div class="bg-blue-50 p-3 rounded-lg border border-blue-200">
-              <img src="${getDeliveryProofUrl(order.seller_delivery_proof_url)}" 
-                   alt="Seller Delivery Proof" 
-                   class="w-full h-64 object-cover rounded-lg border cursor-pointer"
-                   onclick="window.open('${getDeliveryProofUrl(order.seller_delivery_proof_url)}', '_blank')">
-              <p class="text-xs text-gray-600 mt-2">
-                <i class="bi bi-info-circle"></i> Click to view full size
-              </p>
+          <section class="buyer-order-details-card">
+            <h4 class="buyer-order-details-section-title">Order Items</h4>
+            ${order.has_unavailable_product && order.status === 'pending' ? `
+              <div class="mb-3 p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-400">
+                <p class="text-sm font-semibold text-yellow-800 mb-2">
+                  <i class="bi bi-exclamation-triangle"></i> Product Unavailable
+                </p>
+                <p class="text-sm text-yellow-700 mb-2">
+                  The following product(s) have been ${order.unavailable_products[0]?.status === 'draft' ? 'temporarily unavailable (draft)' : 'paused'} by the seller:
+                </p>
+                <ul class="text-sm text-yellow-700 ml-4">
+                  ${order.unavailable_products.map(prod => `
+                    <li><i class="bi bi-dash"></i> ${prod.name} <span class="text-xs italic">(${prod.status})</span></li>
+                  `).join('')}
+                </ul>
+              </div>
+            ` : ''}
+            <div class="space-y-2">
+              ${order.items.map(item => `
+                <div class="buyer-order-item-row ${item.product_status === 'paused' || item.product_status === 'draft' ? 'text-yellow-700 bg-yellow-50 p-2 rounded' : ''}">
+                  <span>${item.product_name} (${item.quantity} ${item.unit_type})${item.product_status === 'paused' || item.product_status === 'draft' ? ` <span class="text-xs italic">[${item.product_status}]</span>` : ''}</span>
+                  <span class="font-semibold">${formatCurrency(item.subtotal)}</span>
+                </div>
+              `).join('')}
             </div>
-          </div>
-        ` : ''}
 
-        ${order.buyer_delivery_proof_url ? `
-          <div class="border-t pt-4">
-            <h4 class="font-semibold mb-2">
-              <i class="bi bi-image"></i> Your Receipt Proof
-            </h4>
-            <div class="bg-green-50 p-3 rounded-lg border border-green-200">
-              <img src="${getDeliveryProofUrl(order.buyer_delivery_proof_url)}" 
-                   alt="Buyer Receipt Proof" 
-                   class="w-full h-64 object-cover rounded-lg border cursor-pointer"
-                   onclick="window.open('${getDeliveryProofUrl(order.buyer_delivery_proof_url)}', '_blank')">
-              <p class="text-xs text-gray-600 mt-2">
-                <i class="bi bi-info-circle"></i> Click to view full size
-              </p>
+            <div class="buyer-order-total-row">
+              <span>Total</span>
+              <span class="text-primary">${formatCurrency(order.total_amount)}</span>
             </div>
-          </div>
-        ` : ''}
+          </section>
+
+          <section class="buyer-order-details-card">
+            <h4 class="buyer-order-details-section-title">Delivery Details</h4>
+            <p class="text-sm"><strong>Option:</strong> ${order.delivery_option}</p>
+            <p class="text-sm"><strong>Address:</strong> ${order.delivery_address}</p>
+            ${order.preferred_date ? `<p class="text-sm"><strong>Preferred Date:</strong> ${new Date(order.preferred_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })}</p>` : ''}
+            ${order.preferred_time ? `<p class="text-sm"><strong>Preferred Time:</strong> ${order.preferred_time.charAt(0).toUpperCase() + order.preferred_time.slice(1)}</p>` : ''}
+            <p class="text-sm"><strong>Payment:</strong> ${order.payment_method}</p>
+            ${order.order_notes ? `<p class="text-sm mt-2"><strong>Notes:</strong> ${order.order_notes}</p>` : ''}
+          </section>
+
+          ${order.buyer_rating ? `
+            <section class="buyer-order-details-card">
+              <h4 class="buyer-order-details-section-title">
+                <i class="bi bi-star-fill text-warning"></i> Your Rating
+              </h4>
+              <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                <div class="flex items-center gap-2 mb-2">
+                  <div class="flex gap-1 text-warning">
+                    ${[1, 2, 3, 4, 5].map(star =>
+        `<i class="bi bi-star${star <= order.buyer_rating ? '-fill' : ''}"></i>`
+      ).join('')}
+                  </div>
+                  <span class="font-semibold">${order.buyer_rating}/5</span>
+                </div>
+                ${order.buyer_rating_comment ? `
+                  <p class="text-sm text-gray-700 italic">"${order.buyer_rating_comment}"</p>
+                ` : ''}
+                <p class="text-xs text-gray-600 mt-2">
+                  Rated on ${new Date(order.buyer_rated_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+            </section>
+          ` : ''}
+
+          ${order.seller_delivery_proof_url ? `
+            <section class="buyer-order-details-card">
+              <h4 class="buyer-order-details-section-title">
+                <i class="bi bi-image"></i> Seller's Delivery Proof
+              </h4>
+              <div class="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <img src="${getDeliveryProofUrl(order.seller_delivery_proof_url)}" 
+                     alt="Seller Delivery Proof" 
+                     class="w-full h-64 object-cover rounded-lg border cursor-pointer"
+                     onclick="window.open('${getDeliveryProofUrl(order.seller_delivery_proof_url)}', '_blank')">
+                <p class="text-xs text-gray-600 mt-2">
+                  <i class="bi bi-info-circle"></i> Click to view full size
+                </p>
+              </div>
+            </section>
+          ` : ''}
+
+          ${order.buyer_delivery_proof_url ? `
+            <section class="buyer-order-details-card">
+              <h4 class="buyer-order-details-section-title">
+                <i class="bi bi-image"></i> Your Receipt Proof
+              </h4>
+              <div class="bg-green-50 p-3 rounded-lg border border-green-200">
+                <img src="${getDeliveryProofUrl(order.buyer_delivery_proof_url)}" 
+                     alt="Buyer Receipt Proof" 
+                     class="w-full h-64 object-cover rounded-lg border cursor-pointer"
+                     onclick="window.open('${getDeliveryProofUrl(order.buyer_delivery_proof_url)}', '_blank')">
+                <p class="text-xs text-gray-600 mt-2">
+                  <i class="bi bi-info-circle"></i> Click to view full size
+                </p>
+              </div>
+            </section>
+          ` : ''}
+        </div>
+
+        <div class="buyer-order-details-footer">
+          ${order.status !== 'cancelled' && order.status !== 'completed' ? `
+            <button type="button" class="btn btn-primary btn-sm" onclick="window.openOrderChat('${order.id}')">
+              <i class="bi bi-chat"></i> Message Seller
+            </button>
+          ` : ''}
+          <button type="button" class="btn btn-outline btn-sm" data-modal-close>
+            Close
+          </button>
+        </div>
       </div>
     `;
 
     createModal({
       title: 'Order Details',
       content: modalContent,
-      size: 'md'
+      size: 'md',
+      showCloseButton: false
     });
 
   } catch (error) {
@@ -2609,7 +4435,95 @@ window.viewOrderDetails = async (orderId) => {
   }
 };
 
+window.orderAgain = async (orderId) => {
+  try {
+    const targetOrderId = resolveOrderApiId(orderId);
+    if (!targetOrderId) {
+      showError('Unable to resolve order ID');
+      return;
+    }
+
+    const response = await getOrderById(targetOrderId);
+    const order = response.data?.order;
+
+    if (!order || !Array.isArray(order.items) || order.items.length === 0) {
+      showError('No order items found to reorder.');
+      return;
+    }
+
+    const addedItems = [];
+    const failedItems = [];
+
+    for (const item of order.items) {
+      if (!item?.product_id) {
+        failedItems.push(`${item?.product_name || 'Unknown product'}: missing product reference`);
+        continue;
+      }
+
+      if (item.product_status === 'paused' || item.product_status === 'draft') {
+        failedItems.push(`${item.product_name}: currently ${item.product_status}`);
+        continue;
+      }
+
+      const quantity = clampToPositiveInt(item.quantity, 1);
+      try {
+        await addToCartService(item.product_id, quantity);
+        addedItems.push(`${item.product_name} (${quantity})`);
+      } catch (error) {
+        failedItems.push(`${item.product_name}: ${error?.message || 'cannot add right now'}`);
+      }
+    }
+
+    if (addedItems.length > 0) {
+      showSuccess(`Added ${addedItems.length} item(s) to cart.`);
+      await updateCartUI();
+      if (currentPage === 'cart') {
+        await loadCart();
+      }
+    }
+
+    if (failedItems.length > 0) {
+      createModal({
+        title: 'Order Again Summary',
+        content: `
+          <div class="space-y-3">
+            ${addedItems.length > 0 ? `
+              <div class="p-3 rounded-lg border border-green-200 bg-green-50">
+                <p class="font-semibold text-green-800 mb-1"><i class="bi bi-check-circle"></i> Added</p>
+                <ul class="text-sm text-green-900">
+                  ${addedItems.map(entry => `<li>${escapeHtml(entry)}</li>`).join('')}
+                </ul>
+              </div>
+            ` : ''}
+            <div class="p-3 rounded-lg border border-yellow-200 bg-yellow-50">
+              <p class="font-semibold text-yellow-800 mb-1"><i class="bi bi-exclamation-triangle"></i> Not Added</p>
+              <ul class="text-sm text-yellow-900">
+                ${failedItems.map(entry => `<li>${escapeHtml(entry)}</li>`).join('')}
+              </ul>
+            </div>
+          </div>
+        `,
+        size: 'md',
+        footer: '<button class="btn btn-secondary" data-modal-close>Close</button>'
+      });
+    }
+
+    if (addedItems.length > 0) {
+      window.location.hash = 'cart';
+    }
+  } catch (error) {
+    console.error('Order again failed:', error);
+    showError(error?.message || 'Failed to reorder items.');
+  }
+};
+
 window.cancelOrder = async (orderId) => {
+  const targetOrderId = resolveOrderApiId(orderId);
+  if (!targetOrderId) {
+    showError('Unable to resolve order ID');
+    return;
+  }
+
   const modalContent = `
     <div class="space-y-4">
       <p class="text-gray-700 mb-4">Please provide a reason for cancellation:</p>
@@ -2617,8 +4531,9 @@ window.cancelOrder = async (orderId) => {
     </div>
   `;
 
+  const cancelOrderCancelId = `btn-cancel-order-cancel-${Date.now()}`;
   const footer = `
-    <button class="btn btn-outline" onclick="document.querySelector('.modal-backdrop').remove()">Cancel</button>
+    <button class="btn btn-outline" id="${cancelOrderCancelId}">Cancel</button>
     <button class="btn btn-danger" id="btn-confirm-cancel">
       <i class="bi bi-x-circle"></i> Cancel Order
     </button>
@@ -2630,6 +4545,8 @@ window.cancelOrder = async (orderId) => {
     footer: footer,
     size: 'sm'
   });
+  const cancelOrderCancelBtn = document.getElementById(cancelOrderCancelId);
+  cancelOrderCancelBtn?.addEventListener('click', () => modal.close());
 
   const confirmBtn = document.getElementById('btn-confirm-cancel');
   if (confirmBtn) {
@@ -2644,7 +4561,7 @@ window.cancelOrder = async (orderId) => {
       confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Cancelling...';
 
       try {
-        await cancelOrder(orderId, reason);
+        await cancelOrder(targetOrderId, reason);
 
         // Close modal immediately after success
         modal.close();
@@ -2654,6 +4571,7 @@ window.cancelOrder = async (orderId) => {
 
         // Reload orders (don't await to avoid blocking)
         loadOrders().catch(err => console.error('Error reloading orders:', err));
+        loadOrderStats();
       } catch (error) {
         console.error('Error cancelling order:', error);
         const errorMsg = error?.message || 'Failed to cancel order';
@@ -2667,8 +4585,14 @@ window.cancelOrder = async (orderId) => {
 
 window.confirmOrderReceived = async (orderId) => {
   try {
+    const targetOrderId = resolveOrderApiId(orderId);
+    if (!targetOrderId) {
+      showError('Unable to resolve order ID');
+      return;
+    }
+
     // Fetch fresh order data to get latest delivery proof
-    const response = await getOrderById(orderId);
+    const response = await getOrderById(targetOrderId);
     const order = response.data?.order;
 
     if (!order) {
@@ -2766,7 +4690,7 @@ window.confirmOrderReceived = async (orderId) => {
         btnConfirm.disabled = true;
         btnConfirm.innerHTML = '<i class="bi bi-hourglass-split"></i> Confirming...';
 
-        await confirmOrder(orderId, file);
+        await confirmOrder(targetOrderId, file);
 
         // Close modal using the modal's close method
         modal.close();
@@ -2776,6 +4700,7 @@ window.confirmOrderReceived = async (orderId) => {
 
         // Reload orders to get updated status
         await loadOrders();
+        loadOrderStats();
       } catch (error) {
         console.error('Error confirming order:', error);
         showError(error.message || 'Failed to confirm order');
@@ -2792,8 +4717,14 @@ window.confirmOrderReceived = async (orderId) => {
 // Rate order modal - Rate individual products
 window.rateOrderModal = async (orderId, orderNumber) => {
   try {
+    const targetOrderId = resolveOrderApiId(orderId);
+    if (!targetOrderId) {
+      showError('Unable to resolve order ID');
+      return;
+    }
+
     // Fetch order details to get products
-    const response = await getOrderById(orderId);
+    const response = await getOrderById(targetOrderId);
     const order = response.data?.order;
 
     if (!order || !order.items || order.items.length === 0) {
@@ -2929,7 +4860,7 @@ window.rateOrderModal = async (orderId, orderNumber) => {
           };
         });
 
-        const response = await rateOrder(orderId, reviews);
+        const response = await rateOrder(targetOrderId, reviews);
 
         if (response && response.success !== false) {
           // Close modal using the modal's close method
@@ -2941,6 +4872,7 @@ window.rateOrderModal = async (orderId, orderNumber) => {
           // Reload orders
           setTimeout(() => {
             loadOrders().catch(err => console.error('Error reloading orders:', err));
+            loadOrderStats();
           }, 300);
         } else {
           throw new Error(response?.message || 'Failed to submit reviews');
@@ -3046,11 +4978,138 @@ window.reportOrderIssue = (orderId, orderNumber) => {
 
 // ============ My Issues Management ============
 
+const ISSUE_STATUS_CONFIG = {
+  under_review: { color: 'warning', icon: 'hourglass-split', label: 'Under Review' },
+  resolved: { color: 'success', icon: 'check-circle-fill', label: 'Resolved' },
+  rejected: { color: 'danger', icon: 'x-circle-fill', label: 'Rejected' }
+};
+
+const ISSUE_PRIORITY_ORDER = { low: 1, medium: 2, high: 3, urgent: 4 };
+
+const normalizeIssueStatus = (status) => {
+  const key = String(status || 'under_review').toLowerCase();
+  return ISSUE_STATUS_CONFIG[key] ? key : 'under_review';
+};
+
+const getIssueSearchText = (issue) => {
+  const orderNumber = issue?.order?.order_number || issue?.order_number || '';
+  const sellerName = issue?.order?.seller?.user?.full_name || issue?.seller?.user?.full_name || '';
+  return [
+    issue?.id,
+    issue?.issue_type,
+    issue?.description,
+    orderNumber,
+    sellerName
+  ].map(value => String(value || '').toLowerCase()).join(' ');
+};
+
+const getIssueSortTimestamp = (issue) => {
+  const lastUpdated = issue?.updated_at || issue?.resolved_at || issue?.created_at;
+  const ts = Date.parse(lastUpdated);
+  return Number.isFinite(ts) ? ts : 0;
+};
+
+const getIssueResolutionDays = (issue) => {
+  const created = Date.parse(issue?.created_at || '');
+  const resolved = Date.parse(issue?.resolved_at || issue?.updated_at || '');
+  if (!Number.isFinite(created) || !Number.isFinite(resolved) || resolved < created) return null;
+  return Math.max(1, Math.round((resolved - created) / (1000 * 60 * 60 * 24)));
+};
+
+const getIssueExpectedResponseDays = (issue) => {
+  const created = Date.parse(issue?.created_at || '');
+  if (!Number.isFinite(created)) return 3;
+  const elapsed = (Date.now() - created) / (1000 * 60 * 60 * 24);
+  if (elapsed < 1) return 2;
+  if (elapsed < 2) return 1;
+  return 0;
+};
+
+const buildIssueAttachmentsHtml = (issue) => {
+  const attachments = Array.isArray(issue?.evidence_urls) ? issue.evidence_urls : [];
+  if (attachments.length === 0) return '';
+
+  return `
+    <div class="buyer-issue-attachments mt-3">
+      <p class="buyer-issue-attachments-title"><i class="bi bi-paperclip"></i> Attachments (${attachments.length})</p>
+      <div class="buyer-issue-attachments-grid">
+        ${attachments.slice(0, 3).map((url) => {
+      const fullUrl = getIssueEvidenceUrl(url);
+      const ext = String(url || '').split('.').pop()?.toUpperCase() || 'FILE';
+      return `
+          <button type="button" class="buyer-issue-attachment" onclick="window.previewIssueAttachment('${encodeURIComponent(fullUrl)}', '${encodeURIComponent(ext)}')">
+            <img src="${fullUrl}" alt="Issue attachment">
+            <span>${ext} • preview</span>
+          </button>
+        `;
+    }).join('')}
+      </div>
+    </div>
+  `;
+};
+
+const renderIssueStats = (issues = []) => {
+  const container = document.getElementById('issues-stats');
+  if (!container) return;
+
+  const openCount = issues.filter((issue) => normalizeIssueStatus(issue.status) === 'under_review').length;
+  const reviewCount = openCount;
+  const resolvedIssues = issues.filter((issue) => normalizeIssueStatus(issue.status) === 'resolved');
+  const resolvedCount = resolvedIssues.length;
+  const avgResolutionDays = resolvedCount > 0
+    ? Math.round(resolvedIssues.reduce((sum, issue) => sum + (getIssueResolutionDays(issue) || 0), 0) / resolvedCount)
+    : 0;
+
+  const cards = [
+    { label: 'Open', value: openCount, icon: 'inbox' },
+    { label: 'Under Review', value: reviewCount, icon: 'hourglass-split' },
+    { label: 'Resolved', value: resolvedCount, icon: 'check-circle' },
+    { label: 'Avg Resolution', value: `${avgResolutionDays}d`, icon: 'clock-history' }
+  ];
+
+  container.innerHTML = cards.map(card => `
+    <div class="buyer-issue-stat-card">
+      <p class="buyer-issue-stat-label"><i class="bi bi-${card.icon}"></i> ${card.label}</p>
+      <p class="buyer-issue-stat-value">${card.value}</p>
+    </div>
+  `).join('');
+};
+
+const updateIssueFilterCounts = (issues = []) => {
+  const counts = {
+    all: issues.length,
+    under_review: issues.filter(issue => normalizeIssueStatus(issue.status) === 'under_review').length,
+    resolved: issues.filter(issue => normalizeIssueStatus(issue.status) === 'resolved').length,
+    rejected: issues.filter(issue => normalizeIssueStatus(issue.status) === 'rejected').length
+  };
+
+  document.querySelectorAll('.issue-filter').forEach((btn) => {
+    const status = btn.dataset.status || 'all';
+    const baseLabel = btn.dataset.baseLabel || btn.textContent.trim().replace(/\s*\(\d+\)$/, '');
+    btn.dataset.baseLabel = baseLabel;
+    btn.textContent = `${baseLabel} (${counts[status] ?? 0})`;
+  });
+};
+
+const renderIssueSkeletons = (count = 3) => {
+  const container = document.getElementById('issues-list');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="card buyer-issue-card">
+      <div class="card-body buyer-issue-body">
+        <div class="home-skeleton shimmer home-skeleton-title"></div>
+        <div class="home-skeleton shimmer home-skeleton-line mt-2"></div>
+        <div class="home-skeleton shimmer home-skeleton-line mt-2"></div>
+        <div class="home-skeleton shimmer home-skeleton-actions mt-3"></div>
+      </div>
+    </div>
+  `).join('');
+};
+
 const loadMyIssues = async () => {
   const container = document.getElementById('issues-list');
   if (!container) return;
 
-  // Update active filter button state
   document.querySelectorAll('.issue-filter').forEach(btn => {
     btn.classList.remove('active');
     if (btn.dataset.status === issueFilters.status || (btn.dataset.status === 'all' && !issueFilters.status)) {
@@ -3058,148 +5117,203 @@ const loadMyIssues = async () => {
     }
   });
 
-  showSpinner(container, 'md', 'primary', 'Loading issues...');
+  renderIssueSkeletons();
 
   try {
-    const response = await getMyIssues();
-    let issues = response.data?.issues || [];
+    const response = await getMyIssues({ status: issueFilters.status });
+    const allIssues = response.data?.issues || [];
+    renderIssueStats(allIssues);
+    applyIssuesStatsCollapsedState();
+    updateIssueFilterCounts(allIssues);
 
-    // Filter by status if not 'all'
+    let issues = [...allIssues];
     if (issueFilters.status && issueFilters.status !== 'all') {
-      issues = issues.filter(issue => issue.status === issueFilters.status);
+      issues = issues.filter(issue => normalizeIssueStatus(issue.status) === issueFilters.status);
+    }
+
+    const searchTerm = String(issueFilters.search || '').trim().toLowerCase();
+    if (searchTerm) {
+      issues = issues.filter((issue) => getIssueSearchText(issue).includes(searchTerm));
+    }
+
+    if (issueFilters.sort === 'oldest') {
+      issues.sort((a, b) => getIssueSortTimestamp(a) - getIssueSortTimestamp(b));
+    } else if (issueFilters.sort === 'updated') {
+      issues.sort((a, b) => {
+        const aUpdated = Date.parse(a?.updated_at || a?.created_at || '');
+        const bUpdated = Date.parse(b?.updated_at || b?.created_at || '');
+        return (Number.isFinite(bUpdated) ? bUpdated : 0) - (Number.isFinite(aUpdated) ? aUpdated : 0);
+      });
+    } else {
+      issues.sort((a, b) => getIssueSortTimestamp(b) - getIssueSortTimestamp(a));
     }
 
     currentIssues = issues;
+    applyIssueFiltersToUi();
 
     if (currentIssues.length === 0) {
-      let emptyMessage = 'No issues reported';
-      if (issueFilters.status === 'under_review') {
-        emptyMessage = 'No issues under review';
-      } else if (issueFilters.status === 'resolved') {
-        emptyMessage = 'No resolved issues';
-      } else if (issueFilters.status === 'rejected') {
-        emptyMessage = 'No rejected issues';
-      }
-
+      const filteredState = issueFilters.status !== 'all' || searchTerm.length > 0;
       container.innerHTML = `
         <div class="text-center py-12">
           <i class="bi bi-flag text-6xl text-gray-400"></i>
-          <p class="text-gray-500 mt-4">${emptyMessage}</p>
-          ${issueFilters.status !== 'all'
-      ? '<button class="btn btn-primary mt-4" onclick="window.resetIssueFilters()">View All Issues</button>'
-      : '<a href="#orders" class="btn btn-primary mt-4">View Orders</a>'}
+          <p class="font-semibold mt-4">${filteredState ? 'No matching issues' : 'No issues reported'}</p>
+          <p class="text-sm text-gray-600 mt-2">Submitted disputes and resolutions will appear here.</p>
+          <p class="text-xs text-gray-500 mt-2">Issues can be filed from completed orders only.</p>
+          <div class="mt-4 flex items-center justify-center gap-2 flex-wrap">
+            ${filteredState
+        ? '<button class="btn btn-primary buyer-issues-empty-cta" onclick="window.resetIssueFilters()">View All Issues</button>'
+        : '<a href="#orders" class="btn btn-primary buyer-issues-empty-cta">View Orders</a>'}
+            <button class="btn btn-outline buyer-issues-empty-cta" onclick="window.openIssueResolutionGuide()">How issue resolution works</button>
+          </div>
         </div>
       `;
       attachIssueFilterListeners();
+      saveBuyerUiState();
       return;
     }
 
+    saveBuyerUiState();
     container.innerHTML = currentIssues.map(issue => createIssueCard(issue)).join('');
     attachIssueFilterListeners();
   } catch (error) {
     console.error('Error loading issues:', error);
-    container.innerHTML = `
-      <div class="text-center py-12">
-        <i class="bi bi-exclamation-circle text-6xl text-red-400"></i>
-        <p class="text-red-500 mt-4">Failed to load issues</p>
-        <button class="btn btn-primary mt-4" onclick="window.location.reload()">Retry</button>
-      </div>
-    `;
+    container.innerHTML = renderSectionErrorState({
+      title: 'Failed to load issues',
+      retryHandler: 'window.loadIssuesFromUI?.()'
+    });
   }
 };
 
 const createIssueCard = (issue) => {
-  const issueStatus = String(issue.status || 'under_review');
-  const statusColors = {
-    under_review: 'warning',
-    resolved: 'success',
-    rejected: 'danger'
-  };
-
-  const statusIcons = {
-    under_review: 'hourglass-split',
-    resolved: 'check-circle-fill',
-    rejected: 'x-circle-fill'
-  };
+  const issueStatus = normalizeIssueStatus(issue.status);
+  const statusConfig = ISSUE_STATUS_CONFIG[issueStatus];
+  const priority = String(issue.priority || 'medium').toLowerCase();
+  const priorityLabel = priority.toUpperCase();
+  const priorityClass = priority === 'urgent' || priority === 'high'
+    ? 'buyer-issue-priority--high'
+    : priority === 'low'
+      ? 'buyer-issue-priority--low'
+      : 'buyer-issue-priority--medium';
+  const timelineLabel = issueStatus === 'resolved'
+    ? 'Reported -> Under Review -> Resolved'
+    : issueStatus === 'rejected'
+      ? 'Reported -> Under Review -> Rejected'
+      : 'Reported -> Under Review -> Awaiting Resolution';
+  const assignedRole = issueStatus === 'under_review'
+    ? (issue.assigned_role || 'Support')
+    : 'Resolution Team';
+  const resolutionDays = getIssueResolutionDays(issue);
+  const expectedDays = getIssueExpectedResponseDays(issue);
+  const relatedOrderId = issue?.order_id || issue?.order?.id || '';
+  const updatedAtTs = Date.parse(issue?.updated_at || issue?.created_at || '');
+  const isRecentUpdate = Number.isFinite(updatedAtTs) && (Date.now() - updatedAtTs) <= (1000 * 60 * 60 * 24);
 
   return `
-    <div class="card hover:shadow-lg transition-shadow">
-      <div class="card-body">
-        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-          <div class="flex-1">
-            <div class="flex items-start gap-3">
-              <i class="bi bi-flag-fill text-warning text-xl mt-1"></i>
-              <div class="flex-1">
-                <div class="flex items-center gap-2 mb-2">
-                  <h3 class="font-bold text-lg">${issue.issue_type}</h3>
-                  <span class="badge badge-${statusColors[issueStatus] || 'secondary'}">
-                    <i class="bi bi-${statusIcons[issueStatus] || 'circle'}"></i>
-                    ${issueStatus.replace('_', ' ').toUpperCase()}
-                  </span>
-                </div>
-                
-                <p class="text-sm text-gray-600 mb-3 line-clamp-2">${issue.description}</p>
-                
-                <div class="flex flex-wrap gap-4 text-sm text-gray-500">
-                  <div>
-                    <i class="bi bi-receipt"></i>
-                    <strong>Order:</strong> #${issue.order?.order_number || 'N/A'}
-                  </div>
-                  <div>
-                    <i class="bi bi-flag"></i>
-                    <strong>Priority:</strong> ${(issue.priority || 'medium').toUpperCase()}
-                  </div>
-                  <div>
-                    <i class="bi bi-calendar"></i>
-                    <strong>Reported:</strong> ${formatRelativeTime(issue.created_at)}
-                  </div>
-                  ${issueStatus === 'under_review' ? `
-                    <div>
-                      <i class="bi bi-alarm"></i>
-                      <strong>SLA:</strong> ${issue.is_overdue ? 'OVERDUE' : 'On Track'}
-                    </div>
-                  ` : ''}
-                  ${issue.evidence_urls && issue.evidence_urls.length > 0 ? `
-                    <div>
-                      <i class="bi bi-paperclip"></i>
-                      <strong>Evidence:</strong> ${issue.evidence_urls.length} file(s)
-                    </div>
-                  ` : ''}
-                </div>
-                
-                ${issue.resolution && issueStatus !== 'under_review' ? `
-                  <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p class="text-sm font-semibold text-blue-800 mb-1">
-                      <i class="bi bi-person-badge"></i> Resolution:
-                    </p>
-                    <p class="text-sm text-blue-900">${issue.resolution}</p>
-                  </div>
-                ` : ''}
-                ${issue.outcome_action ? `
-                  <div class="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <p class="text-sm font-semibold text-green-800 mb-1">
-                      <i class="bi bi-cash-coin"></i> Outcome Action
-                    </p>
-                    <p class="text-sm text-green-900">
-                      ${String(issue.outcome_action).replace(/_/g, ' ')}
-                      ${issue.outcome_amount ? ` - ${formatCurrency(issue.outcome_amount)}` : ''}
-                    </p>
-                    ${issue.outcome_notes ? `<p class="text-xs text-green-800 mt-1">${issue.outcome_notes}</p>` : ''}
-                  </div>
-                ` : ''}
+    <div class="card buyer-issue-card hover:shadow-lg transition-shadow ${isRecentUpdate ? 'is-recent-update' : ''}" data-issue-id="${issue.id}">
+      <div class="card-body buyer-issue-body">
+        <div class="buyer-issue-topline">
+          <div class="buyer-issue-head-copy">
+            <h3 class="font-bold text-lg buyer-issue-title">${escapeHtml(issue.issue_type || 'Issue')}</h3>
+            <p class="buyer-issue-subid">Issue #${escapeHtml(issue.id || 'N/A')} • Order #${escapeHtml(issue.order?.order_number || 'N/A')}</p>
+          </div>
+          <div class="buyer-issue-chips">
+            <span class="badge badge-${statusConfig.color} buyer-issue-status">
+              <i class="bi bi-${statusConfig.icon}"></i> ${statusConfig.label}
+            </span>
+            <span class="buyer-issue-priority ${priorityClass}">${priorityLabel}</span>
+          </div>
+        </div>
+
+        <p class="text-sm text-gray-600 mb-3 buyer-issue-desc">${escapeHtml(issue.description || '')}</p>
+
+        <div class="buyer-issue-timeline">${timelineLabel}</div>
+
+        <div class="buyer-issue-meta-grid">
+          <div class="buyer-issue-meta-item"><i class="bi bi-calendar"></i> Reported: ${formatRelativeTime(issue.created_at)}</div>
+          <div class="buyer-issue-meta-item"><i class="bi bi-clock-history"></i> Last updated: ${formatRelativeTime(issue.updated_at || issue.created_at)}</div>
+          <div class="buyer-issue-meta-item"><i class="bi bi-person-badge"></i> Assigned: ${escapeHtml(assignedRole)}</div>
+          ${issueStatus === 'under_review'
+      ? `<div class="buyer-issue-meta-item"><i class="bi bi-alarm"></i> Expected response: ${expectedDays > 0 ? `~${expectedDays} day(s)` : 'within 24 hours'}</div>`
+      : `<div class="buyer-issue-meta-item"><i class="bi bi-check2-circle"></i> ${resolutionDays ? `Resolved in ${resolutionDays} day(s)` : 'Resolution posted'}</div>`}
+        </div>
+
+        ${buildIssueAttachmentsHtml(issue)}
+
+        <details class="buyer-issue-details mt-3">
+          <summary>Quick details</summary>
+          <div class="buyer-issue-details-body">
+            ${issue.resolution ? `
+              <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-2">
+                <p class="text-sm font-semibold text-blue-800 mb-1"><i class="bi bi-person-badge"></i> Resolution</p>
+                <p class="text-sm text-blue-900">${escapeHtml(issue.resolution)}</p>
               </div>
-            </div>
+            ` : ''}
+            ${issue.outcome_action ? `
+              <div class="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p class="text-sm font-semibold text-green-800 mb-1"><i class="bi bi-cash-coin"></i> Outcome Action</p>
+                <p class="text-sm text-green-900">
+                  ${escapeHtml(String(issue.outcome_action).replace(/_/g, ' '))}
+                  ${issue.outcome_amount ? ` - ${formatCurrency(issue.outcome_amount)}` : ''}
+                </p>
+                ${issue.outcome_notes ? `<p class="text-xs text-green-800 mt-1">${escapeHtml(issue.outcome_notes)}</p>` : ''}
+              </div>
+            ` : ''}
           </div>
-          
-          <div class="flex gap-2 flex-wrap sm:flex-col">
-            <button class="btn btn-sm btn-outline" onclick="window.viewIssueDetails('${issue.id}')">
-              <i class="bi bi-eye"></i> View Details
+        </details>
+
+        <div class="buyer-issue-actions">
+          <button class="btn btn-sm btn-primary buyer-issue-view-btn" onclick="window.viewIssueDetails('${issue.id}')">
+            <i class="bi bi-eye"></i> View Issue
+          </button>
+          ${relatedOrderId ? `
+            <button class="btn btn-sm btn-outline buyer-issue-bridge-btn" onclick="window.openOrderChat('${relatedOrderId}')">
+              <i class="bi bi-chat-dots"></i> Open Related Messages
             </button>
-          </div>
+          ` : ''}
         </div>
       </div>
     </div>
   `;
+};
+
+window.previewIssueAttachment = (encodedUrl, encodedLabel = '') => {
+  const fullUrl = decodeURIComponent(encodedUrl || '');
+  const label = decodeURIComponent(encodedLabel || 'FILE');
+  if (!fullUrl) return;
+
+  createModal({
+    title: `Attachment Preview (${label})`,
+    content: `
+      <div class="space-y-3">
+        <img src="${fullUrl}" alt="Issue attachment" class="w-full max-h-[65vh] object-contain rounded-lg border">
+        <p class="text-xs text-gray-600">Type: ${escapeHtml(label)} • Click "Open Full Size" for original file.</p>
+      </div>
+    `,
+    footer: `
+      <button class="btn btn-outline" data-modal-close>Close</button>
+      <a href="${fullUrl}" target="_blank" rel="noopener" class="btn btn-primary">Open Full Size</a>
+    `,
+    size: 'lg'
+  });
+};
+
+window.openIssueResolutionGuide = () => {
+  createModal({
+    title: 'How Issue Resolution Works',
+    content: `
+      <div class="space-y-3 text-sm text-gray-700">
+        <p><strong>1.</strong> Report issue from a completed order.</p>
+        <p><strong>2.</strong> Include complete details and evidence attachments.</p>
+        <p><strong>3.</strong> Support reviews and coordinates with seller.</p>
+        <p><strong>4.</strong> Resolution is posted with final action and notes.</p>
+        <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-900">
+          Typical review window is 1-3 business days depending on complexity.
+        </div>
+      </div>
+    `,
+    footer: '<button class="btn btn-primary" data-modal-close>Got it</button>',
+    size: 'md'
+  });
 };
 
 window.viewIssueDetails = async (issueId) => {
@@ -3213,6 +5327,11 @@ window.viewIssueDetails = async (issueId) => {
     }
 
     const issueStatus = String(issue.status || 'under_review');
+    const safeIssueType = escapeHtml(issue.issue_type || 'Issue');
+    const safeIssueDescription = escapeHtml(issue.description || '');
+    const safeIssueResolution = escapeHtml(issue.resolution || '');
+    const safeOutcomeAction = escapeHtml(String(issue.outcome_action || '').replace(/_/g, ' '));
+    const safeOutcomeNotes = escapeHtml(issue.outcome_notes || '');
     const statusColors = {
       under_review: 'warning',
       resolved: 'success',
@@ -3224,7 +5343,7 @@ window.viewIssueDetails = async (issueId) => {
       content: `
         <div class="space-y-4">
           <div class="flex items-center justify-between">
-            <h3 class="text-xl font-bold">${issue.issue_type}</h3>
+            <h3 class="text-xl font-bold">${safeIssueType}</h3>
             <span class="badge badge-${statusColors[issueStatus] || 'secondary'}">
               ${issueStatus.replace('_', ' ').toUpperCase()}
             </span>
@@ -3241,7 +5360,7 @@ window.viewIssueDetails = async (issueId) => {
           
           <div class="border-t pt-4">
             <h4 class="font-semibold mb-2">Description</h4>
-            <p class="text-sm text-gray-700">${issue.description}</p>
+            <p class="text-sm text-gray-700">${safeIssueDescription}</p>
           </div>
           
           ${issue.evidence_urls && issue.evidence_urls.length > 0 ? `
@@ -3260,7 +5379,7 @@ window.viewIssueDetails = async (issueId) => {
             <div class="border-t pt-4">
               <h4 class="font-semibold mb-2">Resolution</h4>
               <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p class="text-sm text-blue-900">${issue.resolution}</p>
+                <p class="text-sm text-blue-900">${safeIssueResolution}</p>
                 ${issue.resolved_at ? `
                   <p class="text-xs text-gray-500 mt-2">
                     <i class="bi bi-clock"></i> Responded: ${formatRelativeTime(issue.resolved_at)}
@@ -3283,10 +5402,10 @@ window.viewIssueDetails = async (issueId) => {
               <h4 class="font-semibold mb-2">Outcome Action</h4>
               <div class="p-3 bg-green-50 border border-green-200 rounded-lg">
                 <p class="text-sm text-green-900">
-                  ${String(issue.outcome_action).replace(/_/g, ' ')}
+                  ${safeOutcomeAction}
                   ${issue.outcome_amount ? ` - ${formatCurrency(issue.outcome_amount)}` : ''}
                 </p>
-                ${issue.outcome_notes ? `<p class="text-xs text-green-800 mt-2">${issue.outcome_notes}</p>` : ''}
+                ${issue.outcome_notes ? `<p class="text-xs text-green-800 mt-2">${safeOutcomeNotes}</p>` : ''}
               </div>
             </div>
           ` : ''}
@@ -3297,7 +5416,7 @@ window.viewIssueDetails = async (issueId) => {
         </div>
       `,
       footer: `
-        <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+        <button class="btn btn-outline" data-modal-close>Close</button>
       `,
       size: 'lg'
     });
@@ -3315,6 +5434,7 @@ const attachIssueFilterListeners = () => {
       document.querySelectorAll('.issue-filter').forEach(b => b.classList.remove('active'));
       newBtn.classList.add('active');
       issueFilters.status = newBtn.dataset.status;
+      saveBuyerUiState();
       loadMyIssues();
     });
   });
@@ -3322,6 +5442,10 @@ const attachIssueFilterListeners = () => {
 
 window.resetIssueFilters = () => {
   issueFilters.status = 'all';
+  issueFilters.search = '';
+  issueFilters.sort = 'newest';
+  applyIssueFiltersToUi();
+  saveBuyerUiState();
   loadMyIssues();
 };
 
@@ -3343,32 +5467,55 @@ const updateMessageBadge = async () => {
 
 // Update online status in both conversation list and chat header
 const updateOnlineStatusDisplay = () => {
-  // Always update conversation list if on messaging page
-  if (currentPage === 'messaging') {
-    loadConversations();
-  }
+  if (onlineStatusRenderQueued) return;
+  onlineStatusRenderQueued = true;
 
-  // Update chat header status using online-status module
-  const headerStatus = document.getElementById('chat-status');
-  if (headerStatus && headerStatus.dataset.userId) {
-    const userId = headerStatus.dataset.userId;
-    const statusBadge = createStatusBadge(userId, 'User');
-    headerStatus.innerHTML = '';
-    headerStatus.appendChild(statusBadge);
-  }
+  requestAnimationFrame(() => {
+    onlineStatusRenderQueued = false;
+
+    // Re-render from cached data to avoid API spam on frequent presence events
+    if (currentPage === 'messaging') {
+      const conversationsList = document.getElementById('conversations-list');
+      if (conversationsList) {
+        renderConversationsList(conversationsList);
+      }
+    }
+
+    // Update chat header status using online-status module
+    const headerStatus = document.getElementById('chat-status');
+    if (headerStatus && headerStatus.dataset.userId) {
+      const userId = headerStatus.dataset.userId;
+      const statusBadge = createStatusBadge(userId, 'User');
+      headerStatus.innerHTML = '';
+      headerStatus.appendChild(statusBadge);
+    }
+  });
 };
 
 // ============ Messaging ============
 
 const loadConversations = async () => {
+  const container = document.getElementById('conversations-list');
+  if (container) {
+    renderConversationSkeletons(isDesktopBuyerViewport() ? 6 : 4);
+  }
+
   // First, update the conversations data in the background
-  await updateConversationsData();
+  const loaded = await updateConversationsData();
 
   // Then render if container exists
-  const container = document.getElementById('conversations-list');
   if (!container) return;
 
+  if (!loaded && currentConversations.length === 0) {
+    container.innerHTML = renderSectionErrorState({
+      title: 'Failed to load conversations',
+      retryHandler: 'window.loadConversationsFromUI?.()'
+    });
+    return;
+  }
+
   renderConversationsList(container);
+  syncMessagingPanelsVisibility();
 };
 
 const mergeConversationMessages = (messageResponses = []) => {
@@ -3406,8 +5553,10 @@ const updateConversationsData = async () => {
   try {
     const response = await getConversations();
     currentConversations = response.data?.conversations || [];
+    return true;
   } catch (error) {
     console.error('Error updating conversations data:', error);
+    return false;
   }
 };
 
@@ -3443,43 +5592,124 @@ const setConversationTypingPreview = (orderId, isTyping, displayName = 'Seller')
   }
 };
 
+const getConversationSortTimestamp = (conv) => {
+  const candidates = [conv?.last_message_at, conv?.updated_at, conv?.created_at];
+  for (const candidate of candidates) {
+    const ts = Date.parse(candidate || '');
+    if (Number.isFinite(ts)) return ts;
+  }
+  return 0;
+};
+
+const formatConversationTimestamp = (conv) => {
+  const ts = getConversationSortTimestamp(conv);
+  if (!ts) return '';
+  return formatRelativeTime(new Date(ts).toISOString());
+};
+
+const updateConversationCountBadge = (visibleCount, totalCount = visibleCount) => {
+  const countEl = document.getElementById('conversation-count');
+  if (!countEl) return;
+  if (visibleCount === totalCount) {
+    countEl.textContent = `${totalCount} conversation${totalCount === 1 ? '' : 's'}`;
+    return;
+  }
+  countEl.textContent = `${visibleCount} of ${totalCount} conversation${totalCount === 1 ? '' : 's'}`;
+};
+
 // Render conversations list using cached data
 const renderConversationsList = (container) => {
-  if (currentConversations.length === 0) {
-    container.innerHTML = '<p class="text-center text-gray-500 py-4">No conversations yet</p>';
+  const searchTerm = (conversationFilters.search || '').trim().toLowerCase();
+  let filteredConversations = currentConversations.filter((conv) => {
+    if (conversationFilters.unreadOnly && !(conv.unread_count > 0)) return false;
+    if (!searchTerm) return true;
+
+    const haystack = [
+      conv.other_party,
+      conv.last_message,
+      conv.order_number
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+
+    return haystack.includes(searchTerm);
+  });
+
+  if ((conversationFilters.sort || 'newest') === 'unread') {
+    filteredConversations.sort((a, b) => {
+      const unreadA = Number(a.unread_count || 0);
+      const unreadB = Number(b.unread_count || 0);
+      if (unreadA !== unreadB) return unreadB - unreadA;
+      return getConversationSortTimestamp(b) - getConversationSortTimestamp(a);
+    });
+  } else {
+    filteredConversations.sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a));
+  }
+
+  updateConversationCountBadge(filteredConversations.length, currentConversations.length);
+
+  if (filteredConversations.length === 0) {
+    container.innerHTML = renderSectionEmptyState({
+      icon: 'chat-left-text',
+      title: currentConversations.length === 0 ? 'No conversations yet' : 'No conversations matched your filter',
+      subtitle: currentConversations.length === 0
+        ? 'Start chatting from your orders.'
+        : 'Try adjusting search text or unread-only filter.',
+      primaryActionHtml: '<button class="btn btn-outline btn-sm" onclick="window.resetConversationFilters?.()">Reset Filters</button>'
+    });
     return;
   }
 
-  container.innerHTML = currentConversations.map(conv => {
+  container.innerHTML = filteredConversations.map(conv => {
     const userId = conv.other_party_id;
+    const safeUserId = escapeHtml(String(userId || ''));
+    const orderId = String(conv.order_id || '');
+    const safeOrderId = escapeHtml(orderId);
+    const encodedOrderId = encodeURIComponent(orderId);
+    const safeOtherParty = escapeHtml(conv.other_party || 'Seller');
+    const conversationOrderIds = Array.isArray(conv.order_ids) && conv.order_ids.length
+      ? conv.order_ids.map(String)
+      : [orderId];
+    const safeOrderIdsCsv = escapeHtml((conv.order_ids || []).map(String).join(','));
+    const safeActiveOrderIdsCsv = escapeHtml((conv.active_order_ids || []).map(String).join(','));
+    const activeThreadOrderIds = currentConversationOrderIds.map(String);
+    const isActiveConversation = conversationOrderIds.some(id => activeThreadOrderIds.includes(id))
+      || String(currentConversation) === String(conv.order_id);
     const typingDisplayName = typingPreviewByOrderId.get(String(conv.order_id));
     const previewText = typingDisplayName
       ? `${typingDisplayName} is typing...`
       : (conv.last_message || 'No messages yet');
+    const safePreviewText = escapeHtml(previewText);
+    const orderNumber = conv.order_number || `ORD-${String(conv.order_id || '').padStart(6, '0')}`;
+    const relativeTime = formatConversationTimestamp(conv);
     const previewClass = typingDisplayName
       ? 'text-sm text-primary truncate italic'
       : 'text-sm text-gray-600 truncate';
     return `
-    <div class="conversation-item p-3 hover:bg-gray-100 cursor-pointer rounded-lg"
-         data-order-id="${conv.order_id}"
-         data-user-id="${userId}"
+    <div class="conversation-item buyer-conversation-item p-3 hover:bg-gray-100 cursor-pointer rounded-lg ${isActiveConversation ? 'is-active' : ''}"
+         data-order-id="${safeOrderId}"
+         data-user-id="${safeUserId}"
          data-order-count="${conv.order_count || 1}"
          data-active-order-count="${conv.active_order_count || 0}"
-         data-order-ids="${(conv.order_ids || []).join(',')}"
-         data-active-order-ids="${(conv.active_order_ids || []).join(',')}"
-         onclick="window.openConversation('${conv.order_id}')">
-      <div class="flex items-center gap-3">
-        <div class="flex-1">
-          <div class="flex items-center gap-2">
-            <p class="font-semibold">${conv.other_party}</p>
-            <span class="status-badge-container" data-user-id="${userId}"></span>
+         data-order-number="${escapeHtml(orderNumber)}"
+         data-order-ids="${safeOrderIdsCsv}"
+         data-active-order-ids="${safeActiveOrderIdsCsv}"
+         onclick="window.openConversation(decodeURIComponent('${encodedOrderId}'))">
+      <div class="buyer-conversation-row">
+        <div class="buyer-conversation-main">
+          <div class="buyer-conversation-topline">
+            <p class="font-semibold buyer-conversation-name">${safeOtherParty}</p>
+            <span class="status-badge-container" data-user-id="${safeUserId}"></span>
+            ${relativeTime ? `<span class="buyer-conversation-time">${escapeHtml(relativeTime)}</span>` : ''}
           </div>
-          <p class="${previewClass}" data-conversation-preview="${conv.order_id}">${previewText}</p>
+          <div class="buyer-conversation-meta-row">
+            <span class="buyer-conversation-order-chip">${escapeHtml(orderNumber)}</span>
+            ${Number(conv.order_count || 0) > 1 ? `<span class="buyer-conversation-thread-count">${Number(conv.order_count)} orders</span>` : ''}
+          </div>
+          <p class="${previewClass}" data-conversation-preview="${safeOrderId}">${safePreviewText}</p>
         </div>
         ${conv.unread_count > 0 ? `
-          <span class="badge badge-danger" data-conversation-badge="${conv.order_id}">${conv.unread_count}</span>
+          <span class="badge badge-danger buyer-conversation-unread" data-conversation-badge="${safeOrderId}">${conv.unread_count}</span>
         ` : `
-          <span class="badge badge-danger" data-conversation-badge="${conv.order_id}" style="display: none;"></span>
+          <span class="badge badge-danger buyer-conversation-unread" data-conversation-badge="${safeOrderId}" style="display: none;"></span>
         `}
       </div>
     </div>
@@ -3498,6 +5728,35 @@ const renderConversationsList = (container) => {
         container.innerHTML = '<span class="text-xs text-gray-400">-</span>';
       }
     });
+  });
+};
+
+window.openLatestUnreadConversation = () => {
+  if (!Array.isArray(currentConversations) || currentConversations.length === 0) return;
+  const target = [...currentConversations]
+    .sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a))
+    .find((conv) => Number(conv.unread_count || 0) > 0)
+    || [...currentConversations].sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a))[0];
+  if (target?.order_id) {
+    window.openConversation(String(target.order_id));
+  }
+};
+
+const applyActiveConversationHighlight = () => {
+  const selectedOrderId = currentConversation ? String(currentConversation) : null;
+  const selectedThreadOrderIds = currentConversationOrderIds.map(String);
+
+  document.querySelectorAll('#conversations-list .conversation-item').forEach((item) => {
+    const itemOrderId = String(item.dataset.orderId || '');
+    const itemOrderIds = String(item.dataset.orderIds || '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean);
+
+    const isActive = (selectedOrderId && itemOrderId === selectedOrderId)
+      || itemOrderIds.some(id => selectedThreadOrderIds.includes(id));
+
+    item.classList.toggle('is-active', Boolean(isActive));
   });
 };
 
@@ -3568,6 +5827,9 @@ window.openConversation = async (orderId) => {
     activeOrderIds
   };
 
+  currentConversation = orderId;
+  applyActiveConversationHighlight();
+  setMessagingMobileView('chat');
   window.openOrderChat(orderId, userId);
 };
 
@@ -3575,6 +5837,8 @@ window.openOrderChat = async (orderId, userId) => {
   stopTypingSignal();
   hideTypingIndicator();
   currentConversation = orderId;
+  applyActiveConversationHighlight();
+  setMessagingMobileView('chat');
 
   // Join conversation room via socket for real-time updates
   try {
@@ -3595,6 +5859,8 @@ window.openOrderChat = async (orderId, userId) => {
       console.error('Chat window element not found');
       return;
     }
+
+    renderChatWindowSkeleton();
 
     try {
       const conversationMeta = window.currentConversationMeta || null;
@@ -3618,6 +5884,7 @@ window.openOrderChat = async (orderId, userId) => {
 
       currentConversationOrderIds = threadOrderIds;
       currentConversationSendOrderId = activeThreadOrderIds[0] || orderId;
+      applyActiveConversationHighlight();
 
       // Join all order rooms in grouped conversation so real-time updates cover every order in this thread.
       try {
@@ -3638,15 +5905,28 @@ window.openOrderChat = async (orderId, userId) => {
       const messages = mergeConversationMessages(successfulResponses);
       const userRole = response.data?.user_role || 'buyer';
       const activeConversation = currentConversations.find(conv => conv.order_id === orderId);
+      window.currentConversationUnreadCount = Number(activeConversation?.unread_count || 0);
       const activeOrderCount = activeConversation?.active_order_count ?? activeThreadOrderIds.length;
+      const activeOrderNumber = activeConversation?.order_number || response?.data?.order_number || `ORD-${String(orderId).padStart(6, '0')}`;
+      const headerStatusLabel = activeOrderCount === 0 ? 'Order Closed' : 'Active';
       const isCancelled = activeOrderCount === 0;
 
       chatWindow.innerHTML = `
-        <div class="flex flex-col h-96">
+        <div class="buyer-chat-shell flex flex-col">
           <div class="border-b p-4 bg-gray-50" id="chat-header">
-            <div class="flex justify-between items-center">
-              <div>
-                <h3 class="font-bold text-lg" id="chat-user-name">Seller</h3>
+            <div class="flex justify-between items-center gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <button type="button" class="btn btn-outline btn-sm buyer-chat-back" id="chat-back-btn" aria-label="Back to conversations">
+                  <i class="bi bi-chevron-left"></i>
+                </button>
+                <div class="buyer-chat-title-wrap">
+                  <h3 class="font-bold text-lg" id="chat-user-name">Seller</h3>
+                  <p class="buyer-chat-submeta">
+                    <span class="buyer-chat-order-chip">${escapeHtml(activeOrderNumber)}</span>
+                    <span class="buyer-chat-thread-count">${activeOrderCount > 1 ? `${activeOrderCount} active orders` : '1 active order'}</span>
+                    <span class="buyer-chat-thread-status">${headerStatusLabel}</span>
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -3655,7 +5935,7 @@ window.openOrderChat = async (orderId, userId) => {
             ${messages.map(msg => createMessageBubble(msg, userRole)).join('')}
           </div>
           
-          <div class="border-t p-4">
+          <div class="border-t p-4 buyer-chat-composer">
             ${isCancelled ? `
               <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-center text-red-700 text-sm">
                 <i class="bi bi-exclamation-circle"></i> This order has been cancelled. No new messages can be sent.
@@ -3663,19 +5943,28 @@ window.openOrderChat = async (orderId, userId) => {
             ` : `
               <div class="space-y-2">
                 <div id="message-attachment-preview" class="hidden"></div>
-                <form id="chat-form" class="flex gap-2">
+                <form id="chat-form" class="flex gap-2 buyer-chat-form" autocomplete="off">
                   <input type="file" id="message-attachment" class="hidden" accept="image/jpeg,image/jpg,image/png">
                   <button type="button" class="btn btn-outline px-3" id="btn-attach-message" title="Attach image">
                     <i class="bi bi-paperclip"></i>
                   </button>
                   <input type="text" 
                          id="message-input" 
-                         class="form-control flex-1" 
-                         placeholder="Type a message...">
-                  <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-send"></i> Send
+                         class="form-control flex-1 buyer-chat-input" 
+                         autocomplete="off"
+                         autocorrect="off"
+                         autocapitalize="off"
+                         spellcheck="false"
+                         maxlength="500"
+                         placeholder="Message seller about ${escapeHtml(activeOrderNumber)}...">
+                  <button type="submit" class="btn btn-primary" id="btn-send-message">
+                    <i class="bi bi-send"></i> <span class="buyer-send-label">Send</span>
                   </button>
                 </form>
+                <div class="buyer-chat-composer-meta">
+                  <span id="message-send-hint" class="buyer-chat-send-hint">Messages are sent securely.</span>
+                  <span id="message-char-counter" class="buyer-chat-char-counter">0/500</span>
+                </div>
               </div>
             `}
           </div>
@@ -3685,7 +5974,14 @@ window.openOrderChat = async (orderId, userId) => {
       // Update chat header with seller info
       const headerName = document.getElementById('chat-user-name');
       if (headerName) {
-        const sellerName = response.data?.seller_name || 'Seller';
+        const sellerName = (
+          response.data?.seller_name
+          || activeConversation?.other_party
+          || currentConversations.find(conv =>
+            String(conv.order_id) === String(orderId)
+          )?.other_party
+          || 'Seller'
+        );
         headerName.textContent = sellerName;
       }
 
@@ -3702,9 +5998,16 @@ window.openOrderChat = async (orderId, userId) => {
       if (chatForm) {
         chatForm.addEventListener('submit', handleSendMessage);
       }
+      const chatBackBtn = document.getElementById('chat-back-btn');
+      if (chatBackBtn) {
+        chatBackBtn.addEventListener('click', () => {
+          setMessagingMobileView('list');
+        });
+      }
       setupMessageAttachmentUI();
       setupTypingInputHandlers();
       hideTypingIndicator();
+      syncMessagingPanelsVisibility();
 
     } catch (error) {
       console.error('Error loading messages:', error);
@@ -3713,7 +6016,7 @@ window.openOrderChat = async (orderId, userId) => {
   }, 100);
 };
 
-const createMessageBubble = (message, userRole) => {
+const createMessageBubble = (message, userRole, options = {}) => {
   const isSender = message.sender?.role === userRole;
   const alignClass = isSender ? 'justify-end' : 'justify-start';
   const bgClass = isSender ? 'bg-primary text-white' : 'bg-gray-200';
@@ -3721,13 +6024,22 @@ const createMessageBubble = (message, userRole) => {
     ? `<p class="text-sm">${escapeHtml(message.message_text)}</p>`
     : '';
   const attachmentMarkup = renderMessageAttachment(message);
+  const deliveryState = options.deliveryState || (isSender ? 'delivered' : '');
+  const deliveryMarkup = isSender
+    ? `<span class="buyer-chat-delivery ${deliveryState === 'failed' ? 'is-failed' : ''}">
+        ${deliveryState === 'failed' ? 'Failed • tap retry' : deliveryState === 'sending' ? 'Sending…' : 'Delivered'}
+      </span>`
+    : '';
 
   return `
-    <div class="flex ${alignClass}">
+    <div class="flex ${alignClass} buyer-chat-row">
       <div class="${bgClass} rounded-lg px-4 py-2 max-w-xs">
         ${textMarkup}
         ${attachmentMarkup}
-        <p class="text-xs opacity-75 mt-1">${formatRelativeTime(message.created_at)}</p>
+        <div class="buyer-chat-bubble-meta">
+          <p class="text-xs opacity-75 mt-1">${formatRelativeTime(message.created_at)}</p>
+          ${deliveryMarkup}
+        </div>
       </div>
     </div>
   `;
@@ -3737,11 +6049,21 @@ const CHAT_MESSAGE_BATCH_SIZE = 40;
 
 const setupLazyMessageRendering = (messagesContainer, messages, userRole) => {
   if (!messagesContainer) return;
+  const unreadCount = Math.max(0, Number(window.currentConversationUnreadCount || 0));
+  const unreadDividerIndex = unreadCount > 0 && unreadCount < messages.length
+    ? messages.length - unreadCount
+    : -1;
 
   let renderedStart = Math.max(0, messages.length - CHAT_MESSAGE_BATCH_SIZE);
   const renderRange = (start, end) => messages
     .slice(start, end)
-    .map(msg => createMessageBubble(msg, userRole))
+    .map((msg, offset) => {
+      const absoluteIndex = start + offset;
+      const withDivider = absoluteIndex === unreadDividerIndex
+        ? '<div class="buyer-chat-unread-divider">New messages</div>'
+        : '';
+      return `${withDivider}${createMessageBubble(msg, userRole)}`;
+    })
     .join('');
 
   messagesContainer.innerHTML = renderRange(renderedStart, messages.length);
@@ -3897,6 +6219,61 @@ const clearMessageAttachmentUI = () => {
   }
 };
 
+const updateMessageComposerHint = (text = '', mode = 'neutral') => {
+  const hint = document.getElementById('message-send-hint');
+  if (!hint) return;
+  hint.textContent = text || 'Messages are sent securely.';
+  hint.classList.remove('is-error', 'is-muted');
+  if (mode === 'error') hint.classList.add('is-error');
+  if (mode === 'muted') hint.classList.add('is-muted');
+};
+
+const updateMessageCharCounter = () => {
+  const input = document.getElementById('message-input');
+  const counter = document.getElementById('message-char-counter');
+  if (!input || !counter) return;
+  const length = (input.value || '').length;
+  counter.textContent = `${length}/500`;
+  counter.classList.toggle('is-near-limit', length >= 450);
+};
+
+const setMessageSendingState = (isSending) => {
+  const sendBtn = document.getElementById('btn-send-message');
+  const input = document.getElementById('message-input');
+  const attachBtn = document.getElementById('btn-attach-message');
+  if (!sendBtn) return;
+  sendBtn.disabled = Boolean(isSending);
+  if (input) input.disabled = Boolean(isSending);
+  if (attachBtn) attachBtn.disabled = Boolean(isSending);
+  sendBtn.innerHTML = isSending
+    ? '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> <span class="buyer-send-label">Sending...</span>'
+    : '<i class="bi bi-send"></i> <span class="buyer-send-label">Send</span>';
+};
+
+window.retryLastFailedMessage = async () => {
+  if (!lastFailedMessageDraft || isSendingMessage) return;
+  const input = document.getElementById('message-input');
+  if (!input) return;
+  input.value = lastFailedMessageDraft.messageText || '';
+  selectedMessageAttachment = lastFailedMessageDraft.attachment || null;
+  if (selectedMessageAttachment) {
+    const preview = document.getElementById('message-attachment-preview');
+    if (preview) {
+      preview.classList.remove('hidden');
+      preview.innerHTML = `
+        <div class="flex items-center justify-between bg-blue-50 border border-blue-200 rounded px-3 py-2 text-sm">
+          <span class="truncate pr-3"><i class="bi bi-image"></i> ${escapeHtml(selectedMessageAttachment.name)}</span>
+          <button type="button" class="text-danger" id="btn-remove-attachment" title="Remove image">
+            <i class="bi bi-x-circle"></i>
+          </button>
+        </div>
+      `;
+    }
+  }
+  updateMessageCharCounter();
+  await handleSendMessage({ preventDefault: () => {} });
+};
+
 const getTypingOrderId = () => currentConversationSendOrderId || currentConversationOrderIds[0] || currentConversation;
 
 const stopTypingSignal = () => {
@@ -3947,10 +6324,14 @@ const setupTypingInputHandlers = () => {
   if (!input || input.dataset.typingBound === '1') return;
 
   input.dataset.typingBound = '1';
-  input.addEventListener('input', handleTypingInput);
+  input.addEventListener('input', (event) => {
+    handleTypingInput(event);
+    updateMessageCharCounter();
+  });
   input.addEventListener('blur', () => {
     stopTypingSignal();
   });
+  updateMessageCharCounter();
 };
 
 const hideTypingIndicator = () => {
@@ -4029,14 +6410,21 @@ const renderMessageAttachment = (message) => {
 };
 
 const handleSendMessage = async (e) => {
-  e.preventDefault();
+  e?.preventDefault?.();
+  if (isSendingMessage) return;
 
   const input = document.getElementById('message-input');
   const fileInput = document.getElementById('message-attachment');
+  if (!input) return;
   const messageText = input.value.trim();
   const attachment = selectedMessageAttachment || fileInput?.files?.[0] || null;
 
   if (!messageText && !attachment) return;
+
+  isSendingMessage = true;
+  setMessageSendingState(true);
+  updateMessageComposerHint('Sending message...', 'muted');
+  lastFailedMessageDraft = null;
 
   // Clear input immediately
   input.value = '';
@@ -4047,12 +6435,14 @@ const handleSendMessage = async (e) => {
   hideTypingIndicator();
   selectedMessageAttachment = null;
   clearMessageAttachmentUI();
+  updateMessageCharCounter();
 
   try {
     const targetOrderId = currentConversationSendOrderId || currentConversation;
     if (!targetOrderId) {
       showError('No active order available for this conversation');
       input.value = messageText;
+      updateMessageCharCounter();
       return;
     }
 
@@ -4069,8 +6459,20 @@ const handleSendMessage = async (e) => {
       });
     }
 
-    // Reload messages
-    await window.openOrderChat(currentConversation);
+    const currentUser = getCurrentUserSync();
+    const optimisticMessage = {
+      order_id: targetOrderId,
+      sender_id: currentUser?.id,
+      sender: {
+        id: currentUser?.id,
+        role: 'buyer'
+      },
+      message_text: messageText || (attachment ? 'Sent an attachment.' : ''),
+      created_at: new Date().toISOString()
+    };
+    addMessageBubbleToChat(optimisticMessage);
+    await loadConversations();
+    updateMessageComposerHint('Message delivered.', 'muted');
 
     // Focus input for next message
     setTimeout(() => {
@@ -4083,8 +6485,11 @@ const handleSendMessage = async (e) => {
   } catch (error) {
     console.error('Error sending message:', error);
     showError(error.message || 'Failed to send message');
+    updateMessageComposerHint('Failed to send. You can retry.', 'error');
+    lastFailedMessageDraft = { messageText, attachment };
     // Restore message if send failed
     input.value = messageText;
+    updateMessageCharCounter();
     if (attachment && fileInput) {
       selectedMessageAttachment = attachment;
       const dt = new DataTransfer();
@@ -4111,6 +6516,24 @@ const handleSendMessage = async (e) => {
         }
       }
     }
+    const chatMessages = document.getElementById('chat-messages');
+    if (chatMessages) {
+      chatMessages.insertAdjacentHTML('beforeend', `
+        <div class="flex justify-end buyer-chat-row">
+          <div class="bg-primary text-white rounded-lg px-4 py-2 max-w-xs">
+            ${messageText ? `<p class="text-sm">${escapeHtml(messageText)}</p>` : '<p class="text-sm italic">Attachment message</p>'}
+            <div class="buyer-chat-bubble-meta">
+              <p class="text-xs opacity-75 mt-1">just now</p>
+              <button type="button" class="buyer-chat-retry-btn" onclick="window.retryLastFailedMessage?.()">Failed • Retry</button>
+            </div>
+          </div>
+        </div>
+      `);
+      scrollChatToBottom(chatMessages);
+    }
+  } finally {
+    isSendingMessage = false;
+    setMessageSendingState(false);
   }
 };
 
@@ -4152,6 +6575,7 @@ const initializeRealTime = async () => {
       if (typeof loadOrders === 'function') {
         loadOrders();
       }
+      loadOrderStats();
     });
 
     if (socket) {
@@ -4242,13 +6666,17 @@ const initializeRealTime = async () => {
             renderConversationsList(container);
           }
 
+          const currentUserId = String(getCurrentUserSync()?.id || '');
+          const senderId = String(data?.sender_id || data?.sender?.id || '');
+          const isOwnMessage = Boolean(currentUserId && senderId && currentUserId === senderId);
+
           // Only show notification and update badge if NOT currently viewing this conversation
-          if (!isViewingThisConversation) {
+          if (!isViewingThisConversation && !isOwnMessage) {
             // Update message badge in navbar
             updateMessageBadge();
             // Show toast/sound only once for duplicate realtime sources
             showMessageToastOnce(data.order_id);
-          } else {
+          } else if (!isOwnMessage) {
             // User is viewing the conversation, add the message to chat
             hideTypingIndicator();
             const chatMessages = document.getElementById('chat-messages');
@@ -4304,6 +6732,7 @@ const initializeRealTime = async () => {
       // Listen for order updates
       on('order:updated', (data) => {
         showToast(`Order #${data.order_number} status: ${data.status}`, 'info');
+        loadOrderStats();
         if (currentPage === 'orders') {
           loadOrders();
         }
@@ -4317,36 +6746,19 @@ const initializeRealTime = async () => {
 // Add new message bubble to chat in real-time
 const addMessageBubbleToChat = (message) => {
   const chatMessages = document.getElementById('chat-messages');
+  if (!chatMessages) return;
 
   // Get current user from auth
   const currentUser = getCurrentUserSync();
   const currentUserId = currentUser?.id;
-
-  // Determine if this is a sent message
-  const isSender = message.sender_id === currentUserId;
-
-  const alignClass = isSender ? 'justify-end' : 'justify-start';
-  const bgClass = isSender ? 'bg-primary text-white' : 'bg-gray-200';
-
-  // Get sender name - try multiple possible field names
-  const senderName = message.sender?.full_name || message.senderName || message.sender_name || (isSender ? 'You' : 'Seller');
-
-  // Format the time properly
-  let timeText = 'now';
-  if (message.created_at) {
-    timeText = formatRelativeTime(message.created_at);
-  }
-
-  const bubble = `
-    <div class="flex ${alignClass}">
-      <div class="${bgClass} rounded-lg px-4 py-2 max-w-xs">
-        <p class="text-xs opacity-75 mb-1">${isSender ? 'You' : senderName}</p>
-        ${message.message_text ? `<p class="text-sm">${escapeHtml(message.message_text)}</p>` : ''}
-        ${renderMessageAttachment(message)}
-        <p class="text-xs opacity-75 mt-1">${timeText}</p>
-      </div>
-    </div>
-  `;
+  const normalized = {
+    ...message,
+    sender: {
+      ...(message?.sender || {}),
+      role: message?.sender?.role || (message?.sender_id === currentUserId ? 'buyer' : 'seller')
+    }
+  };
+  const bubble = createMessageBubble(normalized, 'buyer');
 
   const typingIndicator = chatMessages.querySelector('#typing-indicator');
   if (typingIndicator) {
@@ -4383,22 +6795,113 @@ const getCurrentUserSync = () => {
   }
 };
 
+const closeTopModalBackdrop = () => {
+  const topBackdrop = document.querySelector('.modal-backdrop:last-of-type');
+  if (!topBackdrop) return;
+  if (typeof closeModal === 'function') {
+    closeModal(topBackdrop);
+    return;
+  }
+  topBackdrop.remove();
+};
+
 // ============ Event Listeners ============
 
 let eventListeners = [];
 
 const attachEventListeners = () => {
+  const bindTap = (element, handler) => {
+    if (!element || typeof handler !== 'function') return;
+    const wrappedHandler = (event) => {
+      if (event.type === 'touchend') {
+        event.preventDefault();
+      }
+      handler(event);
+    };
+    element.addEventListener('click', wrappedHandler);
+    eventListeners.push({ element, event: 'click', handler: wrappedHandler });
+    element.addEventListener('touchend', wrappedHandler, { passive: false });
+    eventListeners.push({ element, event: 'touchend', handler: wrappedHandler });
+  };
+
+  const browseFiltersToggle = document.getElementById('browse-filters-toggle');
+  const browseDesktopFiltersToggle = document.getElementById('browse-filters-toggle-desktop');
+  const toggleFiltersHandler = () => {
+    const isDesktop = window.matchMedia('(min-width: 1024px)').matches;
+    if (isDesktop) {
+      browseDesktopFiltersHidden = !browseDesktopFiltersHidden;
+    } else {
+      browseFiltersCollapsed = !browseFiltersCollapsed;
+    }
+    saveBuyerUiState();
+    refreshBrowseDesktopUiImmediate();
+  };
+
+  [browseFiltersToggle, browseDesktopFiltersToggle].forEach((toggle) => {
+    bindTap(toggle, toggleFiltersHandler);
+  });
+
+  const resizeHandler = () => {
+    applyBrowseFiltersCollapsedState();
+    syncBrowseDesktopFiltersStickyFallback();
+    updateBrowseBackToTopVisibility();
+    applyCartSummaryStickyState();
+  };
+  window.addEventListener('resize', resizeHandler);
+  eventListeners.push({ element: window, event: 'resize', handler: resizeHandler });
+
+  const scrollStickyFallbackHandler = () => {
+    syncBrowseDesktopFiltersStickyFallback();
+    updateBrowseBackToTopVisibility();
+    applyCartSummaryStickyState();
+  };
+  window.addEventListener('scroll', scrollStickyFallbackHandler, { passive: true });
+  eventListeners.push({ element: window, event: 'scroll', handler: scrollStickyFallbackHandler });
+
+  const browseBackToTopBtn = document.getElementById('browse-back-to-top-btn');
+  if (browseBackToTopBtn) {
+    const backToTopHandler = () => scrollBrowseToTop();
+    browseBackToTopBtn.addEventListener('click', backToTopHandler);
+    eventListeners.push({ element: browseBackToTopBtn, event: 'click', handler: backToTopHandler });
+  }
+
+  const resizeOrderStatsHandler = () => applyOrdersStatsCollapsedState();
+  window.addEventListener('resize', resizeOrderStatsHandler);
+  eventListeners.push({ element: window, event: 'resize', handler: resizeOrderStatsHandler });
+
+  const resizeIssueStatsHandler = () => applyIssuesStatsCollapsedState();
+  window.addEventListener('resize', resizeIssueStatsHandler);
+  eventListeners.push({ element: window, event: 'resize', handler: resizeIssueStatsHandler });
+
+  const orderStatsToggle = document.getElementById('orders-stats-toggle');
+  if (orderStatsToggle) {
+    const orderStatsToggleHandler = () => {
+      ordersStatsCollapsed = !ordersStatsCollapsed;
+      saveBuyerUiState();
+      applyOrdersStatsCollapsedState();
+    };
+    orderStatsToggle.addEventListener('click', orderStatsToggleHandler);
+    eventListeners.push({ element: orderStatsToggle, event: 'click', handler: orderStatsToggleHandler });
+  }
+
+  const issuesStatsToggle = document.getElementById('issues-stats-toggle');
+  if (issuesStatsToggle) {
+    const issuesStatsToggleHandler = () => {
+      issuesStatsCollapsed = !issuesStatsCollapsed;
+      saveBuyerUiState();
+      applyIssuesStatsCollapsedState();
+    };
+    issuesStatsToggle.addEventListener('click', issuesStatsToggleHandler);
+    eventListeners.push({ element: issuesStatsToggle, event: 'click', handler: issuesStatsToggleHandler });
+  }
+
   // Browse search
   const searchInput = document.getElementById('browse-search');
   if (searchInput) {
     const searchHandler = debounce((e) => {
-      browseFilters.search = e.target.value;
-      browseFilters.page = 1; // Reset to first page when searching
-      loadBrowseProducts();
-      if (currentView === 'map') {
-        loadProductsOnMap();
-      }
-    }, 500);
+      draftBrowseFilters.search = e.target.value;
+      applyBrowseFilters({ resetPage: true });
+    }, 300);
     searchInput.addEventListener('input', searchHandler);
     eventListeners.push({ element: searchInput, event: 'input', handler: searchHandler });
   }
@@ -4407,12 +6910,7 @@ const attachEventListeners = () => {
   const categorySelect = document.getElementById('browse-category');
   if (categorySelect) {
     const categoryHandler = (e) => {
-      browseFilters.category = e.target.value;
-      browseFilters.page = 1; // Reset to first page when category changes
-      loadBrowseProducts();
-      if (currentView === 'map') {
-        loadProductsOnMap();
-      }
+      draftBrowseFilters.category = e.target.value;
     };
     categorySelect.addEventListener('change', categoryHandler);
     eventListeners.push({ element: categorySelect, event: 'change', handler: categoryHandler });
@@ -4422,12 +6920,7 @@ const attachEventListeners = () => {
   const municipalitySelect = document.getElementById('browse-municipality');
   if (municipalitySelect) {
     const municipalityHandler = (e) => {
-      browseFilters.municipality = e.target.value;
-      browseFilters.page = 1;
-      loadBrowseProducts();
-      if (currentView === 'map') {
-        loadProductsOnMap();
-      }
+      draftBrowseFilters.municipality = e.target.value;
     };
     municipalitySelect.addEventListener('change', municipalityHandler);
     eventListeners.push({ element: municipalitySelect, event: 'change', handler: municipalityHandler });
@@ -4438,16 +6931,11 @@ const attachEventListeners = () => {
     const tagHandler = (e) => {
       const tag = e.target.value;
       if (e.target.checked) {
-        if (!browseFilters.tags.includes(tag)) {
-          browseFilters.tags.push(tag);
+        if (!draftBrowseFilters.tags.includes(tag)) {
+          draftBrowseFilters.tags.push(tag);
         }
       } else {
-        browseFilters.tags = browseFilters.tags.filter(t => t !== tag);
-      }
-      browseFilters.page = 1;
-      loadBrowseProducts();
-      if (currentView === 'map') {
-        loadProductsOnMap();
+        draftBrowseFilters.tags = draftBrowseFilters.tags.filter(t => t !== tag);
       }
     };
     checkbox.addEventListener('change', tagHandler);
@@ -4457,24 +6945,42 @@ const attachEventListeners = () => {
   // Clear filters button
   const clearFiltersBtn = document.getElementById('clear-filters');
   if (clearFiltersBtn) {
-    const clearHandler = () => clearAllFilters();
+    const clearHandler = async () => {
+      clearAllFilters({ reload: false });
+      await applyBrowseFilters({ resetPage: true });
+    };
     clearFiltersBtn.addEventListener('click', clearHandler);
     eventListeners.push({ element: clearFiltersBtn, event: 'click', handler: clearHandler });
+  }
+
+  const applyFiltersBtn = document.getElementById('apply-filters');
+  if (applyFiltersBtn) {
+    const applyHandler = () => applyBrowseFilters({ resetPage: true });
+    applyFiltersBtn.addEventListener('click', applyHandler);
+    eventListeners.push({ element: applyFiltersBtn, event: 'click', handler: applyHandler });
+  }
+
+  const resetFiltersBtn = document.getElementById('reset-filters');
+  if (resetFiltersBtn) {
+    const resetHandler = async () => {
+      clearAllFilters({ reload: false });
+      await applyBrowseFilters({ resetPage: true });
+    };
+    resetFiltersBtn.addEventListener('click', resetHandler);
+    eventListeners.push({ element: resetFiltersBtn, event: 'click', handler: resetHandler });
   }
 
   // View toggle buttons
   const gridBtn = document.getElementById('view-grid');
   if (gridBtn) {
     const gridHandler = () => toggleView('grid');
-    gridBtn.addEventListener('click', gridHandler);
-    eventListeners.push({ element: gridBtn, event: 'click', handler: gridHandler });
+    bindTap(gridBtn, gridHandler);
   }
 
   const mapBtn = document.getElementById('view-map');
   if (mapBtn) {
     const mapHandler = () => toggleView('map');
-    mapBtn.addEventListener('click', mapHandler);
-    eventListeners.push({ element: mapBtn, event: 'click', handler: mapHandler });
+    bindTap(mapBtn, mapHandler);
   }
 
   // Browse sort filter
@@ -4487,6 +6993,8 @@ const attachEventListeners = () => {
       browseFilters.sort_by = sort_by;
       browseFilters.sort_order = sort_order;
       browseFilters.page = 1; // Reset to first page when sorting changes
+      syncDraftFiltersFromApplied();
+      saveBuyerUiState();
       loadBrowseProducts();
       if (currentView === 'map') {
         loadProductsOnMap();
@@ -4494,6 +7002,145 @@ const attachEventListeners = () => {
     };
     sortSelect.addEventListener('change', sortHandler);
     eventListeners.push({ element: sortSelect, event: 'change', handler: sortHandler });
+  }
+
+  const useMapBoundsCheckbox = document.getElementById('use-map-bounds');
+  if (useMapBoundsCheckbox) {
+    const mapBoundsHandler = (e) => {
+      useMapBounds = Boolean(e.target.checked);
+      pendingMapBounds = useMapBounds && browseMap ? browseMap.getBounds() : null;
+      if (useMapBounds) {
+        toggleMapSearchPrompt(true);
+      } else {
+        toggleMapSearchPrompt(false);
+        loadProductsOnMap();
+      }
+    };
+    useMapBoundsCheckbox.addEventListener('change', mapBoundsHandler);
+    eventListeners.push({ element: useMapBoundsCheckbox, event: 'change', handler: mapBoundsHandler });
+  }
+
+  const searchMapAreaBtn = document.getElementById('search-map-area');
+  if (searchMapAreaBtn) {
+    const searchAreaHandler = async () => {
+      if (!browseMap) return;
+      pendingMapBounds = browseMap.getBounds();
+      await loadProductsOnMap();
+    };
+    searchMapAreaBtn.addEventListener('click', searchAreaHandler);
+    eventListeners.push({ element: searchMapAreaBtn, event: 'click', handler: searchAreaHandler });
+  }
+
+  const resetMapAreaBtn = document.getElementById('reset-map-area');
+  if (resetMapAreaBtn) {
+    const resetMapHandler = async () => {
+      await resetMapAreaView();
+    };
+    resetMapAreaBtn.addEventListener('click', resetMapHandler);
+    eventListeners.push({ element: resetMapAreaBtn, event: 'click', handler: resetMapHandler });
+  }
+
+  const escapeHandler = (event) => {
+    if (event.key !== 'Escape') return;
+    if (browseMap) {
+      browseMap.closePopup();
+    }
+    const staticModal = document.getElementById('product-details-modal');
+    if (staticModal && !staticModal.classList.contains('hidden')) {
+      closeProductDetailsModal();
+      return;
+    }
+    const topBackdrop = document.querySelector('.modal-backdrop:last-of-type');
+    if (topBackdrop && topBackdrop.id !== 'product-details-modal') {
+      closeModal(topBackdrop);
+    }
+  };
+  window.addEventListener('keydown', escapeHandler);
+  eventListeners.push({ element: window, event: 'keydown', handler: escapeHandler });
+
+  const issuesSearch = document.getElementById('issues-search');
+  if (issuesSearch) {
+    const issuesSearchHandler = debounce((e) => {
+      issueFilters.search = (e.target.value || '').trim();
+      saveBuyerUiState();
+      if (currentPage === 'my-issues') loadMyIssues();
+    }, 240);
+    issuesSearch.addEventListener('input', issuesSearchHandler);
+    eventListeners.push({ element: issuesSearch, event: 'input', handler: issuesSearchHandler });
+  }
+
+  const issuesSort = document.getElementById('issues-sort');
+  if (issuesSort) {
+    const issuesSortHandler = (e) => {
+      issueFilters.sort = e.target.value || 'newest';
+      saveBuyerUiState();
+      if (currentPage === 'my-issues') loadMyIssues();
+    };
+    issuesSort.addEventListener('change', issuesSortHandler);
+    eventListeners.push({ element: issuesSort, event: 'change', handler: issuesSortHandler });
+  }
+
+  // Conversation search filter
+  const conversationSearch = document.getElementById('conversation-search');
+  const conversationSearchClear = document.getElementById('conversation-search-clear');
+  if (conversationSearch) {
+    const conversationSearchHandler = debounce((e) => {
+      conversationFilters.search = e.target.value || '';
+      saveBuyerUiState();
+      if (conversationSearchClear) {
+        conversationSearchClear.classList.toggle('is-visible', Boolean((conversationFilters.search || '').trim()));
+      }
+      if (currentPage === 'messaging') {
+        const container = document.getElementById('conversations-list');
+        if (container) renderConversationsList(container);
+      }
+    }, 250);
+    conversationSearch.addEventListener('input', conversationSearchHandler);
+    eventListeners.push({ element: conversationSearch, event: 'input', handler: conversationSearchHandler });
+  }
+
+  // Conversation unread-only filter
+  const conversationUnreadOnly = document.getElementById('conversation-unread-only');
+  if (conversationUnreadOnly) {
+    const unreadOnlyHandler = (e) => {
+      conversationFilters.unreadOnly = Boolean(e.target.checked);
+      saveBuyerUiState();
+      if (currentPage === 'messaging') {
+        const container = document.getElementById('conversations-list');
+        if (container) renderConversationsList(container);
+      }
+    };
+    conversationUnreadOnly.addEventListener('change', unreadOnlyHandler);
+    eventListeners.push({ element: conversationUnreadOnly, event: 'change', handler: unreadOnlyHandler });
+  }
+
+  const conversationSort = document.getElementById('conversation-sort');
+  if (conversationSort) {
+    const conversationSortHandler = (e) => {
+      conversationFilters.sort = e.target.value || 'newest';
+      saveBuyerUiState();
+      if (currentPage === 'messaging') {
+        const container = document.getElementById('conversations-list');
+        if (container) renderConversationsList(container);
+      }
+    };
+    conversationSort.addEventListener('change', conversationSortHandler);
+    eventListeners.push({ element: conversationSort, event: 'change', handler: conversationSortHandler });
+  }
+
+  if (conversationSearchClear && conversationSearch) {
+    const conversationSearchClearHandler = () => {
+      conversationFilters.search = '';
+      conversationSearch.value = '';
+      conversationSearchClear.classList.remove('is-visible');
+      saveBuyerUiState();
+      if (currentPage === 'messaging') {
+        const container = document.getElementById('conversations-list');
+        if (container) renderConversationsList(container);
+      }
+    };
+    conversationSearchClear.addEventListener('click', conversationSearchClearHandler);
+    eventListeners.push({ element: conversationSearchClear, event: 'click', handler: conversationSearchClearHandler });
   }
 };
 
@@ -4516,6 +7163,8 @@ const attachOrderFilterListeners = () => {
 
       // Update filter and reload
       orderFilters.status = newBtn.dataset.status;
+      orderFilters.page = 1;
+      saveBuyerUiState();
       loadOrders();
     });
   });
@@ -4523,11 +7172,54 @@ const attachOrderFilterListeners = () => {
 
 window.resetOrderFilters = () => {
   orderFilters.status = 'all';
+  orderFilters.page = 1;
+  saveBuyerUiState();
   loadOrders();
 };
 
 window.loadOrdersFromUI = () => {
   loadOrders();
+};
+
+window.loadCartFromUI = () => {
+  loadCart();
+};
+
+window.loadIssuesFromUI = () => {
+  loadMyIssues();
+};
+
+window.loadConversationsFromUI = () => {
+  loadConversations();
+};
+
+window.resetConversationFilters = () => {
+  conversationFilters = { search: '', unreadOnly: false, sort: 'newest' };
+  applyConversationFiltersToUi();
+  saveBuyerUiState();
+  if (currentPage === 'messaging') {
+    const container = document.getElementById('conversations-list');
+    if (container) renderConversationsList(container);
+  }
+};
+
+window.backToConversationList = () => {
+  setMessagingMobileView('list');
+};
+
+window.clearBrowseFilters = () => {
+  clearAllFilters({ reload: false });
+  applyBrowseFilters({ resetPage: true });
+};
+
+window.loadBrowseProductsFromUI = () => {
+  loadBrowseProducts();
+};
+
+window.refreshBuyerLocation = async () => {
+  userLocation = null;
+  await getUserLocation();
+  showToast('Location refreshed.', 'success');
 };
 
 const cleanupEventListeners = () => {
@@ -4545,6 +7237,8 @@ window.addEventListener('beforeunload', cleanupEventListeners);
 // ============ Cleanup ============
 
 const cleanup = () => {
+  stopCartSummaryStickyEnforcer();
+
   // Clean up map instances
   if (productDetailsMap) {
     productDetailsMap.remove();

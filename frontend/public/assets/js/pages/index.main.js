@@ -19,6 +19,7 @@ let currentFilters = {
   search: '',
   category: '',
   municipality: '',
+  seller_id: '',
   sort_by: 'created_at',
   sort_order: 'desc',
   page: 1,
@@ -34,6 +35,10 @@ let heroStats = {
   verifiedSellers: 0,
   freshProducts: 0
 };
+let mobileMapExpanded = false;
+let lastKnownCartCount = 0;
+let desktopViewMode = 'grid';
+let isProductDetailsModalOpen = false;
 
 // ============ Product Reviews ============
 
@@ -124,6 +129,7 @@ const init = async () => {
       const response = await getCartCount();
       if (response.success) {
         updateCartCount(response.data.count);
+        updateMobileCartBar(response.data.count);
       }
     } catch (error) {
       console.error('Error updating cart count:', error);
@@ -160,6 +166,12 @@ const init = async () => {
   
   // Attach event listeners
   attachEventListeners();
+  initMobileFilterSheet();
+  initMobileMapToggle();
+  initDesktopViewTabs();
+  syncFilterControls();
+  updateMobileFilterCount();
+  refreshMobileCartBar();
 
   // Check if we should show signup modal (from become-seller page redirect)
   // This runs at the very end after everything is loaded
@@ -206,7 +218,7 @@ const loadProducts = async () => {
   const viewAllContainer = document.getElementById('view-all-container');
   if (!container) return;
   
-  showSpinner(container, 'md', 'primary', 'Loading products...');
+  renderProductSkeletons(window.innerWidth >= 1280 ? 8 : 4);
   
   try {
     const response = await listProducts(currentFilters);
@@ -251,6 +263,7 @@ const formatStatCount = (value) => {
 const updateHeroStats = () => {
   const sellersEl = document.getElementById('stats-sellers');
   const productsEl = document.getElementById('stats-products');
+  const footerSellersEl = document.getElementById('footer-verified-count');
 
   if (sellersEl) {
     sellersEl.textContent = formatStatCount(heroStats.verifiedSellers);
@@ -259,6 +272,29 @@ const updateHeroStats = () => {
   if (productsEl) {
     productsEl.textContent = formatStatCount(heroStats.freshProducts);
   }
+
+  if (footerSellersEl) {
+    footerSellersEl.textContent = String(toNumber(heroStats.verifiedSellers));
+  }
+};
+
+const renderProductSkeletons = (count = 8) => {
+  const container = document.getElementById('featured-products');
+  if (!container) return;
+
+  const skeletonCards = Array.from({ length: count }).map(() => `
+    <div class="home-product-skeleton">
+      <div class="home-skeleton shimmer home-skeleton-image"></div>
+      <div class="home-skeleton-body">
+        <div class="home-skeleton shimmer home-skeleton-title"></div>
+        <div class="home-skeleton shimmer home-skeleton-line"></div>
+        <div class="home-skeleton shimmer home-skeleton-price"></div>
+        <div class="home-skeleton shimmer home-skeleton-actions"></div>
+      </div>
+    </div>
+  `).join('');
+
+  container.innerHTML = skeletonCards;
 };
 
 const renderProducts = () => {
@@ -364,8 +400,9 @@ const createProductCard = (product) => {
     : (product.photo_path ? [product.photo_path] : []);
   
   // Create carousel HTML
+  const carouselHeight = window.innerWidth >= 1280 ? '198px' : '220px';
   const carouselHtml = createCarousel(photos, product.name, {
-    height: '220px',
+    height: carouselHeight,
     objectFit: 'cover',
     showIndicators: photos.length > 1,
     showArrows: photos.length > 1,
@@ -376,82 +413,84 @@ const createProductCard = (product) => {
     <div class="card product-card">
       ${product.tags?.includes('fresh') ? '<div class="product-card-badge">Fresh</div>' : ''}
       
-      ${carouselHtml}
+      <div class="pc-media-wrap">
+        ${carouselHtml}
+      </div>
       
       <div class="card-body">
         <div class="flex items-center justify-between mb-2">
           <h3 class="card-title pc-title mb-0">${product.name}</h3>
           ${product.seller_verified ? '<span class="verified-badge"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
         </div>
-        
-        <p class="text-sm text-gray-600 pc-meta mb-2">
-          <i class="bi bi-geo-alt"></i> ${product.municipality}
-        </p>
-        
-        <p class="text-sm text-gray-600 pc-meta mb-2">
-          <i class="bi bi-tag"></i> ${product.category}
-        </p>
-        
-        ${product.average_rating && product.average_rating > 0 ? `
-          <div class="mb-2 pb-2 border-b border-gray-200">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <div class="flex gap-1 text-warning text-sm">
-                  ${[1,2,3,4,5].map(star => 
-                    `<i class="bi bi-star${star <= Math.round(product.average_rating) ? '-fill' : ''}"></i>`
-                  ).join('')}
-                </div>
-                <span class="text-sm font-semibold">${product.average_rating.toFixed(1)}</span>
-                <span class="text-xs text-gray-500">(${product.total_reviews || 0})</span>
-              </div>
-              <button class="btn-sm text-xs text-primary hover:underline" onclick="window.viewProductReviews('${product.id}', '${product.name.replace(/'/g, "\\'")}')">
-                <i class="bi bi-chat-quote"></i> Reviews
-              </button>
-            </div>
-          </div>
-        ` : ''}
-        
-        <p class="card-text pc-desc line-clamp-2">
-          <i class="bi bi-file-text"></i> ${product.description || 'No description'}
-        </p>
-        
-        <!-- Tags -->
-        ${product.tags && product.tags.length > 0 ? `
-          <div class="product-tags flex gap-2 mt-2 flex-wrap">
-            ${product.tags.map(tag => `
-              <span class="badge badge-info pc-tag">
-                <i class="bi bi-tag"></i> ${tag.charAt(0).toUpperCase() + tag.slice(1)}
-              </span>
-            `).join('')}
-          </div>
-        ` : ''}
-        
-        <!-- View Count & Order Count -->
-        <div class="pc-metrics flex gap-4 mt-3 text-xs text-gray-500 border-t border-gray-200 pt-2">
-          <div class="flex items-center gap-1">
-            <i class="bi bi-eye"></i>
-            <span>${product.view_count || 0} views</span>
-          </div>
-          <div class="flex items-center gap-1">
-            <i class="bi bi-cart-check"></i>
-            <span>${product.order_count || 0} orders</span>
-          </div>
-        </div>
-        
-        <!-- Spacer to push content to bottom -->
-        <div class="flex-grow"></div>
-        
-        <div class="flex items-center justify-between mt-4">
+
+        <div class="pc-primary-row flex items-center justify-between mt-3">
           <div>
             <p class="text-xl font-bold text-primary pc-price">${formatCurrency(product.price_per_unit)}</p>
             <p class="text-sm text-gray-500">per ${product.unit_type}</p>
           </div>
           
-          <div class="text-center">
+          <div class="text-right">
             <p class="text-sm text-gray-600 pc-stock-label">Available</p>
-            <p class="font-semibold pc-stock-value">${product.available_quantity}</p>
+            <p class="font-semibold pc-stock-value muted">${product.available_quantity}</p>
           </div>
         </div>
+
+        <details class="pc-secondary mt-3">
+          <summary class="pc-secondary-toggle">More details</summary>
+          <div class="pc-secondary-content">
+            <p class="text-sm text-gray-600 pc-meta mb-2">
+              <i class="bi bi-geo-alt"></i> ${product.municipality}
+            </p>
+            
+            <p class="text-sm text-gray-600 pc-meta mb-2">
+              <i class="bi bi-tag"></i> ${product.category}
+            </p>
+            
+            ${product.average_rating && product.average_rating > 0 ? `
+              <div class="mb-2 pb-2 border-b border-gray-200">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div class="flex gap-1 text-warning text-sm">
+                      ${[1,2,3,4,5].map(star => 
+                        `<i class="bi bi-star${star <= Math.round(product.average_rating) ? '-fill' : ''}"></i>`
+                      ).join('')}
+                    </div>
+                    <span class="text-sm font-semibold">${product.average_rating.toFixed(1)}</span>
+                    <span class="text-xs text-gray-500">(${product.total_reviews || 0})</span>
+                  </div>
+                  <button class="btn-sm text-xs text-primary hover:underline" onclick="window.viewProductReviews('${product.id}', '${product.name.replace(/'/g, "\\'")}')">
+                    <i class="bi bi-chat-quote"></i> Reviews
+                  </button>
+                </div>
+              </div>
+            ` : ''}
+
+            <p class="card-text pc-desc line-clamp-2">
+              <i class="bi bi-file-text"></i> ${product.description || 'No description'}
+            </p>
+
+            ${product.tags && product.tags.length > 0 ? `
+              <div class="product-tags flex gap-2 mt-2 flex-wrap">
+                ${product.tags.map(tag => `
+                  <span class="badge badge-info pc-tag">
+                    <i class="bi bi-tag"></i> ${tag.charAt(0).toUpperCase() + tag.slice(1)}
+                  </span>
+                `).join('')}
+              </div>
+            ` : ''}
+
+            <div class="pc-metrics flex gap-4 mt-3 text-xs text-gray-500 border-t border-gray-200 pt-2">
+              <div class="flex items-center gap-1">
+                <i class="bi bi-eye"></i>
+                <span>${product.view_count || 0} views</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <i class="bi bi-cart-check"></i>
+                <span>${product.order_count || 0} orders</span>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
       
       <div class="card-footer">
@@ -518,315 +557,307 @@ const initMap = () => {
   }
 };
 
-const updateMapMarkers = () => {
+let activeSellerMarker = null;
+
+const escapeHtml = (value = '') => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const getSellerName = (seller) => seller.business_name || seller.full_name || 'Local Seller';
+
+const getSellerProductCount = (seller) => {
+  const count = Number(seller.total_products || seller.product_count || 0);
+  return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+};
+
+const buildSellerMetaRows = (seller) => {
+  const municipality = escapeHtml(seller.municipality || 'Unknown');
+  const farmType = escapeHtml(seller.farm_type || 'Farm');
+  return `
+    <p class="map-popup-meta"><i class="bi bi-geo-alt"></i> ${municipality}</p>
+    <p class="map-popup-meta"><i class="bi bi-shop"></i> ${farmType}</p>
+  `;
+};
+
+const buildSellerTrustRow = (seller) => {
+  const rating = Number(seller.rating || 0);
+  const totalOrders = Number(seller.total_orders || 0);
+  const totalReviews = Number(seller.total_reviews || seller.review_count || 0);
+  const hasRating = Number.isFinite(rating) && rating > 0;
+  const hasOrders = Number.isFinite(totalOrders) && totalOrders > 0;
+  const hasReviews = Number.isFinite(totalReviews) && totalReviews > 0;
+  if (!hasRating && !hasOrders && !hasReviews) return '';
+
+  const ratingText = hasRating ? rating.toFixed(1) : 'No rating yet';
+  const trustCountText = hasReviews
+    ? `${totalReviews} reviews`
+    : (hasOrders ? `${totalOrders} ${totalOrders === 1 ? 'order' : 'orders'}` : 'No reviews yet');
+  return `
+    <div class="map-popup-trust">
+      <i class="bi bi-star-fill"></i> ${ratingText} • ${trustCountText}
+    </div>
+  `;
+};
+
+const buildSellerActivityRow = (seller) => {
+  const lastActive = seller.last_active || seller.last_seen_at || '';
+  const verifiedAt = seller.verified_at || '';
+
+  if (lastActive) {
+    return `<p class="map-popup-activity"><i class="bi bi-clock-history"></i> Last active: ${escapeHtml(lastActive)}</p>`;
+  }
+
+  if (verifiedAt) {
+    return `<p class="map-popup-activity"><i class="bi bi-shield-check"></i> Verified since ${escapeHtml(verifiedAt)}</p>`;
+  }
+
+  return '';
+};
+
+const buildSellerStatusChip = (seller) => {
+  const hasProducts = getSellerProductCount(seller) > 0;
+  return hasProducts
+    ? '<span class="map-status-chip map-status-chip--active"><i class="bi bi-circle-fill"></i> Active listings</span>'
+    : '<span class="map-status-chip map-status-chip--muted"><i class="bi bi-pause-circle"></i> No active listings</span>';
+};
+
+const buildViewProductsButton = (seller) => {
+  const count = getSellerProductCount(seller);
+  const sellerId = escapeHtml(seller.id);
+  if (count <= 0) {
+    return `
+      <div class="map-popup-empty">
+        <i class="bi bi-inbox"></i> No products yet
+      </div>
+    `;
+  }
+
+  return `
+    <button
+      type="button"
+      class="btn btn-primary map-popup-cta"
+      onclick="window.viewSeller(event, '${sellerId}', ${count})"
+      aria-label="View ${count} products from ${escapeHtml(getSellerName(seller))}">
+      View ${count} Product${count > 1 ? 's' : ''}
+    </button>
+  `;
+};
+
+const buildSingleSellerPopupContent = (seller) => `
+  <article class="map-popup-card">
+    <div class="map-popup-body">
+      <h4 class="map-popup-title">${escapeHtml(getSellerName(seller))}</h4>
+      <div class="map-popup-badges">
+        ${seller.verified ? '<span class="map-verified-badge"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
+        ${buildSellerStatusChip(seller)}
+      </div>
+      <div class="map-popup-meta-wrap">
+        ${buildSellerMetaRows(seller)}
+      </div>
+      ${buildSellerTrustRow(seller)}
+      ${buildSellerActivityRow(seller)}
+      <p class="map-popup-count"><i class="bi bi-basket2"></i> ${getSellerProductCount(seller)} products available</p>
+    </div>
+    <div class="map-popup-actions">
+      ${buildViewProductsButton(seller)}
+    </div>
+  </article>
+`;
+
+const buildGroupedSellersPopupContent = (groupSellers, municipalityName) => {
+  const sellersHtml = groupSellers.map((seller) => `
+    <article class="map-popup-group-item">
+      <h5 class="map-popup-title map-popup-title--sm">${escapeHtml(getSellerName(seller))}</h5>
+      <div class="map-popup-badges map-popup-badges--tight">
+        ${seller.verified ? '<span class="map-verified-badge"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
+        ${buildSellerStatusChip(seller)}
+      </div>
+      <div class="map-popup-meta-wrap map-popup-meta-wrap--tight">
+        ${buildSellerMetaRows(seller)}
+      </div>
+      ${buildSellerTrustRow(seller)}
+      ${buildSellerActivityRow(seller)}
+      <p class="map-popup-count map-popup-count--tight"><i class="bi bi-basket2"></i> ${getSellerProductCount(seller)} products available</p>
+      ${buildViewProductsButton(seller)}
+    </article>
+  `).join('');
+
+  return `
+    <section class="map-popup-group">
+      <h4 class="map-popup-group-title">
+        <i class="bi bi-geo-alt"></i> ${escapeHtml(municipalityName)} (${groupSellers.length} sellers)
+      </h4>
+      <div class="map-popup-group-list">
+        ${sellersHtml}
+      </div>
+    </section>
+  `;
+};
+
+const createSingleSellerIcon = (seller) => {
+  const hasProducts = getSellerProductCount(seller) > 0;
+  const markerStateClass = hasProducts ? 'seller-marker--active' : 'seller-marker--inactive';
+  return L.divIcon({
+    className: 'seller-marker',
+    html: `
+      <div class="seller-marker-pin ${markerStateClass}">
+        <span class="seller-marker-core"></span>
+      </div>
+    `,
+    iconSize: [34, 44],
+    iconAnchor: [17, 42]
+  });
+};
+
+const setMarkerSelected = (marker) => {
+  if (activeSellerMarker && activeSellerMarker.getElement()) {
+    activeSellerMarker.getElement().classList.remove('is-selected');
+  }
+  activeSellerMarker = marker;
+  if (marker && marker.getElement()) {
+    marker.getElement().classList.add('is-selected');
+  }
+};
+
+const attachMarkerAccessibility = (marker, label) => {
+  marker.on('add', () => {
+    const markerEl = marker.getElement();
+    if (!markerEl) return;
+    markerEl.setAttribute('tabindex', '0');
+    markerEl.setAttribute('role', 'button');
+    markerEl.setAttribute('aria-label', label);
+    markerEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        marker.openPopup();
+      }
+    });
+  });
+};
+
+const bindMarkerInteractions = (marker, popupContent, previewHtml) => {
+  marker.bindPopup(popupContent, {
+    minWidth: 280,
+    maxWidth: 320,
+    className: 'seller-popup',
+    keepInView: true,
+    autoPan: true,
+    autoPanPadding: [28, 28]
+  });
+
+  if (window.innerWidth >= 1024 && previewHtml) {
+    marker.bindTooltip(previewHtml, {
+      direction: 'top',
+      className: 'seller-preview-tooltip',
+      offset: [0, -20],
+      opacity: 1,
+      sticky: false
+    });
+  }
+
+  marker.on('click', function() {
+    this.openPopup();
+  });
+
+  marker.on('popupopen', (event) => {
+    setMarkerSelected(marker);
+    const closeBtn = event.popup?._container?.querySelector('.leaflet-popup-close-button');
+    if (closeBtn) closeBtn.setAttribute('aria-label', 'Close seller details');
+    if (window.innerWidth < 1024 && map) {
+      setTimeout(() => map.panTo(event.popup.getLatLng(), { animate: true, duration: 0.25 }), 80);
+    }
+  });
+
+  marker.on('popupclose', () => {
+    if (marker.getElement()) {
+      marker.getElement().classList.remove('is-selected');
+    }
+    if (activeSellerMarker === marker) {
+      activeSellerMarker = null;
+    }
+  });
+};
+
+const renderMapMarkers = (municipality = '') => {
   if (!map || !markersLayer) {
     console.warn('Map or markers layer not initialized');
     return;
   }
-  
-  // Clear existing markers
+
   markersLayer.clearLayers();
-  
-  let markersAdded = 0;
-  let skipped = 0;
-  
-  // Group sellers by their coordinates to handle overlapping markers
   const locationGroups = {};
-  
-  sellers.forEach((seller, index) => {
-    let finalLat, finalLng;
-    
-    // Try to use seller's coordinates first
+
+  sellers.forEach((seller) => {
+    if (municipality && seller.municipality !== municipality) return;
+
+    let finalLat;
+    let finalLng;
     const parsedLat = Number(seller.latitude);
     const parsedLng = Number(seller.longitude);
+
     if (Number.isFinite(parsedLat) && Number.isFinite(parsedLng)) {
       finalLat = parsedLat;
       finalLng = parsedLng;
-    } 
-    // Fallback to municipality coordinates
-    else if (seller.municipality && MUNICIPALITY_COORDINATES[seller.municipality]) {
+    } else if (seller.municipality && MUNICIPALITY_COORDINATES[seller.municipality]) {
       const munCoords = MUNICIPALITY_COORDINATES[seller.municipality];
       finalLat = munCoords.latitude;
       finalLng = munCoords.longitude;
-    } 
-    // Skip if no valid coordinates available
-    else {
-      console.warn(`Skipping seller ${index}: ${seller.business_name || seller.full_name} - no valid coordinates or municipality`);
-      skipped++;
+    } else {
       return;
     }
-    
-    // Create a location key to group sellers at the same coordinates
+
     const locationKey = `${finalLat.toFixed(6)},${finalLng.toFixed(6)}`;
-    
     if (!locationGroups[locationKey]) {
-      locationGroups[locationKey] = {
-        lat: finalLat,
-        lng: finalLng,
-        sellers: []
-      };
+      locationGroups[locationKey] = { lat: finalLat, lng: finalLng, sellers: [] };
     }
-    
     locationGroups[locationKey].sellers.push(seller);
   });
-  
-  // Add markers for each location group
-  Object.entries(locationGroups).forEach(([locationKey, group]) => {
-    try {
-      const { lat, lng, sellers: groupSellers } = group;
-      
-      let marker, popupContent;
-      
-      if (groupSellers.length === 1) {
-        // Single seller at this location
-        const seller = groupSellers[0];
-        marker = L.marker([lat, lng], {
-          title: seller.business_name || seller.full_name
-        });
-        
-        const hasProducts = seller.total_products && seller.total_products > 0;
-        const productContent = hasProducts 
-          ? `<button class="btn btn-sm btn-primary w-full text-xs py-2" onclick="window.viewSeller('${seller.id}')">
-              View Products
-            </button>`
-          : `<div class="p-2 bg-gray-100 rounded text-center text-xs text-gray-600 w-full">
-              <i class="bi bi-inbox"></i> No products yet
-            </div>`;
-        
-        popupContent = `
-          <div class="p-3" style="min-width: 240px; max-width: 300px;">
-            <h4 class="font-bold text-sm mb-2 break-words">${seller.business_name || seller.full_name}</h4>
-            <div class="mb-2">
-              ${seller.verified ? '<span class="inline-block bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-semibold"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
-            </div>
-            <div class="space-y-1 mb-3">
-              <p class="text-xs text-gray-700"><i class="bi bi-geo-alt"></i> ${seller.municipality || 'Unknown'}</p>
-              <p class="text-xs text-gray-700"><i class="bi bi-shop"></i> ${seller.farm_type || 'Farm'}</p>
-            </div>
-            ${productContent}
-          </div>
-        `;
-      } else {
-        // Multiple sellers at the same location - create clustered marker
-        const municipalityName = groupSellers[0].municipality || 'Unknown';
-        
-        // Create custom marker icon for clusters
-        const clusterIcon = L.divIcon({
-          className: 'cluster-marker',
-          html: `<div class="cluster-marker-inner">${groupSellers.length}</div>`,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15]
-        });
-        
-        marker = L.marker([lat, lng], { icon: clusterIcon });
-        
-        // Create popup content for multiple sellers
-        const sellersHtml = groupSellers.map(seller => {
-          const hasProducts = seller.total_products && seller.total_products > 0;
-          const productBtn = hasProducts 
-            ? `<button class="btn btn-sm btn-primary w-full text-xs py-1" onclick="window.viewSeller('${seller.id}')">
-                View Products
-              </button>`
-            : `<div class="p-2 bg-gray-100 rounded text-center text-xs text-gray-600 w-full">
-                <i class="bi bi-inbox"></i> No products yet
-              </div>`;
-          return `
-          <div class="border-b border-gray-200 last:border-b-0 pb-2 mb-2 last:pb-0 last:mb-0">
-            <h5 class="font-bold text-sm break-words">${seller.business_name || seller.full_name}</h5>
-            <div class="mb-1">
-              ${seller.verified ? '<span class="inline-block bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-semibold"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
-            </div>
-            <div class="space-y-1 mb-2">
-              <p class="text-xs text-gray-600"><i class="bi bi-shop"></i> ${seller.farm_type || 'Farm'}</p>
-            </div>
-            ${productBtn}
-          </div>
-        `;
-        }).join('');
-        
-        popupContent = `
-          <div class="p-3" style="min-width: 280px; max-width: 320px; max-height: 400px; overflow-y: auto;">
-            <h4 class="font-bold text-sm mb-3 text-center">
-              <i class="bi bi-geo-alt"></i> ${municipalityName} (${groupSellers.length} sellers)
-            </h4>
-            <div class="space-y-3">
-              ${sellersHtml}
-            </div>
-          </div>
-        `;
-      }
-      
-      marker.bindPopup(popupContent, { maxWidth: 350, className: 'seller-popup' });
-      
-      // Event listeners
-      marker.on('click', function() {
-        this.openPopup();
+
+  Object.values(locationGroups).forEach((group) => {
+    const { lat, lng, sellers: groupSellers } = group;
+    let marker;
+    let popupContent;
+    let markerLabel;
+    let previewHtml = '';
+
+    if (groupSellers.length === 1) {
+      const seller = groupSellers[0];
+      const sellerName = escapeHtml(getSellerName(seller));
+      const productCount = getSellerProductCount(seller);
+      marker = L.marker([lat, lng], {
+        title: getSellerName(seller),
+        icon: createSingleSellerIcon(seller)
       });
-      
-      markersLayer.addLayer(marker);
-      markersAdded++;
-      
-    } catch (error) {
-      console.warn(`Error adding marker for location ${locationKey}:`, error);
-      skipped++;
+      popupContent = buildSingleSellerPopupContent(seller);
+      markerLabel = `${sellerName}, ${productCount} products`;
+      previewHtml = `<div class="seller-preview-card"><strong>${sellerName}</strong><span>${productCount} products</span></div>`;
+    } else {
+      const municipalityName = groupSellers[0]?.municipality || 'Unknown';
+      const clusterIcon = L.divIcon({
+        className: 'cluster-marker',
+        html: `<div class="cluster-marker-inner">${groupSellers.length}</div>`,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17]
+      });
+      marker = L.marker([lat, lng], { icon: clusterIcon, title: `${groupSellers.length} sellers` });
+      popupContent = buildGroupedSellersPopupContent(groupSellers, municipalityName);
+      markerLabel = `${groupSellers.length} sellers in ${municipalityName}`;
+      previewHtml = `<div class="seller-preview-card"><strong>${escapeHtml(municipalityName)}</strong><span>${groupSellers.length} sellers</span></div>`;
     }
+
+    bindMarkerInteractions(marker, popupContent, previewHtml);
+    attachMarkerAccessibility(marker, markerLabel);
+    markersLayer.addLayer(marker);
   });
-  
-
-  if (skipped > 0) {
-
-  }
 };
+
+const updateMapMarkers = () => renderMapMarkers();
 
 // Filters
-const filterMapByMunicipality = (municipality) => {
-  if (!markersLayer) return;
-  
-  // Clear existing markers
-  markersLayer.clearLayers();
-  
-  let filteredCount = 0;
-  
-  // Group sellers by their coordinates, filtering by municipality first
-  const locationGroups = {};
-  
-  sellers.forEach((seller, index) => {
-    // Skip if municipality filter doesn't match
-    if (municipality && seller.municipality !== municipality) {
-      return;
-    }
-    
-    let finalLat, finalLng;
-    
-    // Try to use seller's coordinates first
-    const parsedLat = Number(seller.latitude);
-    const parsedLng = Number(seller.longitude);
-    if (Number.isFinite(parsedLat) && Number.isFinite(parsedLng)) {
-      finalLat = parsedLat;
-      finalLng = parsedLng;
-    } 
-    // Fallback to municipality coordinates
-    else if (seller.municipality && MUNICIPALITY_COORDINATES[seller.municipality]) {
-      const munCoords = MUNICIPALITY_COORDINATES[seller.municipality];
-      finalLat = munCoords.latitude;
-      finalLng = munCoords.longitude;
-    } 
-    // Skip if no valid coordinates available
-    else {
-      return;
-    }
-    
-    // Create a location key to group sellers at the same coordinates
-    const locationKey = `${finalLat.toFixed(6)},${finalLng.toFixed(6)}`;
-    
-    if (!locationGroups[locationKey]) {
-      locationGroups[locationKey] = {
-        lat: finalLat,
-        lng: finalLng,
-        sellers: []
-      };
-    }
-    
-    locationGroups[locationKey].sellers.push(seller);
-  });
-  
-  // Add markers for each location group
-  Object.entries(locationGroups).forEach(([locationKey, group]) => {
-    try {
-      const { lat, lng, sellers: groupSellers } = group;
-      
-      let marker, popupContent;
-      
-      if (groupSellers.length === 1) {
-        // Single seller at this location
-        const seller = groupSellers[0];
-        marker = L.marker([lat, lng], {
-          title: seller.business_name || seller.full_name
-        });
-        
-        const hasProducts = seller.total_products && seller.total_products > 0;
-        const productContent = hasProducts 
-          ? `<button class="btn btn-sm btn-primary w-full text-xs py-2" onclick="window.viewSeller('${seller.id}')">
-              View Products
-            </button>`
-          : `<div class="p-2 bg-gray-100 rounded text-center text-xs text-gray-600 w-full">
-              <i class="bi bi-inbox"></i> No products yet
-            </div>`;
-        
-        popupContent = `
-          <div class="p-3" style="min-width: 240px; max-width: 300px;">
-            <h4 class="font-bold text-sm mb-2 break-words">${seller.business_name || seller.full_name}</h4>
-            <div class="mb-2">
-              ${seller.verified ? '<span class="inline-block bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-semibold"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
-            </div>
-            <div class="space-y-1 mb-3">
-              <p class="text-xs text-gray-700"><i class="bi bi-geo-alt"></i> ${seller.municipality || 'Unknown'}</p>
-              <p class="text-xs text-gray-700"><i class="bi bi-shop"></i> ${seller.farm_type || 'Farm'}</p>
-            </div>
-            ${productContent}
-          </div>
-        `;
-      } else {
-        // Multiple sellers at the same location - create clustered marker
-        const municipalityName = groupSellers[0].municipality || 'Unknown';
-        
-        // Create custom marker icon for clusters
-        const clusterIcon = L.divIcon({
-          className: 'cluster-marker',
-          html: `<div class="cluster-marker-inner">${groupSellers.length}</div>`,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15]
-        });
-        
-        marker = L.marker([lat, lng], { icon: clusterIcon });
-        
-        // Create popup content for multiple sellers
-        const sellersHtml = groupSellers.map(seller => {
-          const hasProducts = seller.total_products && seller.total_products > 0;
-          const productBtn = hasProducts 
-            ? `<button class="btn btn-sm btn-primary w-full text-xs py-1" onclick="window.viewSeller('${seller.id}')">
-                View Products
-              </button>`
-            : `<div class="p-2 bg-gray-100 rounded text-center text-xs text-gray-600 w-full">
-                <i class="bi bi-inbox"></i> No products yet
-              </div>`;
-          return `
-          <div class="border-b border-gray-200 last:border-b-0 pb-2 mb-2 last:pb-0 last:mb-0">
-            <h5 class="font-bold text-sm break-words">${seller.business_name || seller.full_name}</h5>
-            <div class="mb-1">
-              ${seller.verified ? '<span class="inline-block bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-semibold"><i class="bi bi-patch-check-fill"></i> Verified</span>' : ''}
-            </div>
-            <div class="space-y-1 mb-2">
-              <p class="text-xs text-gray-600"><i class="bi bi-shop"></i> ${seller.farm_type || 'Farm'}</p>
-            </div>
-            ${productBtn}
-          </div>
-        `;
-        }).join('');
-        
-        popupContent = `
-          <div class="p-3" style="min-width: 280px; max-width: 320px; max-height: 400px; overflow-y: auto;">
-            <h4 class="font-bold text-sm mb-3 text-center">
-              <i class="bi bi-geo-alt"></i> ${municipalityName} (${groupSellers.length} sellers)
-            </h4>
-            <div class="space-y-3">
-              ${sellersHtml}
-            </div>
-          </div>
-        `;
-      }
-      
-      marker.bindPopup(popupContent, { maxWidth: 350, className: 'seller-popup' });
-      markersLayer.addLayer(marker);
-      filteredCount++;
-      
-    } catch (error) {
-      console.warn(`Error adding filtered marker for location ${locationKey}:`, error);
-    }
-  });
-  
-
-};
+const filterMapByMunicipality = (municipality) => renderMapMarkers(municipality);
 
 // ============ Filters ============
 
@@ -855,6 +886,188 @@ const applyFilters = async () => {
   }
 };
 
+const syncFilterControls = () => {
+  const mappings = [
+    ['filter-category', 'filter-category-mobile', currentFilters.category],
+    ['filter-municipality', 'filter-municipality-mobile', currentFilters.municipality],
+    ['sort-by', 'sort-by-mobile', `${currentFilters.sort_by}:${currentFilters.sort_order}`]
+  ];
+
+  mappings.forEach(([desktopId, mobileId, value]) => {
+    const desktop = document.getElementById(desktopId);
+    const mobile = document.getElementById(mobileId);
+    if (desktop) desktop.value = value;
+    if (mobile) mobile.value = value;
+  });
+};
+
+const updateMobileFilterCount = () => {
+  const badge = document.getElementById('mobile-filter-count');
+  if (!badge) return;
+
+  const activeCount = [currentFilters.category, currentFilters.municipality]
+    .filter(Boolean).length;
+
+  badge.textContent = String(activeCount);
+  badge.classList.toggle('hidden', activeCount === 0);
+};
+
+const setMobileFilterSheetOpen = (isOpen) => {
+  const sheet = document.getElementById('mobile-filters-sheet');
+  if (!sheet) return;
+  sheet.classList.toggle('hidden', !isOpen);
+  sheet.setAttribute('aria-hidden', String(!isOpen));
+  document.body.classList.toggle('home-sheet-open', isOpen);
+};
+
+const initMobileFilterSheet = () => {
+  const btnOpen = document.getElementById('btn-mobile-filters');
+  const btnClose = document.getElementById('btn-close-mobile-filters');
+  const backdrop = document.getElementById('mobile-filters-backdrop');
+  const btnApply = document.getElementById('btn-apply-mobile-filters');
+  const btnReset = document.getElementById('btn-reset-mobile-filters');
+
+  if (btnOpen) btnOpen.addEventListener('click', () => setMobileFilterSheetOpen(true));
+  if (btnClose) btnClose.addEventListener('click', () => setMobileFilterSheetOpen(false));
+  if (backdrop) backdrop.addEventListener('click', () => setMobileFilterSheetOpen(false));
+
+  if (btnApply) {
+    btnApply.addEventListener('click', async () => {
+      currentFilters.category = document.getElementById('filter-category-mobile')?.value || '';
+      currentFilters.municipality = document.getElementById('filter-municipality-mobile')?.value || '';
+      currentFilters.seller_id = '';
+      const mobileSort = document.getElementById('sort-by-mobile')?.value || 'created_at:desc';
+      const [sortField, sortOrder] = mobileSort.split(':');
+      currentFilters.sort_by = sortField;
+      currentFilters.sort_order = sortOrder || 'desc';
+      syncFilterControls();
+      updateMobileFilterCount();
+      setMobileFilterSheetOpen(false);
+      await applyFilters();
+    });
+  }
+
+  if (btnReset) {
+    btnReset.addEventListener('click', async () => {
+      currentFilters.category = '';
+      currentFilters.municipality = '';
+      currentFilters.seller_id = '';
+      currentFilters.sort_by = 'created_at';
+      currentFilters.sort_order = 'desc';
+      syncFilterControls();
+      updateMobileFilterCount();
+      setMobileFilterSheetOpen(false);
+      await applyFilters();
+    });
+  }
+};
+
+const setMobileMapExpanded = (expanded) => {
+  const mapShell = document.querySelector('.home-map-shell');
+  const btn = document.getElementById('btn-view-full-map');
+  if (!mapShell || !btn) return;
+
+  mobileMapExpanded = expanded;
+  mapShell.classList.toggle('home-map-expanded', expanded);
+  btn.innerHTML = expanded ? 'Close Full Map' : 'View Full Map';
+  setTimeout(() => {
+    if (map) {
+      map.invalidateSize();
+    }
+  }, 240);
+};
+
+const initMobileMapToggle = () => {
+  const btn = document.getElementById('btn-view-full-map');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => setMobileMapExpanded(!mobileMapExpanded));
+  window.addEventListener('resize', () => {
+    if (window.innerWidth >= 768 && mobileMapExpanded) {
+      setMobileMapExpanded(false);
+    }
+  });
+};
+
+const setDesktopViewMode = (mode) => {
+  desktopViewMode = mode;
+
+  const gridSection = document.getElementById('home-grid-section');
+  const mapSection = document.getElementById('home-map-section');
+  const gridBtn = document.getElementById('btn-view-grid-desktop');
+  const mapBtn = document.getElementById('btn-view-map-desktop');
+  const isDesktop = window.innerWidth >= 1024;
+
+  if (!gridSection || !mapSection || !gridBtn || !mapBtn || !isDesktop) return;
+
+  const showGrid = mode !== 'map';
+  gridSection.classList.toggle('hidden', !showGrid);
+  mapSection.classList.toggle('hidden', showGrid);
+
+  gridBtn.classList.toggle('active', showGrid);
+  mapBtn.classList.toggle('active', !showGrid);
+  gridBtn.setAttribute('aria-selected', String(showGrid));
+  mapBtn.setAttribute('aria-selected', String(!showGrid));
+
+  if (!showGrid) {
+    setTimeout(() => {
+      if (map) {
+        map.invalidateSize();
+      }
+      mapSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 140);
+  }
+};
+
+const initDesktopViewTabs = () => {
+  const gridBtn = document.getElementById('btn-view-grid-desktop');
+  const mapBtn = document.getElementById('btn-view-map-desktop');
+  if (!gridBtn || !mapBtn) return;
+
+  gridBtn.addEventListener('click', () => setDesktopViewMode('grid'));
+  mapBtn.addEventListener('click', () => setDesktopViewMode('map'));
+
+  setDesktopViewMode('grid');
+  window.addEventListener('resize', () => {
+    if (window.innerWidth >= 1024) {
+      setDesktopViewMode(desktopViewMode);
+    } else {
+      const gridSection = document.getElementById('home-grid-section');
+      const mapSection = document.getElementById('home-map-section');
+      if (gridSection) gridSection.classList.remove('hidden');
+      if (mapSection) mapSection.classList.remove('hidden');
+    }
+  });
+};
+
+const updateMobileCartBar = (count) => {
+  const bar = document.getElementById('mobile-cart-bar');
+  const countEl = document.getElementById('mobile-cart-bar-count');
+  if (!bar || !countEl) return;
+
+  const safeCount = Number.isFinite(Number(count)) ? Number(count) : 0;
+  lastKnownCartCount = safeCount;
+  countEl.textContent = `${safeCount} ${safeCount === 1 ? 'item' : 'items'}`;
+  const shouldShow = isAuthenticated() && isBuyer() && safeCount > 0 && !isProductDetailsModalOpen;
+  bar.classList.toggle('hidden', !shouldShow);
+  bar.setAttribute('aria-hidden', String(!shouldShow));
+};
+
+const refreshMobileCartBar = async () => {
+  if (!(isAuthenticated() && isBuyer())) {
+    updateMobileCartBar(0);
+    return;
+  }
+
+  try {
+    const { getCartCount } = await import('../services/cart.service.js');
+    const response = await getCartCount();
+    updateMobileCartBar(response.data?.count || 0);
+  } catch (error) {
+    updateMobileCartBar(lastKnownCartCount);
+  }
+};
+
 // ============ Event Listeners ============
 
 const attachEventListeners = () => {
@@ -865,6 +1078,7 @@ const attachEventListeners = () => {
     if (searchInput) {
       searchInput.addEventListener('input', debounce((e) => {
         currentFilters.search = e.target.value;
+        currentFilters.seller_id = '';
         
         // Sync both search inputs
         searchSelectors.forEach(syncId => {
@@ -879,79 +1093,50 @@ const attachEventListeners = () => {
     }
   });
   
-  // Category filter (both desktop and mobile)
-  const categorySelectors = ['filter-category', 'filter-category-mobile'];
-  categorySelectors.forEach(id => {
-    const categoryFilter = document.getElementById(id);
-    if (categoryFilter) {
-      categoryFilter.addEventListener('change', (e) => {
-        currentFilters.category = e.target.value;
-        currentFilters.page = 1;
-        
-        // Sync both selectors
-        categorySelectors.forEach(syncId => {
-          const syncSelect = document.getElementById(syncId);
-          if (syncSelect && syncSelect !== e.target) {
-            syncSelect.value = e.target.value;
-          }
-        });
-        
-        applyFilters();
-      });
-    }
-  });
-  
-  // Municipality filter (both desktop and mobile)
-  const municipalitySelectors = ['filter-municipality', 'filter-municipality-mobile'];
-  municipalitySelectors.forEach(id => {
-    const municipalityFilter = document.getElementById(id);
-    if (municipalityFilter) {
-      municipalityFilter.addEventListener('change', (e) => {
-        currentFilters.municipality = e.target.value;
-        currentFilters.page = 1; // Reset to first page when municipality changes
-        
-        // Sync both selectors
-        municipalitySelectors.forEach(syncId => {
-          const syncSelect = document.getElementById(syncId);
-          if (syncSelect && syncSelect !== e.target) {
-            syncSelect.value = e.target.value;
-          }
-        });
-        
-        applyFilters();
-      });
-    }
-  });
-  
-  // Sort filter (both desktop and mobile)
-  const sortSelectors = ['sort-by', 'sort-by-mobile'];
-  sortSelectors.forEach(id => {
-    const sortBy = document.getElementById(id);
-    if (sortBy) {
-      sortBy.addEventListener('change', (e) => {
-        // Parse sort value (format: "field:order")
-        const [field, order] = e.target.value.split(':');
-        currentFilters.sort_by = field;
-        currentFilters.sort_order = order || 'desc';
-        currentFilters.page = 1;
-        
-        // Sync both selectors
-        sortSelectors.forEach(syncId => {
-          const syncSelect = document.getElementById(syncId);
-          if (syncSelect && syncSelect !== e.target) {
-            syncSelect.value = e.target.value;
-          }
-        });
-        
-        applyFilters();
-      });
-    }
-  });
+  const categoryFilter = document.getElementById('filter-category');
+  if (categoryFilter) {
+    categoryFilter.addEventListener('change', (e) => {
+      currentFilters.category = e.target.value;
+      currentFilters.seller_id = '';
+      currentFilters.page = 1;
+      syncFilterControls();
+      updateMobileFilterCount();
+      applyFilters();
+    });
+  }
+
+  const municipalityFilter = document.getElementById('filter-municipality');
+  if (municipalityFilter) {
+    municipalityFilter.addEventListener('change', (e) => {
+      currentFilters.municipality = e.target.value;
+      currentFilters.seller_id = '';
+      currentFilters.page = 1;
+      syncFilterControls();
+      updateMobileFilterCount();
+      applyFilters();
+    });
+  }
+
+  const sortBy = document.getElementById('sort-by');
+  if (sortBy) {
+    sortBy.addEventListener('change', (e) => {
+      const [field, order] = e.target.value.split(':');
+      currentFilters.seller_id = '';
+      currentFilters.sort_by = field;
+      currentFilters.sort_order = order || 'desc';
+      currentFilters.page = 1;
+      syncFilterControls();
+      applyFilters();
+    });
+  }
   
   // Hero buttons
   const btnBrowse = document.getElementById('btn-browse-products');
   if (btnBrowse) {
     btnBrowse.addEventListener('click', () => {
+      if (window.innerWidth >= 1024) {
+        setDesktopViewMode('grid');
+      }
       document.getElementById('featured-products')?.scrollIntoView({ behavior: 'smooth' });
     });
   }
@@ -1072,23 +1257,30 @@ window.viewProduct = (productId) => {
   `;
   
   const footer = `
-    <button class="btn btn-outline" onclick="this.closest('.modal-backdrop').remove()">Close</button>
+    <button class="btn btn-outline" data-modal-close>Close</button>
     ${canBuy ? `
       <button class="btn btn-primary" id="btn-add-to-cart-modal">
         <i class="bi bi-cart-plus"></i> Add to Cart
       </button>
     ` : !isAuth ? `
-    <button class="btn btn-primary" onclick="window.showLoginModal('buyer'); this.closest('.modal-backdrop').remove()">
+    <button class="btn btn-primary" id="btn-login-to-buy-modal">
         <i class="bi bi-box-arrow-in-right"></i> Login to Buy
     </button>
     ` : ''}
   `;
   
+  isProductDetailsModalOpen = true;
+  updateMobileCartBar(lastKnownCartCount);
+
   const modal = createModal({
     title: 'Product Details',
     content: modalContent,
     footer: footer,
-    size: 'lg'
+    size: 'lg',
+    onClose: () => {
+      isProductDetailsModalOpen = false;
+      updateMobileCartBar(lastKnownCartCount);
+    }
   });
   
   // Add to cart from modal (only for buyers)
@@ -1107,13 +1299,22 @@ window.viewProduct = (productId) => {
           const response = await getCartCount();
           if (response.success) {
             updateCartCount(response.data.count);
+            updateMobileCartBar(response.data.count);
           }
           
           // Close modal
-          document.querySelector('.modal-backdrop').remove();
+          modal.close();
         } catch (error) {
           showError('Failed to add to cart');
         }
+      });
+    }
+  } else if (!isAuth) {
+    const btnLoginToBuy = document.getElementById('btn-login-to-buy-modal');
+    if (btnLoginToBuy) {
+      btnLoginToBuy.addEventListener('click', () => {
+        window.showLoginModal('buyer');
+        modal.close();
       });
     }
   }
@@ -1139,17 +1340,62 @@ window.addToCart = async (productId) => {
     const { getCartCount } = await import('../services/cart.service.js');
     const response = await getCartCount();
     updateCartCount(response.data?.count || 0);
+    updateMobileCartBar(response.data?.count || 0);
   } catch (error) {
     console.error('Error adding to cart:', error);
     showError(error.message || 'Failed to add to cart');
   }
 };
 
-window.viewSeller = (sellerId) => {
-  // Filter products by seller
-  currentFilters.sellerId = sellerId;
-  applyFilters();
-  document.getElementById('featured-products')?.scrollIntoView({ behavior: 'smooth' });
+window.viewSeller = async (eventOrSellerId, sellerIdArg, productCountArg = 0) => {
+  const fromButtonClick = typeof eventOrSellerId !== 'string';
+  const sellerId = fromButtonClick ? sellerIdArg : eventOrSellerId;
+  const productCount = fromButtonClick ? Number(productCountArg || 0) : 0;
+  const matchedSeller = sellers.find(seller => seller.id === sellerId);
+  const sellerName = matchedSeller ? getSellerName(matchedSeller) : '';
+
+  if (!sellerId) {
+    showError('Seller not found');
+    return;
+  }
+
+  const clickedBtn = fromButtonClick ? eventOrSellerId?.currentTarget : null;
+  const originalLabel = clickedBtn ? clickedBtn.innerHTML : '';
+  if (clickedBtn) {
+    clickedBtn.disabled = true;
+    clickedBtn.setAttribute('aria-busy', 'true');
+    clickedBtn.innerHTML = '<span class="map-btn-spinner"></span> Loading...';
+  }
+
+  currentFilters.seller_id = sellerId;
+  currentFilters.page = 1;
+
+  try {
+    await applyFilters();
+
+    if (mobileMapExpanded) {
+      setMobileMapExpanded(false);
+    }
+
+    if (window.innerWidth >= 1024) {
+      setDesktopViewMode('grid');
+    }
+    document.getElementById('home-grid-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    if (sellerName) {
+      const safeCount = Number.isFinite(productCount) ? Math.max(0, productCount) : 0;
+      const countHint = safeCount > 0 ? ` (${safeCount} products)` : '';
+      showToast(`Showing products from ${sellerName}${countHint}`, 'info');
+    }
+  } catch (error) {
+    showError('Failed to load seller products');
+  } finally {
+    if (clickedBtn) {
+      clickedBtn.disabled = false;
+      clickedBtn.removeAttribute('aria-busy');
+      clickedBtn.innerHTML = originalLabel;
+    }
+  }
 };
 
 window.showLoginModal = (preferredRole = 'buyer') => {
@@ -1169,7 +1415,7 @@ window.showLoginModal = (preferredRole = 'buyer') => {
       </div>
     `,
     footer: `
-      <button class="btn btn-outline" onclick="document.querySelector('.modal-backdrop').remove()">Cancel</button>
+      <button class="btn btn-outline" data-modal-close>Cancel</button>
       <button class="btn btn-primary" id="btn-show-login-form">
         <i class="bi bi-box-arrow-in-right"></i> Login as ${preferredRole.charAt(0).toUpperCase() + preferredRole.slice(1)}
       </button>
@@ -1182,7 +1428,7 @@ window.showLoginModal = (preferredRole = 'buyer') => {
   if (btnShowLoginForm) {
     btnShowLoginForm.addEventListener('click', async () => {
       // Close the "Login Required" modal first
-      document.querySelector('.modal-backdrop')?.remove();
+      modal.close();
       
       // Import and show the actual login form modal
       const { showLoginModal: showAuthLoginModal } = await import('../features/auth/login.js');

@@ -15,13 +15,16 @@
   <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap">
   
   <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
   
   <!-- Preload Critical CSS -->
-  <link rel="preload" href="/assets/css/main.css" as="style">
-  <link rel="preload" href="/assets/css/components.css" as="style">
+  <link rel="preload" href="/assets/css/main.css?v=20260226e" as="style">
+  <link rel="preload" href="/assets/css/components.css?v=20260226e" as="style">
   
   <!-- Tailwind CSS CDN (NOT deferred - needed for inline config) -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -33,9 +36,9 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
   
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="/assets/css/main.css">
-  <link rel="stylesheet" href="/assets/css/components.css">
-  <link rel="stylesheet" href="/assets/css/utilities.css">
+  <link rel="stylesheet" href="/assets/css/main.css?v=20260226e">
+  <link rel="stylesheet" href="/assets/css/components.css?v=20260226e">
+  <link rel="stylesheet" href="/assets/css/utilities.css?v=20260226e">
   
   <!-- Tailwind Config -->
   <script>
@@ -54,11 +57,11 @@
             'green-100': '#C8E6C9'
           },
           fontFamily: {
-            sans: ['Inter', 'system-ui', 'sans-serif'],
-            display: ['Poppins', 'sans-serif']
+            sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+            display: ['Sora', 'Plus Jakarta Sans', 'sans-serif']
           },
           backgroundImage: {
-            'agricultural': 'linear-gradient(135deg, #2d5016 0%, #4a7c59 100%)',
+            'agricultural': 'radial-gradient(120% 120% at 12% 4%, #40682f 0%, #26452d 46%, #152e20 100%)',
             'wheat-field': 'url("/assets/images/agriculture.png")',
           }
         }
@@ -66,7 +69,7 @@
     }
   </script>
 </head>
-<body class="bg-light">
+<body class="bg-light homepage">
   
   <!-- Navbar -->
   <nav id="main-navbar" class="bg-white shadow-sm sticky top-0 z-50">
@@ -74,7 +77,7 @@
   </nav>
   
   <!-- Hero Section -->
-  <section class="relative bg-agricultural text-white py-16 sm:py-20 md:py-24 overflow-hidden">
+  <section class="home-hero relative bg-agricultural text-white py-12 sm:py-16 md:py-24 overflow-hidden">
     <!-- Background Pattern -->
     <div class="absolute inset-0 opacity-10">
       <div class="w-full h-full bg-wheat-field bg-cover bg-center"></div>
@@ -83,67 +86,76 @@
     <div class="container mx-auto px-4 relative z-10">
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
         <!-- Left Content -->
-        <div class="space-y-6">
+        <div class="space-y-5 sm:space-y-6">
           <!-- Province Badge -->
-          <div class="inline-flex items-center px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full text-sm font-medium animate-fade-in">
+          <div class="home-kicker inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold">
             <i class="bi bi-geo-alt me-2"></i>
             Rizal Province Marketplace
           </div>
           
           <!-- Main Heading -->
           <div>
-            <h1 class="text-4xl sm:text-5xl md:text-6xl font-bold font-display leading-tight mb-4 animate-slide-left">
+            <h1 class="home-hero-title text-4xl sm:text-5xl md:text-6xl font-bold font-display leading-tight mb-2">
               Farm Fresh.
             </h1>
-            <h2 class="text-4xl sm:text-5xl md:text-6xl font-bold font-display leading-tight text-green-100 animate-slide-left animate-stagger-2">
+            <h2 class="home-hero-title text-4xl sm:text-5xl md:text-6xl font-bold font-display leading-tight text-lime-100">
               Direct. Verified.
             </h2>
           </div>
           
           <!-- Subtitle -->
-          <p class="text-lg sm:text-xl leading-relaxed opacity-90 max-w-lg animate-slide-left animate-stagger-3">
+          <p class="text-lg sm:text-xl leading-relaxed opacity-90 max-w-xl home-hero-lead">
             Connect directly with verified farmers and fishermen in Rizal.
             Skip the middlemen, get fresh produce at fair prices.
           </p>
           
           <!-- CTA Button -->
-          <div class="animate-scale-in animate-stagger-4">
-            <button id="btn-browse-products" class="inline-flex items-center px-6 py-3 bg-white text-primary font-semibold rounded-lg hover:bg-green-50 transition-all duration-300 shadow-lg hover:shadow-2xl hover:scale-105">
+          <div class="home-cta-group flex flex-wrap items-center gap-3">
+            <button id="btn-browse-products" class="inline-flex items-center px-6 py-3 bg-white text-primary font-semibold rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl">
               <i class="bi bi-search me-2"></i>
               Browse Products
             </button>
+            <a href="/become-seller.html" class="home-cta-link inline-flex items-center font-semibold text-lime-100 hover:text-white transition-all duration-300 no-underline">
+              <i class="bi bi-shop-window me-2"></i> Become a Seller
+            </a>
+          </div>
+
+          <div class="home-proof-strip">
+            <span><i class="bi bi-patch-check"></i> Verified sellers</span>
+            <span><i class="bi bi-shield-lock"></i> Secure chat</span>
+            <span><i class="bi bi-bicycle"></i> Local pickup</span>
           </div>
           
           <!-- Stats -->
-          <div class="flex gap-6 sm:gap-8 pt-4">
-            <div class="animate-fade-in animate-stagger-5 hover:scale-110 transition-transform duration-300">
+          <div class="home-stat-grid pt-1">
+            <div class="home-stat-item">
               <div class="text-2xl sm:text-3xl font-bold" id="stats-sellers">0+</div>
-              <div class="text-sm opacity-80">Verified Sellers</div>
+              <div class="text-sm opacity-80 tracking-wide">Verified Sellers</div>
             </div>
-            <div class="animate-fade-in animate-stagger-6 hover:scale-110 transition-transform duration-300">
+            <div class="home-stat-item">
               <div class="text-2xl sm:text-3xl font-bold" id="stats-products">0+</div>
-              <div class="text-sm opacity-80">Fresh Products</div>
+              <div class="text-sm opacity-80 tracking-wide">Fresh Products</div>
             </div>
-            <div class="animate-fade-in animate-stagger-6 hover:scale-110 transition-transform duration-300">
+            <div class="home-stat-item">
               <div class="text-2xl sm:text-3xl font-bold">14</div>
-              <div class="text-sm opacity-80">Municipalities</div>
+              <div class="text-sm opacity-80 tracking-wide">Municipalities</div>
             </div>
           </div>
         </div>
         
         <!-- Right Content -->
-        <div class="relative lg:pl-8 animate-slide-right animate-stagger-3">
+        <div class="relative lg:pl-8">
           <!-- Main Image -->
-          <div class="relative rounded-2xl overflow-hidden shadow-2xl hover:shadow-3xl transition-all duration-500 animate-float">
+          <div class="home-hero-media relative rounded-2xl overflow-hidden shadow-2xl transition-all duration-500">
             <div class="aspect-[4/3]">
-              <img src="/assets/images/agriculture.png" alt="Beautiful Farmlands" class="w-full h-full object-cover hover:scale-110 transition-transform duration-700" loading="eager" fetchpriority="high">
+              <img src="/assets/images/agriculture.png" alt="Beautiful Farmlands" class="w-full h-full object-cover transition-transform duration-700" loading="eager" fetchpriority="high">
             </div>
             
             <!-- Verification Badge Overlay -->
-            <div class="absolute bottom-4 left-4 right-4 animate-slide-up animate-stagger-4">
-              <div class="bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+            <div class="absolute bottom-4 left-4 right-4">
+              <div class="home-badge-panel rounded-xl p-4 shadow-lg">
                 <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center animate-pulse hover:animate-none">
+                  <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
                     <i class="bi bi-check-circle-fill text-green-600 text-xl"></i>
                   </div>
                   <div>
@@ -160,49 +172,55 @@
   </section>
   
   <!-- Features Section -->
-  <section class="py-12 sm:py-16 bg-white">
+  <section class="py-12 sm:py-14 bg-white">
     <div class="container mx-auto px-4">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+      <div class="text-center mb-9 sm:mb-10">
+        <h2 class="text-3xl sm:text-4xl font-bold mb-3 font-display text-slate-900">Why Buyers Trust AgriMarket</h2>
+        <p class="home-section-lead text-base sm:text-lg text-slate-600 mx-auto">
+          Built for local trade in Rizal with verification, direct messaging, and flexible fulfillment.
+        </p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6">
         <!-- Verified Sellers -->
-        <div class="bg-white rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all duration-300 animate-fade-in animate-stagger-1 hover:scale-105 hover:-rotate-1">
+        <div class="home-value-card rounded-2xl p-6">
           <div class="flex items-start gap-4">
-            <div class="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0 hover:scale-110 transition-transform duration-300">
+            <div class="home-value-icon w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0">
               <img src="/assets/images/VerifiedSellersandBuyers.png" alt="Verified" class="w-12 h-12 object-contain">
             </div>
             <div>
-              <h3 class="text-xl font-bold text-gray-800 mb-2 hover:text-green-700 transition-colors duration-200">Verified Sellers and Buyers</h3>
+              <h3 class="text-xl font-bold text-gray-800 mb-2">Verified Sellers and Buyers</h3>
               <p class="text-gray-600 leading-relaxed">
-                Every seller and buyer goes through ID verification. Shop with confidence knowing you're dealing with real farmers.
+                Every account goes through ID verification before trading.
               </p>
             </div>
           </div>
         </div>
         
         <!-- Direct Connection -->
-        <div class="bg-white rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all duration-300 animate-fade-in animate-stagger-2 hover:scale-105 hover:rotate-1">
+        <div class="home-value-card rounded-2xl p-6">
           <div class="flex items-start gap-4">
-            <div class="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0 hover:scale-110 transition-transform duration-300">
+            <div class="home-value-icon w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0">
               <img src="/assets/images/DirectConnection.png" alt="Direct Connection" class="w-12 h-12 object-contain">
             </div>
             <div>
-              <h3 class="text-xl font-bold text-gray-800 mb-2 hover:text-green-700 transition-colors duration-200">Direct Connection</h3>
+              <h3 class="text-xl font-bold text-gray-800 mb-2">Direct Connection</h3>
               <p class="text-gray-600 leading-relaxed">
-                Message sellers directly, negotiate prices, and build relationships with your local food producers.
+                Message sellers directly and agree on price and pickup details fast.
               </p>
             </div>
           </div>
         </div>
         
         <!-- Flexible Delivery -->
-        <div class="bg-white rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all duration-300 animate-fade-in animate-stagger-3 hover:scale-105 hover:-rotate-1">
+        <div class="home-value-card rounded-2xl p-6">
           <div class="flex items-start gap-4">
-            <div class="w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0 hover:scale-110 transition-transform duration-300">
+            <div class="home-value-icon w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0">
               <img src="/assets/images/FlexibleDelivery.png" alt="Flexible Delivery" class="w-12 h-12 object-contain">
             </div>
             <div>
-              <h3 class="text-xl font-bold text-gray-800 mb-2 hover:text-green-700 transition-colors duration-200">Flexible Delivery</h3>
+              <h3 class="text-xl font-bold text-gray-800 mb-2">Flexible Delivery</h3>
               <p class="text-gray-600 leading-relaxed">
-                Choose pickup or drop-off. Coordinate directly with sellers for the most convenient arrangement.
+                Choose pickup or drop-off based on what works for both sides.
               </p>
             </div>
           </div>
@@ -211,20 +229,29 @@
     </div>
   </section>
   
-  <!-- Featured Products -->
-  <section class="py-12 sm:py-16 bg-white">
+  <section class="home-desktop-view-switch hidden lg:block bg-white">
     <div class="container mx-auto px-4">
-      <div class="text-center mb-8 sm:mb-10 animate-slide-up">
+      <div class="home-view-toggle" role="tablist" aria-label="Browse mode">
+        <button id="btn-view-grid-desktop" class="home-view-tab active" type="button" role="tab" aria-selected="true">Grid View</button>
+        <button id="btn-view-map-desktop" class="home-view-tab" type="button" role="tab" aria-selected="false">Map View</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Featured Products -->
+  <section id="home-grid-section" class="py-12 sm:py-14 bg-white">
+    <div class="container mx-auto px-4">
+      <div class="text-center mb-8 sm:mb-10">
         <h2 class="text-4xl sm:text-5xl font-bold mb-3 font-display text-slate-900">Featured Products</h2>
-        <p class="text-base sm:text-lg text-slate-600 max-w-2xl mx-auto">
+        <p class="home-section-lead text-base sm:text-lg text-slate-600 mx-auto">
           Discover the freshest produce from verified local farmers and fishermen
         </p>
       </div>
       
       <!-- Search & Filters -->
-      <div class="mb-8">
+      <div class="home-filter-shell mb-8">
         <!-- Mobile Search -->
-        <div class="block md:hidden mb-4">
+        <div class="block md:hidden mb-3">
           <div class="relative">
             <input 
               type="text" 
@@ -236,26 +263,12 @@
           </div>
         </div>
         
-        <!-- Mobile Filters -->
-        <div class="block md:hidden grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <select id="filter-category-mobile" class="h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary text-base bg-white text-slate-800">
-            <option value="">All Categories</option>
-            <option value="vegetables">Vegetables</option>
-            <option value="fruits">Fruits</option>
-            <option value="fish_seafood">Fish & Seafood</option>
-            <option value="meat_poultry">Meat & Poultry</option>
-            <option value="other">Other</option>
-          </select>
-          
-          <select id="filter-municipality-mobile" class="h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary text-base bg-white text-slate-800">
-            <option value="">All Municipalities</option>
-          </select>
-          
-          <select id="sort-by-mobile" class="h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary text-base sm:col-span-2 bg-white text-slate-800">
-            <option value="created_at:desc">Newest First</option>
-            <option value="price_per_unit:asc">Price: Low to High</option>
-            <option value="view_count:desc">Most Viewed</option>
-          </select>
+        <!-- Mobile Filters Trigger -->
+        <div class="block md:hidden mb-1">
+          <button id="btn-mobile-filters" class="w-full h-11 px-4 rounded-xl border border-gray-300 bg-white text-slate-800 font-semibold inline-flex items-center justify-between">
+            <span><i class="bi bi-sliders me-2"></i> Filters</span>
+            <span id="mobile-filter-count" class="text-xs bg-primary text-white rounded-full px-2 py-0.5 hidden">0</span>
+          </button>
         </div>
         
         <!-- Desktop Layout -->
@@ -301,7 +314,7 @@
         </div>
       </div>
       
-      <div id="featured-products" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 items-stretch">
+      <div id="featured-products" class="home-product-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 items-stretch">
         <!-- Products will be rendered by JS -->
         <div class="text-center py-12 col-span-full">
           <div class="loading-spinner mx-auto"></div>
@@ -310,8 +323,8 @@
       </div>
       
       <!-- View All Button -->
-      <div id="view-all-container" class="mt-8 sm:mt-12 text-center animate-fade-in" style="display: none;">
-        <button id="btn-view-all" class="inline-flex items-center px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all duration-300 shadow-lg hover:shadow-2xl hover:scale-105">
+      <div id="view-all-container" class="mt-8 sm:mt-12 text-center" style="display: none;">
+        <button id="btn-view-all" class="inline-flex items-center px-6 py-3 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all duration-300 shadow-lg hover:shadow-xl">
           <i class="bi bi-grid-3x3-gap me-2"></i>
           View All Products
         </button>
@@ -321,68 +334,161 @@
   </section>
   
   <!-- Map Section -->
-  <section class="py-12 sm:py-16 bg-white">
+  <section id="home-map-section" class="py-12 sm:py-14 bg-white">
     <div class="container mx-auto px-4">
-      <div class="text-center mb-8 sm:mb-12 animate-slide-up">
+      <div class="text-center mb-8 sm:mb-12">
         <h2 class="text-3xl sm:text-4xl font-bold mb-4 font-display text-gray-800">Find Sellers Near You</h2>
-        <p class="text-lg text-gray-600 max-w-2xl mx-auto">
+        <p class="home-section-lead text-lg text-gray-600 mx-auto">
           Discover local farmers and fishermen in your area across 14 municipalities in Rizal Province
         </p>
       </div>
       
-      <div class="bg-white rounded-2xl p-4 shadow-lg hover:shadow-2xl transition-all duration-500 animate-scale-in">
-        <div id="sellers-map" class="w-full h-[350px] sm:h-[450px] md:h-[500px] rounded-xl overflow-hidden relative hover:scale-105 transition-transform duration-500" style="z-index: 1;">
+      <div class="home-map-card bg-white rounded-2xl p-4 home-map-shell">
+        <div id="sellers-map" class="w-full h-[220px] sm:h-[450px] md:h-[500px] rounded-xl overflow-hidden relative" style="z-index: 1;">
           <!-- Map will be rendered by map.js -->
-        </div>  
+        </div>
+        <button id="btn-view-full-map" class="md:hidden mt-3 w-full h-11 rounded-xl border border-primary text-primary font-semibold bg-white">
+          View Full Map
+        </button>
       </div>
     </div>
   </section>
   
   <!-- Footer -->
-  <footer class="bg-primary text-white py-12 sm:py-16">
+  <footer class="home-footer text-white py-12 sm:py-16">
     <div class="container mx-auto px-4">
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-        <div class="sm:col-span-2 lg:col-span-1 animate-fade-in">
-          <div class="flex items-center gap-2 mb-4 hover:scale-105 transition-transform duration-300">
+        <div class="sm:col-span-2 lg:col-span-1">
+          <div class="flex items-center gap-2 mb-4">
             <img src="/assets/images/logo.png" alt="AgriMarket" class="h-8 w-auto" style="filter: brightness(0) invert(1);">
             <h3 class="text-2xl font-bold font-display">AgriMarket</h3>
           </div>
           <p class="text-green-100 leading-relaxed mb-4">
-            Connecting local farmers and buyers in Rizal Province for fresh, direct, and verified agricultural products.
+            Fresh local produce from verified Rizal farmers and fishermen.
           </p>
           <div class="text-green-100 text-sm">
-            <div class="flex items-center gap-2 mb-2 hover:text-white transition-colors duration-200">
+            <div class="flex items-center gap-2 mb-2">
               <i class="bi bi-geo-alt"></i>
               <span>Rizal Province, Philippines</span>
             </div>
           </div>
         </div>
-        <div class="animate-fade-in animate-stagger-1">
-          <h4 class="font-semibold mb-4 text-lg">Quick Links</h4>
-          <ul class="space-y-3">
-            <li><a href="/about.html" class="text-green-100 hover:text-white transition-all duration-200 hover:translate-x-2 flex items-center gap-2 no-underline"><i class="bi bi-info-circle"></i> About Us</a></li>
-            <li><a href="/how-it-works.html" class="text-green-100 hover:text-white transition-all duration-200 hover:translate-x-2 flex items-center gap-2 no-underline"><i class="bi bi-question-circle"></i> How It Works</a></li>
-            <li><a href="/contact.html" class="text-green-100 hover:text-white transition-all duration-200 hover:translate-x-2 flex items-center gap-2 no-underline"><i class="bi bi-envelope"></i> Contact</a></li>
-          </ul>
+        <div class="home-footer-group">
+          <details class="lg:hidden home-footer-accordion">
+            <summary class="font-semibold text-lg">Quick Links</summary>
+            <ul class="space-y-3 mt-4">
+              <li><a href="/about.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-info-circle"></i> About Us</a></li>
+              <li><a href="/how-it-works.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-question-circle"></i> How It Works</a></li>
+              <li><a href="/contact.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-envelope"></i> Contact</a></li>
+            </ul>
+          </details>
+          <div class="hidden lg:block">
+            <h4 class="font-semibold mb-4 text-lg">Quick Links</h4>
+            <ul class="space-y-3">
+              <li><a href="/about.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-info-circle"></i> About Us</a></li>
+              <li><a href="/how-it-works.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-question-circle"></i> How It Works</a></li>
+              <li><a href="/contact.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-envelope"></i> Contact</a></li>
+            </ul>
+          </div>
         </div>
-        <div class="animate-fade-in animate-stagger-2">
-          <h4 class="font-semibold mb-4 text-lg">For Sellers</h4>
-          <ul class="space-y-3">
-            <li><a href="/become-seller.html" class="text-green-100 hover:text-white transition-all duration-200 hover:translate-x-2 flex items-center gap-2 no-underline"><i class="bi bi-person-plus"></i> Become a Seller</a></li>
-            <li><a href="/seller-guidelines.html" class="text-green-100 hover:text-white transition-all duration-200 hover:translate-x-2 flex items-center gap-2 no-underline"><i class="bi bi-book"></i> Seller Guidelines</a></li>
-            <li><a href="/faq.html" class="text-green-100 hover:text-white transition-all duration-200 hover:translate-x-2 flex items-center gap-2 no-underline"><i class="bi bi-question-circle"></i> FAQ</a></li>
-          </ul>
+        <div class="home-footer-group">
+          <details class="lg:hidden home-footer-accordion">
+            <summary class="font-semibold text-lg">For Sellers</summary>
+            <ul class="space-y-3 mt-4">
+              <li><a href="/become-seller.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-person-plus"></i> Become a Seller</a></li>
+              <li><a href="/seller-guidelines.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-book"></i> Seller Guidelines</a></li>
+              <li><a href="/faq.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-question-circle"></i> FAQ</a></li>
+            </ul>
+          </details>
+          <div class="hidden lg:block">
+            <h4 class="font-semibold mb-4 text-lg">For Sellers</h4>
+            <ul class="space-y-3">
+              <li><a href="/become-seller.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-person-plus"></i> Become a Seller</a></li>
+              <li><a href="/seller-guidelines.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-book"></i> Seller Guidelines</a></li>
+              <li><a href="/faq.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-question-circle"></i> FAQ</a></li>
+            </ul>
+          </div>
         </div>
-        <div class="animate-fade-in animate-stagger-3">
-          <h4 class="font-semibold mb-4 text-lg">Legal</h4>
-          <ul class="space-y-3">
-            <li><a href="/terms.html" class="text-green-100 hover:text-white transition-all duration-200 hover:translate-x-2 flex items-center gap-2 no-underline"><i class="bi bi-file-text"></i> Terms of Service</a></li>
-            <li><a href="/privacy.html" class="text-green-100 hover:text-white transition-all duration-200 hover:translate-x-2 flex items-center gap-2 no-underline"><i class="bi bi-shield-lock"></i> Privacy Policy</a></li>
-          </ul>
+        <div class="home-footer-group">
+          <details class="lg:hidden home-footer-accordion">
+            <summary class="font-semibold text-lg">Legal</summary>
+            <ul class="space-y-3 mt-4">
+              <li><a href="/terms.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-file-text"></i> Terms of Service</a></li>
+              <li><a href="/privacy.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-shield-lock"></i> Privacy Policy</a></li>
+            </ul>
+          </details>
+          <div class="hidden lg:block">
+            <h4 class="font-semibold mb-4 text-lg">Legal</h4>
+            <ul class="space-y-3">
+              <li><a href="/terms.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-file-text"></i> Terms of Service</a></li>
+              <li><a href="/privacy.html" class="text-green-100 hover:text-white transition-all duration-200 flex items-center gap-2 no-underline"><i class="bi bi-shield-lock"></i> Privacy Policy</a></li>
+            </ul>
+          </div>
         </div>
+      </div>
+      <div class="home-footer-utility mt-9 pt-5">
+        <a href="#main-navbar" class="home-footer-utility-link no-underline">
+          <i class="bi bi-arrow-up-circle"></i> Back to top
+        </a>
+        <a href="/contact.html" class="home-footer-utility-link no-underline">
+          <i class="bi bi-life-preserver"></i> Contact seller support
+        </a>
+        <span class="home-footer-proof">
+          <i class="bi bi-graph-up-arrow"></i> <span id="footer-verified-count">0</span> verified sellers this month
+        </span>
       </div>
     </div>
   </footer>
+
+  <!-- Mobile Filters Bottom Sheet -->
+  <div id="mobile-filters-sheet" class="home-mobile-sheet hidden" aria-hidden="true">
+    <div class="home-mobile-sheet-backdrop" id="mobile-filters-backdrop"></div>
+    <div class="home-mobile-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="mobile-filters-title">
+      <div class="home-mobile-sheet-header">
+        <h3 id="mobile-filters-title" class="text-lg font-bold">Filters</h3>
+        <button id="btn-close-mobile-filters" class="home-mobile-sheet-close" aria-label="Close filters">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="home-mobile-sheet-body space-y-3">
+        <select id="filter-category-mobile" class="h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary text-base bg-white text-slate-800 w-full">
+          <option value="">All Categories</option>
+          <option value="vegetables">Vegetables</option>
+          <option value="fruits">Fruits</option>
+          <option value="fish_seafood">Fish & Seafood</option>
+          <option value="meat_poultry">Meat & Poultry</option>
+          <option value="other">Other</option>
+        </select>
+
+        <select id="filter-municipality-mobile" class="h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary text-base bg-white text-slate-800 w-full">
+          <option value="">All Municipalities</option>
+        </select>
+
+        <select id="sort-by-mobile" class="h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary text-base bg-white text-slate-800 w-full">
+          <option value="created_at:desc">Newest First</option>
+          <option value="price_per_unit:asc">Price: Low to High</option>
+          <option value="view_count:desc">Most Viewed</option>
+        </select>
+      </div>
+      <div class="home-mobile-sheet-footer">
+        <button id="btn-reset-mobile-filters" class="btn btn-outline flex-1">Reset</button>
+        <button id="btn-apply-mobile-filters" class="btn btn-primary flex-1">Apply Filters</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Floating Cart Bar -->
+  <div id="mobile-cart-bar" class="mobile-cart-bar hidden" aria-hidden="true">
+    <div class="mobile-cart-bar__inner">
+      <div class="mobile-cart-bar__meta">
+        <span class="mobile-cart-bar__label">Cart Ready</span>
+        <span id="mobile-cart-bar-count" class="mobile-cart-bar__count">0 items</span>
+      </div>
+      <a href="/buyer.html#cart" class="mobile-cart-bar__cta no-underline">
+        <i class="bi bi-cart3"></i> View Cart
+      </a>
+    </div>
+  </div>
   
   <!-- Toast Container -->
   <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
@@ -412,7 +518,7 @@
   
   <!-- Main App JS (as ES Module) -->
   <script type="module">
-    import '/assets/js/pages/index.main.js';
+    import '/assets/js/pages/index.main.js?v=20260226c';
   </script>
 </body>
 </html>

@@ -93,21 +93,21 @@ exports.updateBuyerProfile = asyncHandler(async (req, res, next) => {
   } = req.body;
 
   if (
-    !delivery_address &&
-    !delivery_latitude &&
-    !delivery_longitude &&
-    !municipality &&
-    !preferred_delivery_option
+    delivery_address === undefined &&
+    delivery_latitude === undefined &&
+    delivery_longitude === undefined &&
+    municipality === undefined &&
+    preferred_delivery_option === undefined
   ) {
     throw new AppError('Please provide at least one field to update.', 400);
   }
 
   const updates = {};
-  if (delivery_address) updates.delivery_address = delivery_address;
+  if (delivery_address !== undefined) updates.delivery_address = delivery_address;
   if (delivery_latitude !== undefined) updates.delivery_latitude = delivery_latitude;
   if (delivery_longitude !== undefined) updates.delivery_longitude = delivery_longitude;
-  if (municipality) updates.municipality = municipality;
-  if (preferred_delivery_option) updates.preferred_delivery_option = preferred_delivery_option;
+  if (municipality !== undefined) updates.municipality = municipality;
+  if (preferred_delivery_option !== undefined) updates.preferred_delivery_option = preferred_delivery_option;
 
   const { data, error } = await userModel.updateBuyerProfile(userId, updates);
 

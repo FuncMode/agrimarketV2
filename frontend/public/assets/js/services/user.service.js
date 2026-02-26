@@ -19,6 +19,15 @@ const updateProfile = async (profileData) => {
   }
 };
 
+const updateBuyerProfile = async (profileData) => {
+  try {
+    const response = await put(ENDPOINTS.USERS.BUYER_PROFILE, profileData);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const getDashboardStats = async () => {
   try {
     const response = await get(ENDPOINTS.USERS.STATS);
@@ -58,6 +67,7 @@ const deleteAccount = async () => {
 export {
   getProfile,
   updateProfile,
+  updateBuyerProfile,
   getDashboardStats,
   getSellerProfile,
   getSellers,

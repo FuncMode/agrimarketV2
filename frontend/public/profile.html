@@ -29,190 +29,374 @@
     <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
     
     <style>
-        /* Clean & Modern Profile Styles */
-        .profile-container {
-            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 50%, #bbf7d0 100%);
+        .profile-page {
+            --profile-bg: #f4f6f5;
+            --profile-bg-soft: #f4f6f5;
+            --profile-surface: #ffffff;
+            --profile-border: #dde3df;
+            --profile-text: #1f2937;
+            --profile-muted: #6b7280;
+            --profile-accent: #1f7a45;
+            background: var(--profile-bg);
             min-height: 100vh;
+            color: var(--profile-text);
         }
-        
+
+        .profile-page main {
+            position: relative;
+        }
+
+        .profile-page a:hover,
+        .profile-page a:focus,
+        .profile-page a:active {
+            text-decoration: none !important;
+        }
+
+        .profile-card,
+        #buyer-section,
+        .profile-danger-zone,
+        #stats-section .stat-card {
+            border: 1px solid var(--profile-border);
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+        }
+
         .profile-card {
-            backdrop-filter: blur(10px);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--profile-surface);
         }
-        
-        .profile-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 24px -4px rgba(34, 197, 94, 0.15);
+
+        .profile-banner {
+            height: 120px;
+            background: #1f7a45 !important;
+            position: relative;
         }
-        
+
+        .profile-banner::after {
+            display: none;
+        }
+
         .profile-avatar {
-            width: 110px;
-            height: 110px;
-            margin-top: -55px;
-            border: 4px solid white;
-            box-shadow: 0 8px 20px rgba(34, 197, 94, 0.2);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 96px;
+            height: 96px;
+            margin-top: -54px;
+            border: 4px solid #fff;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+            background: #1f7a45 !important;
         }
-        
-        .profile-avatar:hover {
-            transform: scale(1.03);
-            box-shadow: 0 12px 28px rgba(34, 197, 94, 0.25);
-        }
-        
-        .info-card {
-            background: white;
-            border-radius: 16px;
-            padding: 1.25rem;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            border: 1px solid rgba(34, 197, 94, 0.08);
-        }
-        
-        .info-card:hover {
-            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.12);
-            border-color: rgba(34, 197, 94, 0.2);
-            transform: translateY(-1px);
-        }
-        
-        .stat-card {
-            position: relative;
-            overflow: hidden;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(135deg, transparent 0%, rgba(34, 197, 94, 0.05) 100%);
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-        
-        .stat-card:hover::before {
-            opacity: 1;
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 20px rgba(34, 197, 94, 0.15);
-        }
-        
-        .floating-label {
-            font-size: 0.7rem;
-            color: #22c55e;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            margin-bottom: 0.5rem;
-        }
-        
-        .profile-value {
-            color: #1f2937;
-            font-size: 1.05rem;
-            font-weight: 600;
-        }
-        
-        .gradient-border {
-            position: relative;
-            background: white;
-            border-radius: 16px;
-        }
-        
-        .gradient-border::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 16px;
-            padding: 2px;
-            background: linear-gradient(135deg, #22c55e, #16a34a);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask-composite: exclude;
-        }
-        
-        .btn-modern {
-            position: relative;
-            overflow: hidden;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .btn-modern::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 0;
-            height: 0;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.25);
-            transform: translate(-50%, -50%);
-            transition: width 0.5s, height 0.5s;
-        }
-        
-        .btn-modern:hover::before {
-            width: 300px;
-            height: 300px;
-        }
-        
-        .badge-modern {
-            padding: 0.5rem 1rem;
-            border-radius: 9999px;
-            font-size: 0.85rem;
-            font-weight: 600;
+
+        .icon-wrapper {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
-            box-shadow: 0 2px 6px rgba(34, 197, 94, 0.15);
+            justify-content: center;
+            font-size: 1rem;
+            box-shadow: none !important;
+            background: #edf4ef !important;
+            color: #1f7a45 !important;
         }
-        
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(15px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+
+        .floating-label {
+            font-size: 0.72rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #6b7280;
+            font-weight: 700;
+            margin-bottom: 0.38rem;
         }
-        
-        .animate-fade-in {
-            animation: fadeIn 0.4s ease-out;
+
+        .profile-value {
+            color: var(--profile-text);
+            font-size: 0.98rem;
+            line-height: 1.35;
+            font-weight: 500;
         }
-        
+
+        .info-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background: #ffffff;
+            padding: 0.9rem;
+            transition: none;
+        }
+
+        .info-card:hover {
+            border-color: #e5e7eb;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .badge-modern,
+        .profile-pill {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.36rem 0.7rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .profile-pill {
+            background: #edf4ef;
+            color: #1f7a45;
+            border: 1px solid #d7e5dc;
+        }
+
+        .profile-pill.role-admin {
+            background: #f0e8ff;
+            color: #5b2ea0;
+            border-color: #d6c2fa;
+        }
+
+        .profile-pill.role-buyer {
+            background: #e8f0ff;
+            color: #214b94;
+            border-color: #c8d9ff;
+        }
+
+        .profile-pill.status-pending {
+            background: #fff5dd;
+            color: #8a5a00;
+            border-color: #f2d291;
+        }
+
+        .profile-pill.status-inactive {
+            background: #ffe8e8;
+            color: #9a2f2f;
+            border-color: #f3c4c4;
+        }
+
+        .gradient-border {
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background: #ffffff;
+        }
+
+        .gradient-border::before {
+            display: none;
+        }
+
         .divider {
             height: 1px;
-            background: linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.2), transparent);
-            margin: 1.75rem 0;
+            margin: 1.2rem 0;
+            background: #e5e7eb;
         }
-        
-        .icon-wrapper {
-            width: 48px;
-            height: 48px;
+
+        .stat-card {
+            border-radius: 10px;
+            overflow: hidden;
+            background: #ffffff;
+            transition: none;
+        }
+
+        .stat-card::before {
+            display: none;
+        }
+
+        .stat-card:hover {
+            transform: none;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+            border-color: var(--profile-border);
+        }
+
+        .btn-modern {
+            overflow: visible;
+            transition: none;
+        }
+
+        .btn-modern::before {
+            display: none;
+        }
+
+        .btn-modern:hover {
+            transform: none;
+        }
+
+        .animate-fade-in {
+            animation: none;
+        }
+
+        #back-btn {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #ffffff;
+            backdrop-filter: none;
+            box-shadow: none !important;
+        }
+
+        #buyer-section,
+        .profile-danger-zone {
+            border-radius: 10px;
+        }
+
+        #buyer-section > .bg-gradient-to-r,
+        .profile-danger-zone > .bg-gradient-to-r {
+            background: #f9fafb !important;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .profile-page .bg-gradient-to-br,
+        .profile-page .bg-gradient-to-r {
+            background-image: none !important;
+        }
+
+        .profile-split-view {
+            display: grid;
+            grid-template-columns: 300px minmax(0, 1fr);
+            gap: 1rem;
+            align-items: start;
+        }
+
+        .profile-sidebar {
+            position: sticky;
+            top: 88px;
+            border: 1px solid var(--profile-border);
             border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: #fff;
+            padding: 0.9rem;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+            display: grid;
+            gap: 0.8rem;
         }
-        
-        .icon-wrapper:hover {
-            transform: scale(1.05);
+
+        .profile-sidebar-name {
+            font-size: 1rem;
+            font-weight: 800;
+            color: #0f172a;
+            line-height: 1.2;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            overflow: hidden;
+        }
+
+        .profile-sidebar-email {
+            font-size: 0.82rem;
+            color: #475569;
+            word-break: break-word;
+            line-height: 1.2;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            overflow: hidden;
+        }
+
+        .profile-sidebar-badges {
+            display: grid;
+            gap: 0.4rem;
+        }
+
+        .profile-sidebar-actions {
+            display: grid;
+            gap: 0.45rem;
+            padding-top: 0.45rem;
+            border-top: 1px solid #e4ebe7;
+        }
+
+        .profile-content-sections {
+            display: grid;
+            gap: 0.9rem;
+        }
+
+        .profile-panel {
+            border: 1px solid var(--profile-border);
+            border-radius: 12px;
+            background: #fff;
+            padding: 0.95rem;
+        }
+
+        .profile-panel-title {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #475569;
+            font-weight: 800;
+            margin-bottom: 0.7rem;
+        }
+
+        @media (max-width: 767px) {
+            .profile-page main {
+                padding-top: calc(0.45rem + env(safe-area-inset-top));
+            }
+
+            .profile-banner {
+                height: 104px;
+            }
+
+            .profile-avatar {
+                width: 84px;
+                height: 84px;
+                margin-top: -46px;
+                font-size: 2.2rem !important;
+            }
+
+            .info-card {
+                padding: 0.75rem;
+                border-radius: 9px;
+            }
+
+            .profile-sidebar {
+                padding: 0.72rem;
+                gap: 0.62rem;
+            }
+
+            .profile-sidebar-badges {
+                gap: 0.34rem;
+            }
+
+            .profile-sidebar .profile-pill {
+                font-size: 0.75rem;
+                padding: 0.3rem 0.62rem;
+            }
+
+            .profile-panel {
+                padding: 0.78rem;
+            }
+
+            .profile-panel-title {
+                font-size: 0.82rem;
+                margin-bottom: 0.82rem;
+            }
+
+            #profile-form {
+                padding-bottom: calc(5.25rem + env(safe-area-inset-bottom));
+            }
+
+            #profile-form-actions {
+                position: sticky;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                z-index: 30;
+                margin-top: 0.8rem;
+                padding: 0.62rem 0 0.2rem;
+                background: linear-gradient(180deg, rgba(255, 255, 255, 0.52) 0%, #ffffff 30%);
+                border-top: 1px solid #e4ebe7;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .profile-split-view {
+                grid-template-columns: 1fr;
+            }
+
+            .profile-sidebar {
+                position: static;
+                top: auto;
+            }
         }
     </style>
 </head>
-<body class="profile-container">
+<body class="profile-container profile-page">
     <!-- Navigation -->
     <nav id="navbar-container"></nav>
 
     <!-- Main Content -->
     <main class="min-h-screen py-4 sm:py-6 md:py-8">
-        <div class="max-w-4xl mx-auto px-4">
+        <div class="max-w-6xl mx-auto px-4">
             <!-- Header -->
             <div class="mb-6 sm:mb-8 animate-fade-in">
                 <button id="back-btn" class="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 sm:mb-6 touch-manipulation transition-all duration-300 bg-white bg-opacity-60 px-4 py-2 rounded-lg backdrop-blur-sm hover:bg-opacity-80 shadow-sm">
@@ -232,23 +416,39 @@
 
             <!-- Profile Card -->
             <div class="profile-card bg-white rounded-2xl shadow-2xl overflow-hidden mb-6 animate-fade-in" style="animation-delay: 0.1s;">
-                <!-- Avatar Section -->
-                <div class="bg-gradient-to-r from-green-400 via-emerald-500 to-teal-500 h-32 sm:h-40 relative">
-                    <div class="absolute inset-0 bg-white bg-opacity-10"></div>
-                    <div class="absolute inset-0 backdrop-blur-sm bg-white bg-opacity-5"></div>
-                </div>
                 <div class="px-4 sm:px-8 pb-6 sm:pb-8">
-                    <!-- Avatar -->
-                    <div class="flex justify-center">
-                        <div class="profile-avatar bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-white text-5xl font-bold">
-                            <i class="bi bi-person-fill"></i>
-                        </div>
-                    </div>
-
                     <!-- Profile Info -->
-                    <div id="profile-view" class="space-y-6 mt-8">
-                        <!-- Name & Contact Section -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div id="profile-view" class="profile-split-view mt-2">
+                        <aside class="profile-sidebar">
+                            <div class="flex items-center gap-3">
+                                <div class="icon-wrapper" style="width: 44px; height: 44px; font-size: 1.2rem;">
+                                    <i class="bi bi-person-fill"></i>
+                                </div>
+                                <div>
+                                    <p class="profile-sidebar-name"><span id="summary-first-name">Loading</span> <span id="summary-last-name">...</span></p>
+                                    <p id="summary-email" class="profile-sidebar-email">Loading...</p>
+                                </div>
+                            </div>
+                            <div class="profile-sidebar-badges">
+                                <span id="summary-role-badge" class="profile-pill">Role</span>
+                                <span id="summary-status-badge" class="profile-pill">Status</span>
+                            </div>
+                            <div class="profile-sidebar-actions">
+                                <button id="edit-profile-btn" class="btn-modern btn btn-primary flex items-center justify-center gap-2 touch-manipulation py-3 text-sm font-semibold">
+                                    <i class="bi bi-pencil-square"></i>
+                                    <span>Edit Profile</span>
+                                </button>
+                                <button id="change-password-btn" class="btn-modern btn btn-outline flex items-center justify-center gap-2 touch-manipulation py-3 text-sm font-semibold">
+                                    <i class="bi bi-key-fill"></i>
+                                    <span>Change Password</span>
+                                </button>
+                            </div>
+                        </aside>
+
+                        <div class="profile-content-sections">
+                        <section class="profile-panel">
+                            <p class="profile-panel-title">Account Info</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <!-- First Name -->
                             <div class="info-card">
                                 <div class="flex items-start gap-3">
@@ -318,7 +518,11 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                            </div>
+                        </section>
+
+                        <section class="profile-panel">
+                            <p class="profile-panel-title">Contact & Status</p>
 
                         <!-- Status Section -->
                         <div class="info-card">
@@ -371,18 +575,7 @@
                             </div>
                         </div>
 
-                        <div class="divider"></div>
-
-                        <!-- Action Buttons -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <button id="edit-profile-btn" class="btn-modern btn btn-primary flex items-center justify-center gap-2 touch-manipulation py-3 text-base font-semibold shadow-lg hover:shadow-xl">
-                                <i class="bi bi-pencil-square"></i> 
-                                <span>Edit Profile</span>
-                            </button>
-                            <button id="change-password-btn" class="btn-modern btn btn-outline flex items-center justify-center gap-2 touch-manipulation py-3 text-base font-semibold shadow-md hover:shadow-lg">
-                                <i class="bi bi-key-fill"></i> 
-                                <span>Change Password</span>
-                            </button>
+                        </section>
                         </div>
                     </div>
 
@@ -450,7 +643,7 @@
 
                         <div class="divider"></div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div id="profile-form-actions" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <button type="submit" id="save-profile-btn" class="btn-modern btn btn-primary flex items-center justify-center gap-2 py-3 text-base font-semibold shadow-lg hover:shadow-xl">
                                 <i class="bi bi-check-circle-fill"></i> 
                                 <span>Save Changes</span>
@@ -501,35 +694,8 @@
                 </div>
             </div>
 
-            <!-- Buyer Preferences Section -->
-            <div id="buyer-section" class="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 hidden animate-fade-in" style="animation-delay: 0.25s;">
-                <div class="bg-gradient-to-r from-blue-50 to-sky-50 px-6 py-4 border-b border-blue-100">
-                    <h3 class="text-xl font-bold text-blue-700 flex items-center gap-3">
-                        <div class="icon-wrapper bg-gradient-to-br from-blue-500 to-sky-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
-                            <i class="bi bi-heart-fill"></i>
-                        </div>
-                        Buyer Preferences
-                    </h3>
-                </div>
-                <div class="px-6 py-6">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div class="flex-1">
-                            <p class="text-gray-900 font-semibold mb-2">Purchase Summary</p>
-                            <p class="text-gray-600 text-sm">
-                                Total purchases:
-                                <span id="view-total-purchases" class="font-semibold text-gray-900">0</span>
-                            </p>
-                        </div>
-                        <button id="edit-buyer-btn" class="btn-modern btn btn-outline flex items-center gap-2 whitespace-nowrap shadow-md hover:shadow-lg px-5 py-3">
-                            <i class="bi bi-sliders"></i>
-                            <span>Edit Preferences</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
             <!-- Danger Zone -->
-            <div class="bg-white rounded-2xl shadow-lg overflow-hidden border-l-4 border-red-500 animate-fade-in" style="animation-delay: 0.3s;">
+            <div class="profile-danger-zone bg-white rounded-2xl shadow-lg overflow-hidden border-l-4 border-red-500 animate-fade-in" style="animation-delay: 0.3s;">
                 <div class="bg-gradient-to-r from-red-50 to-rose-50 px-6 py-4 border-b border-red-100">
                     <h3 class="text-xl font-bold text-red-700 flex items-center gap-3">
                         <div class="icon-wrapper bg-gradient-to-br from-red-500 to-rose-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">

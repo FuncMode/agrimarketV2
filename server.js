@@ -26,9 +26,11 @@ async function startServer() {
     const schemaResult = await validateSchema();
     
     if (!schemaResult.success) {
-      console.warn('\nWARNING: Some tables are missing!');
-      console.warn('Missing tables:', schemaResult.missingTables);
-      console.warn('Please run the database schema SQL in Supabase SQL Editor');
+      console.warn('\nWARNING: Database schema has issues.');
+      console.warn('Project ref:', schemaResult.projectRef || 'unknown');
+      console.warn('Missing tables:', schemaResult.missingTables || []);
+      console.warn('Missing columns:', schemaResult.missingColumns || []);
+      console.warn('Please run the required SQL migrations in Supabase SQL Editor');
       console.warn('Continuing anyway for development...\n');
     }
 
