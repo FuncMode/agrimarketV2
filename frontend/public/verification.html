@@ -25,43 +25,130 @@
   <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
   
   <style>
+    :root {
+      --verify-bg-a: #ecf5f0;
+      --verify-bg-b: #f8fbf8;
+      --verify-border: #d1e2d6;
+      --verify-text: #163628;
+      --verify-muted: #5f6e66;
+      --verify-shadow: 0 16px 34px rgba(15, 56, 36, 0.11);
+    }
+
+    body.verification-page {
+      background:
+        radial-gradient(1200px 480px at -10% -5%, #d9efe1 0%, transparent 62%),
+        radial-gradient(950px 420px at 110% 0%, #e5efe1 0%, transparent 62%),
+        linear-gradient(180deg, var(--verify-bg-a) 0%, var(--verify-bg-b) 100%);
+    }
+
+    .verification-shell {
+      max-width: 980px;
+    }
+
+    .verify-card {
+      border: 1px solid var(--verify-border);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: var(--verify-shadow);
+      overflow: hidden;
+    }
+
+    /* Disable global card hover accent line on verification page */
+    .verification-page .verify-card::before,
+    .verification-page .verify-card:hover::before {
+      transform: none;
+      display: none;
+    }
+
+    .verification-page .verify-card:hover {
+      transform: none;
+      box-shadow: var(--verify-shadow);
+    }
+
+    .verification-page .card-body {
+      padding: 1.45rem;
+    }
+
     .verification-header {
-      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+      background:
+        radial-gradient(120% 180% at 0% 0%, rgba(255, 255, 255, 0.18) 0%, transparent 45%),
+        linear-gradient(135deg, #0f6f45 0%, #1d875a 55%, #2c7cae 100%);
       color: white;
       text-align: center;
-      padding: 2rem;
-      border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-      margin: -1.5rem -1.5rem 2rem -1.5rem;
+      padding: 1.7rem 1.1rem 1.35rem;
+      border-radius: 16px;
+      margin: 0 0 1.1rem;
     }
-    
+
+    .verification-header h1 {
+      letter-spacing: -0.01em;
+    }
+
+    .verification-header p {
+      font-size: 0.97rem;
+      line-height: 1.5;
+    }
+
+    .verify-header-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.18);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.75rem;
+    }
+
+    .verify-header-kicker {
+      margin: 0 0 0.2rem;
+      font-size: 0.7rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 800;
+      opacity: 0.9;
+    }
+
+    .verify-header-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.6rem;
+      padding: 0.32rem 0.7rem;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
     .verification-step {
-      background: var(--color-gray-50);
-      border: 2px dashed var(--color-gray-300);
-      border-radius: var(--radius-lg);
-      padding: 1.5rem;
-      transition: all var(--transition-normal);
+      background: #fbfefc;
+      border: 1px dashed #bad1c4;
+      border-radius: 15px;
+      padding: 1.15rem;
+      transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
       position: relative;
       overflow: hidden;
     }
-    
+
     .verification-step:hover {
-      border-color: var(--color-primary);
-      background: var(--color-gray-100);
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-md);
+      border-color: #6eae8f;
+      background: #f4fbf7;
+      box-shadow: 0 8px 18px rgba(20, 86, 55, 0.08);
+      transform: none;
     }
-    
+
     .verification-step.has-file {
-      border-color: var(--color-success);
-      background: rgba(40, 167, 69, 0.05);
-      border-style: solid;
+      border: 1px solid #5ca97d;
+      background: #edf8f1;
     }
-    
+
     .file-input-wrapper {
       position: relative;
       cursor: pointer;
     }
-    
+
     .file-input-wrapper input[type="file"] {
       position: absolute;
       opacity: 0;
@@ -71,72 +158,183 @@
     }
     
     .upload-icon {
-      width: 48px;
-      height: 48px;
-      background: var(--color-primary);
+      width: 52px;
+      height: 52px;
+      background: linear-gradient(135deg, #1a7d51 0%, #238f5d 100%);
       color: white;
-      border-radius: var(--radius-full);
+      border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin: 0 auto 1rem;
-      font-size: 1.5rem;
+      margin: 0 auto 0.9rem;
+      font-size: 1.35rem;
       transition: all var(--transition-fast);
     }
-    
+
     .verification-step:hover .upload-icon {
-      transform: scale(1.1);
-      box-shadow: var(--shadow-lg);
+      transform: none;
+      box-shadow: 0 8px 16px rgba(17, 94, 59, 0.24);
     }
-    
+
     .progress-bar {
-      height: 4px;
-      background: var(--color-gray-200);
+      height: 6px;
+      background: rgba(255, 255, 255, 0.28);
       border-radius: var(--radius-full);
       overflow: hidden;
-      margin: 1rem 0;
+      margin: 0.95rem 0 0.55rem;
     }
-    
+
     .progress-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+      background: linear-gradient(90deg, #d5ffe6, #e8f3ff);
       transition: width var(--transition-normal);
       border-radius: var(--radius-full);
     }
-    
+
     .guideline-item {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
-      padding: 0.5rem 0;
+      gap: 0.65rem;
+      padding: 0.4rem 0;
     }
-    
+
     .guideline-icon {
-      color: var(--color-success);
-      font-size: 1.1rem;
+      color: #22915e;
+      font-size: 1rem;
       flex-shrink: 0;
+    }
+
+    .verification-page .form-label {
+      color: #1f4333;
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .verification-page .form-control,
+    .verification-page .form-select {
+      border: 1px solid #c9dbcf;
+      border-radius: 11px;
+      background: #fff;
+    }
+
+    .verification-page .form-control:focus,
+    .verification-page .form-select:focus {
+      border-color: #5ea784;
+      box-shadow: 0 0 0 3px rgba(39, 133, 89, 0.15);
+    }
+
+    .verification-page .btn {
+      border-radius: 12px;
+      font-weight: 700;
+    }
+
+    .verification-page #btn-submit-verification {
+      background: linear-gradient(90deg, #157b4d, #1f9962);
+      border: none;
+      min-height: 52px;
+      box-shadow: 0 12px 22px rgba(20, 104, 67, 0.24);
+    }
+
+    .verification-page #btn-submit-verification:hover {
+      background: linear-gradient(90deg, #116740, #1a8757);
+    }
+
+    .verify-guidelines {
+      background: linear-gradient(120deg, #f0f7ff 0%, #f6f9ff 60%, #eef7f4 100%);
+      border: 1px solid #d4e0f1;
+      border-radius: 14px;
+      padding: 1rem;
+    }
+
+    .verify-submit-wrap {
+      border: 1px solid #dce6df;
+      background: #f9fcfa;
+      border-radius: 14px;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    @media (max-width: 767.98px) {
+      .verification-shell {
+        padding-left: 0.7rem !important;
+        padding-right: 0.7rem !important;
+      }
+
+      .verify-card {
+        border-radius: 14px;
+      }
+
+      .verification-page .card-body {
+        padding: 0.95rem !important;
+      }
+
+      .verification-header {
+        border-radius: 13px;
+        padding: 1rem 0.75rem 0.9rem;
+        margin-bottom: 0.85rem;
+      }
+
+      .verification-header h1 {
+        font-size: 1.22rem !important;
+      }
+
+      .verification-header p {
+        font-size: 0.84rem;
+      }
+
+      .verification-step {
+        padding: 0.82rem;
+        border-radius: 12px;
+      }
+
+      .upload-icon {
+        width: 46px;
+        height: 46px;
+        border-radius: 12px;
+        margin-bottom: 0.7rem;
+      }
+
+      .verification-page .btn-lg,
+      .verification-page .btn-xl {
+        width: 100%;
+      }
+
+      .verification-page .grid.grid-cols-2 {
+        grid-template-columns: 1fr !important;
+      }
+
+      .verify-guidelines,
+      .verify-submit-wrap {
+        padding: 0.82rem;
+      }
     }
   </style>
 </head>
-<body class="bg-light">
+<body class="bg-light verification-page">
   
   <nav id="main-navbar" class="navbar"></nav>
   
-  <div class="container max-w-4xl mx-auto px-4 py-4 sm:py-6 md:py-8">
+  <div class="container verification-shell max-w-4xl mx-auto px-4 py-4 sm:py-6 md:py-8">
     
-    <div class="card shadow-xl">
+    <div class="card shadow-xl verify-card">
       <div class="card-body">
         
         <!-- Header Section -->
         <div class="verification-header">
+          <p class="verify-header-kicker">Trust and Safety</p>
           <div class="flex items-center justify-center gap-3 mb-3">
-            <i class="bi bi-shield-check" style="font-size: 2.5rem;"></i>
+            <span class="verify-header-icon">
+              <i class="bi bi-shield-check"></i>
+            </span>
             <h1 class="text-3xl sm:text-4xl font-bold">Account Verification</h1>
           </div>
           <p class="text-lg opacity-90 max-w-2xl mx-auto">
-            Secure your marketplace experience with identity verification. 
-            This helps us maintain a trusted community for all users.
+            Confirm your identity once to unlock safer transactions and full marketplace access.
           </p>
+          <span class="verify-header-meta">
+            <i class="bi bi-clock-history"></i>
+            Usually reviewed within 24-48 hours
+          </span>
           
           <!-- Progress Bar -->
           <div class="progress-bar mt-6">
@@ -166,6 +364,7 @@
               <option value="passport">Passport</option>
               <option value="nbi_clearance">NBI Clearance</option>
             </select>
+            <p class="text-sm text-gray-600 mt-2 mb-0">Use a valid government-issued ID that matches your account name.</p>
             <div class="invalid-feedback"></div>
           </div>
           
@@ -292,7 +491,7 @@
           </div>
           
           <!-- Enhanced Guidelines -->
-          <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
+          <div class="verify-guidelines">
             <div class="flex items-center gap-3 mb-4">
               <div class="w-12 h-12 bg-info text-white rounded-full flex items-center justify-center">
                 <i class="bi bi-info-circle text-xl"></i>
@@ -360,7 +559,7 @@
           </div>
           
           <!-- Submit Section -->
-          <div class="bg-gray-50 rounded-xl p-6 text-center">
+          <div class="verify-submit-wrap">
             <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <button 
                 type="submit" 

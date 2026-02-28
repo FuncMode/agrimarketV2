@@ -16,6 +16,53 @@ router.get('/dashboard', adminController.getDashboardStats);
 
 router.get('/stats', adminController.getAdminStats);
 
+router.get(
+  '/products/pending',
+  [
+    query('search')
+      .optional()
+      .trim()
+      .isLength({ max: 100 }).withMessage('Search query too long'),
+
+    query('category')
+      .optional()
+      .isIn(['vegetables', 'fruits', 'fish_seafood', 'meat_poultry', 'other'])
+      .withMessage('Invalid category'),
+
+    query('page')
+      .optional()
+      .isInt({ min: 1 }).withMessage('Page must be positive')
+      .toInt(),
+
+    query('limit')
+      .optional()
+      .isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100')
+      .toInt(),
+
+    validate
+  ],
+  adminController.getPendingProductListings
+);
+
+router.patch(
+  '/products/:productId/approve',
+  validateUUID('productId'),
+  adminController.approveProductListing
+);
+
+router.patch(
+  '/products/:productId/reject',
+  validateUUID('productId'),
+  [
+    body('reason')
+      .notEmpty().withMessage('Rejection reason is required')
+      .isLength({ min: 10, max: 500 }).withMessage('Reason must be 10-500 characters'),
+
+    validate
+  ],
+  adminController.rejectProductListing
+);
+
 
 router.get(
   '/users',

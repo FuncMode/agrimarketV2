@@ -21,6 +21,9 @@ import {
   getSystemLogs,
   getIPBlockingStats,
   getDatabaseStats,
+  getPendingProductListings,
+  approveProductListing,
+  rejectProductListing,
   getOrdersForDispute,
   getOrderDetails
 } from '../services/admin.service.js';
@@ -30,6 +33,7 @@ import {
 let currentStats = null;
 let currentUsers = [];
 let currentVerifications = [];
+let currentPendingProducts = [];
 let currentIssues = [];
 let currentIssueFilters = {
   status: 'under_review',
@@ -40,6 +44,18 @@ let currentUserPage = 1;
 let currentUserFilters = {};
 let currentDisputeOrdersPage = 1;
 let currentDisputeOrdersFilters = {};
+
+const escapeHtml = (text) => {
+  const safeText = typeof text === 'string' ? text : String(text || '');
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return safeText.replace(/[&<>"']/g, (m) => map[m]);
+};
 
 // ============ Initialization ============
 
@@ -67,6 +83,7 @@ const init = async () => {
   await Promise.all([
     loadDashboardStats(),
     loadPendingVerifications(),
+    loadPendingProductListings(),
     loadIssues(),
     loadUsers(),
     loadSystemMonitoring(),
@@ -95,10 +112,27 @@ const loadDashboardStats = async () => {
       currentStats.issues?.total ??
       0;
     document.getElementById('stat-products').textContent = currentStats.products?.total || 0;
+    updatePendingProductListingsStat();
     
   } catch (error) {
     console.error('Error loading stats:', error);
   }
+};
+
+const updatePendingProductListingsStat = () => {
+  const statEl = document.getElementById('stat-pending-product-listings');
+  if (!statEl) return;
+
+  const fromStats =
+    currentStats?.products?.pending_review ??
+    currentStats?.products?.pending_approval ??
+    currentStats?.products?.pending ??
+    currentStats?.pending_product_listings ??
+    currentStats?.pending_products;
+
+  statEl.textContent = Number.isFinite(Number(fromStats))
+    ? Number(fromStats)
+    : currentPendingProducts.length;
 };
 
 // ============ Verifications ============
@@ -147,7 +181,7 @@ const createVerificationCard = (verification) => {
           <span class="badge badge-warning">PENDING</span>
         </div>
         
-        <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
             <p class="text-sm font-semibold mb-2">ID Document</p>
             <img src="${verification.id_photo_url || placeholderSvg}" 
@@ -168,7 +202,7 @@ const createVerificationCard = (verification) => {
           </div>
         </div>
         
-        <div class="flex gap-2">
+        <div class="admin-action-row flex gap-2">
           <button class="btn btn-sm btn-success" onclick="window.approveVerification('${verification.id}')">
             <i class="bi bi-check-circle"></i> Approve
           </button>
@@ -335,6 +369,163 @@ const getIssueStatusMeta = (status) => {
     rejected: { badge: 'badge-danger', label: 'Rejected', dateField: 'resolved_at', dateLabel: 'Rejected' }
   };
   return meta[status] || meta.under_review;
+};
+
+// ============ Product Listing Moderation ============
+
+const loadPendingProductListings = async () => {
+  const container = document.getElementById('product-listings-list');
+  if (!container) return;
+
+  container.innerHTML = '<div class="text-center py-8"><div class="loading-spinner mx-auto"></div></div>';
+
+  try {
+    const response = await getPendingProductListings({ page: 1, limit: 50 });
+    currentPendingProducts = response.data?.products || [];
+    updatePendingProductListingsStat();
+
+    if (!currentPendingProducts.length) {
+      container.innerHTML = '<p class="text-center text-gray-500 py-8">No pending product listings</p>';
+      return;
+    }
+
+    container.innerHTML = currentPendingProducts.map((product) => createPendingProductCard(product)).join('');
+  } catch (error) {
+    console.error('Error loading pending product listings:', error);
+    updatePendingProductListingsStat();
+    container.innerHTML = '<p class="text-center text-danger py-8">Failed to load pending product listings</p>';
+  }
+};
+
+const createPendingProductCard = (product) => {
+  const sellerName = product.seller_name || product?.seller?.user?.full_name || 'Unknown Seller';
+  const sellerEmail = product.seller_email || product?.seller?.user?.email || 'No email';
+  const quantity = Number(product.available_quantity) || 0;
+  const photoUrl = product.photo_path || product?.photos?.[0] || '';
+
+  return `
+    <div class="card mb-4" data-pending-product-id="${escapeHtml(product.id)}">
+      <div class="card-body">
+        <div class="flex items-start justify-between gap-4 mb-4 flex-wrap">
+          <div>
+            <h4 class="font-bold text-lg">${escapeHtml(product.name || 'Unnamed Product')}</h4>
+            <p class="text-sm text-gray-600">Seller: ${escapeHtml(sellerName)} (${escapeHtml(sellerEmail)})</p>
+            <p class="text-sm text-gray-600">Submitted: ${product.created_at ? formatDate(product.created_at) : 'N/A'}</p>
+          </div>
+          <span class="badge badge-warning">PENDING REVIEW</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            ${photoUrl ? `
+              <img src="${escapeHtml(photoUrl)}" alt="${escapeHtml(product.name || 'Product')}" class="w-full h-48 object-cover rounded border">
+            ` : `
+              <div class="w-full h-48 rounded border bg-gray-100 flex items-center justify-center text-gray-500 text-sm">
+                No product image
+              </div>
+            `}
+          </div>
+          <div class="space-y-1 text-sm">
+            <p><strong>Category:</strong> ${escapeHtml(product.category || 'N/A')}</p>
+            <p><strong>Price:</strong> ${formatCurrency(product.price_per_unit || 0)} / ${escapeHtml(product.unit_type || 'unit')}</p>
+            <p><strong>Available Qty:</strong> ${quantity}</p>
+            <p><strong>Municipality:</strong> ${escapeHtml(product.municipality || product?.seller?.municipality || 'N/A')}</p>
+            <p><strong>Description:</strong> ${escapeHtml(product.description || 'No description')}</p>
+          </div>
+        </div>
+
+        <div class="admin-action-row flex gap-2">
+          <button class="btn btn-sm btn-success" onclick="window.approvePendingProductListing('${product.id}')">
+            <i class="bi bi-check-circle"></i> Approve Listing
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="window.rejectPendingProductListing('${product.id}')">
+            <i class="bi bi-x-circle"></i> Reject Listing
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+window.approvePendingProductListing = async (productId) => {
+  const modal = createModal({
+    title: 'Approve Product Listing',
+    content: `
+      <div class="space-y-3">
+        <p class="text-gray-700">Approve this product listing and make it visible to buyers?</p>
+      </div>
+    `,
+    footer: `
+      <button class="btn btn-outline" data-modal-close>Cancel</button>
+      <button class="btn btn-success" id="confirm-approve-product-btn">
+        <i class="bi bi-check-circle"></i> Approve
+      </button>
+    `,
+    size: 'md'
+  });
+
+  const confirmBtn = document.getElementById('confirm-approve-product-btn');
+  if (!confirmBtn) return;
+
+  confirmBtn.addEventListener('click', async () => {
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
+    try {
+      await approveProductListing(productId);
+      showSuccess('Product listing approved');
+      modal.close();
+      await Promise.all([loadPendingProductListings(), loadDashboardStats()]);
+    } catch (error) {
+      console.error('Error approving product listing:', error);
+      showError(error.message || 'Failed to approve product listing');
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = '<i class="bi bi-check-circle"></i> Approve';
+    }
+  }, { once: true });
+};
+
+window.rejectPendingProductListing = async (productId) => {
+  const modal = createModal({
+    title: 'Reject Product Listing',
+    content: `
+      <div class="space-y-3">
+        <p class="text-gray-700">Provide a reason for rejecting this listing.</p>
+        <textarea id="product-rejection-reason" class="form-control w-full" rows="4" placeholder="At least 10 characters..."></textarea>
+      </div>
+    `,
+    footer: `
+      <button class="btn btn-outline" data-modal-close>Cancel</button>
+      <button class="btn btn-danger" id="confirm-reject-product-btn">
+        <i class="bi bi-x-circle"></i> Reject
+      </button>
+    `,
+    size: 'md'
+  });
+
+  const confirmBtn = document.getElementById('confirm-reject-product-btn');
+  if (!confirmBtn) return;
+
+  confirmBtn.addEventListener('click', async () => {
+    const reason = document.getElementById('product-rejection-reason')?.value?.trim() || '';
+    if (reason.length < 10) {
+      showError('Please enter a rejection reason with at least 10 characters.');
+      return;
+    }
+
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
+    try {
+      await rejectProductListing(productId, reason);
+      showSuccess('Product listing rejected');
+      modal.close();
+      await Promise.all([loadPendingProductListings(), loadDashboardStats()]);
+    } catch (error) {
+      console.error('Error rejecting product listing:', error);
+      showError(error.message || 'Failed to reject product listing');
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = '<i class="bi bi-x-circle"></i> Reject';
+    }
+  });
 };
 
 const getIssuePriorityMeta = (priority) => {

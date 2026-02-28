@@ -396,6 +396,8 @@ exports.getProductStats = async (sellerId) => {
     active_products: 0,
     paused_products: 0,
     draft_products: 0,
+    pending_approval_products: 0,
+    rejected_products: 0,
     total_views: 0,
     total_orders: 0,
     total_sales: 0
@@ -413,6 +415,8 @@ exports.getProductStats = async (sellerId) => {
       stats.active_products = products.filter(p => p.status === 'active').length;
       stats.paused_products = products.filter(p => p.status === 'paused').length;
       stats.draft_products = products.filter(p => p.status === 'draft').length;
+      stats.pending_approval_products = products.filter(p => p.status === 'pending_approval').length;
+      stats.rejected_products = products.filter(p => p.status === 'rejected_by_admin').length;
       stats.total_views = products.reduce((sum, p) => sum + (p.view_count || 0), 0);
       stats.total_orders = products.reduce((sum, p) => sum + (p.order_count || 0), 0);
     }

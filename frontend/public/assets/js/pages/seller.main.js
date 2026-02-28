@@ -616,6 +616,8 @@ const getStockMeta = (quantity) => {
 
 const formatListingStatus = (status) => {
   const normalized = String(status || 'draft').toLowerCase();
+  if (normalized === 'pending_approval') return 'Pending Approval';
+  if (normalized === 'rejected_by_admin') return 'Needs Changes';
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 };
 
@@ -738,6 +740,8 @@ const renderProductSummary = (totalProducts, filteredProducts) => {
   const draftCount = filteredProducts.filter((product) => product.status === 'draft').length;
   const pausedCount = filteredProducts.filter((product) => product.status === 'paused').length;
   const activeCount = filteredProducts.filter((product) => product.status === 'active').length;
+  const pendingCount = filteredProducts.filter((product) => product.status === 'pending_approval').length;
+  const rejectedCount = filteredProducts.filter((product) => product.status === 'rejected_by_admin').length;
   const lowStockCount = filteredProducts.filter((product) => {
     const quantity = Number(product.available_quantity) || 0;
     return quantity > 0 && quantity <= 10;
@@ -750,6 +754,8 @@ const renderProductSummary = (totalProducts, filteredProducts) => {
     <span class="seller-summary-chip"><strong>${activeCount}</strong> active</span>
     <span class="seller-summary-chip"><strong>${draftCount}</strong> draft</span>
     <span class="seller-summary-chip"><strong>${pausedCount}</strong> paused</span>
+    <span class="seller-summary-chip"><strong>${pendingCount}</strong> pending approval</span>
+    <span class="seller-summary-chip"><strong>${rejectedCount}</strong> needs changes</span>
     <span class="seller-summary-chip"><strong>${lowStockCount}</strong> low stock</span>
     <span class="seller-summary-chip"><strong>${outOfStockCount}</strong> out of stock</span>
   `;
@@ -853,7 +859,9 @@ const createProductRow = (product) => {
   const statusColors = {
     active: 'success',
     paused: 'warning',
-    draft: 'secondary'
+    draft: 'secondary',
+    pending_approval: 'warning',
+    rejected_by_admin: 'danger'
   };
   const productName = product.name || 'Unnamed Product';
   const municipality = product.municipality || 'Unknown';
@@ -863,6 +871,10 @@ const createProductRow = (product) => {
   const quantity = Number(product.available_quantity) || 0;
   const photoSrc = escapeHtml(product.photo_path || product.photos?.[0] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2216%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E');
   const stockMeta = getStockMeta(quantity);
+  const isPendingReview = product.status === 'pending_approval';
+  const isRejected = product.status === 'rejected_by_admin';
+  const isDraftPendingFallback = product.status === 'draft';
+  const canToggleStatus = !isPendingReview && !isRejected && !isDraftPendingFallback;
   const nextStatus = product.status === 'active' ? 'paused' : 'active';
   const nextStatusLabel = product.status === 'active' ? 'Pause' : 'Activate';
   const nextStatusIcon = product.status === 'active' ? 'bi-pause-circle' : 'bi-play-circle';
@@ -896,9 +908,19 @@ const createProductRow = (product) => {
       </td>
       <td>
         <div class="seller-action-group">
-          <button class="btn btn-sm ${nextStatusClass} seller-action-btn" data-product-action="toggle-status" data-product-id="${escapeHtml(product.id)}" data-next-status="${escapeHtml(nextStatus)}" title="${nextStatusLabel} product">
-            <i class="bi ${nextStatusIcon}"></i> ${nextStatusLabel}
-          </button>
+          ${canToggleStatus ? `
+            <button class="btn btn-sm ${nextStatusClass} seller-action-btn" data-product-action="toggle-status" data-product-id="${escapeHtml(product.id)}" data-next-status="${escapeHtml(nextStatus)}" title="${nextStatusLabel} product">
+              <i class="bi ${nextStatusIcon}"></i> ${nextStatusLabel}
+            </button>
+          ` : isRejected ? `
+            <button class="btn btn-sm btn-primary seller-action-btn" data-product-action="resubmit" data-product-id="${escapeHtml(product.id)}" title="Resubmit for admin review">
+              <i class="bi bi-arrow-repeat"></i> Resubmit
+            </button>
+          ` : isDraftPendingFallback ? `
+            <span class="text-xs text-warning font-semibold px-1 py-2">Pending admin review</span>
+          ` : `
+            <span class="text-xs text-warning font-semibold px-1 py-2">Awaiting admin review</span>
+          `}
           <button class="btn btn-sm btn-outline seller-action-btn" data-product-action="edit" data-product-id="${escapeHtml(product.id)}" title="Edit product">
             <i class="bi bi-pencil"></i> Edit
           </button>
@@ -915,7 +937,9 @@ const createProductMobileCard = (product) => {
   const statusColors = {
     active: 'success',
     paused: 'warning',
-    draft: 'secondary'
+    draft: 'secondary',
+    pending_approval: 'warning',
+    rejected_by_admin: 'danger'
   };
   const productName = product.name || 'Unnamed Product';
   const municipality = product.municipality || 'Unknown';
@@ -925,6 +949,10 @@ const createProductMobileCard = (product) => {
   const quantity = Number(product.available_quantity) || 0;
   const photoSrc = escapeHtml(product.photo_path || product.photos?.[0] || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22300%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2216%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E');
   const stockMeta = getStockMeta(quantity);
+  const isPendingReview = product.status === 'pending_approval';
+  const isRejected = product.status === 'rejected_by_admin';
+  const isDraftPendingFallback = product.status === 'draft';
+  const canToggleStatus = !isPendingReview && !isRejected && !isDraftPendingFallback;
   const nextStatus = product.status === 'active' ? 'paused' : 'active';
   const nextStatusLabel = product.status === 'active' ? 'Pause' : 'Activate';
   const nextStatusClass = product.status === 'active' ? 'btn-warning' : 'btn-success';
@@ -961,9 +989,23 @@ const createProductMobileCard = (product) => {
         </div>
       </div>
       <div class="seller-product-card-actions">
-        <button class="btn btn-sm ${nextStatusClass}" data-product-action="toggle-status" data-product-id="${escapeHtml(product.id)}" data-next-status="${escapeHtml(nextStatus)}">
-          <i class="bi ${nextStatusIcon}"></i> ${nextStatusLabel}
-        </button>
+        ${canToggleStatus ? `
+          <button class="btn btn-sm ${nextStatusClass}" data-product-action="toggle-status" data-product-id="${escapeHtml(product.id)}" data-next-status="${escapeHtml(nextStatus)}">
+            <i class="bi ${nextStatusIcon}"></i> ${nextStatusLabel}
+          </button>
+        ` : isRejected ? `
+          <button class="btn btn-sm btn-primary" data-product-action="resubmit" data-product-id="${escapeHtml(product.id)}">
+            <i class="bi bi-arrow-repeat"></i> Resubmit
+          </button>
+        ` : isDraftPendingFallback ? `
+          <button class="btn btn-sm btn-outline" disabled>
+            <i class="bi bi-hourglass-split"></i> Pending Review
+          </button>
+        ` : `
+          <button class="btn btn-sm btn-outline" disabled>
+            <i class="bi bi-hourglass-split"></i> Pending Review
+          </button>
+        `}
         <button class="btn btn-sm btn-outline" data-product-action="edit" data-product-id="${escapeHtml(product.id)}">
           <i class="bi bi-pencil"></i> Edit
         </button>
@@ -1087,6 +1129,10 @@ const handleProductActionEvents = (event) => {
   if (action === 'toggle-status') {
     const nextStatus = actionButton.getAttribute('data-next-status') || 'paused';
     window.toggleProductStatus(productId, nextStatus);
+    return;
+  }
+  if (action === 'resubmit') {
+    window.resubmitProductListing(productId);
     return;
   }
   if (action === 'delete') {
@@ -1472,15 +1518,31 @@ window.showProductModal = (productId = null) => {
         </div>
       </div>
       
-      <!-- Status -->
-      <div class="form-group">
-        <label class="form-label">Status</label>
-        <select id="product-status" class="form-select">
-          <option value="active" ${editingProduct?.status === 'active' ? 'selected' : ''}>Active</option>
-          <option value="paused" ${editingProduct?.status === 'paused' ? 'selected' : ''}>Paused</option>
-          <option value="draft" ${editingProduct?.status === 'draft' ? 'selected' : ''}>Draft</option>
-        </select>
-      </div>
+      ${!editingProduct ? `
+        <div class="form-group">
+          <label class="form-label">Listing Workflow</label>
+          <div class="alert alert-info text-sm">
+            New product listings are submitted for admin review first.
+            Status controls become available after approval.
+          </div>
+        </div>
+      ` : ['active', 'paused', 'draft'].includes(String(editingProduct?.status || '').toLowerCase()) ? `
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select id="product-status" class="form-select">
+            <option value="active" ${editingProduct?.status === 'active' ? 'selected' : ''}>Active</option>
+            <option value="paused" ${editingProduct?.status === 'paused' ? 'selected' : ''}>Paused</option>
+            <option value="draft" ${editingProduct?.status === 'draft' ? 'selected' : ''}>Draft</option>
+          </select>
+        </div>
+      ` : `
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <div class="alert alert-warning text-sm mb-0">
+            This listing is under admin review. Status changes are disabled until approved.
+          </div>
+        </div>
+      `}
     </form>
   `;
   
@@ -1523,6 +1585,8 @@ const handleSaveProduct = async () => {
     : Array.from(photosInput.files || []);
   const hasNewPhotos = selectedPhotoFiles.length > 0;
   const hasRemovedExistingPhotos = !!editingProduct && removedExistingPhotos.size > 0;
+  const statusElement = document.getElementById('product-status');
+  const selectedStatus = statusElement ? statusElement.value : '';
   
   // Build FormData or regular object based on whether we have files
   let requestData;
@@ -1538,7 +1602,9 @@ const handleSaveProduct = async () => {
     requestData.append('unit_type', document.getElementById('product-unit').value);
     requestData.append('available_quantity', document.getElementById('product-stock').value);
     requestData.append('tags', tags);
-    requestData.append('status', document.getElementById('product-status').value);
+    if (selectedStatus) {
+      requestData.append('status', selectedStatus);
+    }
     
     // Append files
     selectedPhotoFiles.forEach(file => {
@@ -1554,9 +1620,11 @@ const handleSaveProduct = async () => {
       price_per_unit: parseFloat(document.getElementById('product-price').value),
       unit_type: document.getElementById('product-unit').value,
       available_quantity: parseInt(document.getElementById('product-stock').value),
-      tags: tags,
-      status: document.getElementById('product-status').value
+      tags: tags
     };
+    if (selectedStatus) {
+      requestData.status = selectedStatus;
+    }
 
     if (hasRemovedExistingPhotos) {
       const existingPhotos = Array.isArray(editingProduct.photos) ? editingProduct.photos : [];
@@ -1595,7 +1663,8 @@ const handleSaveProduct = async () => {
     }
     
     if (response.success) {
-      showSuccess(editingProduct ? 'Product updated!' : 'Product created!');
+      const successMessage = response.message || (editingProduct ? 'Product updated!' : 'Product created!');
+      showSuccess(successMessage);
       
       // Close modal
       document.querySelector('.modal-backdrop')?.remove();
@@ -1629,6 +1698,19 @@ window.toggleProductStatus = async (productId, nextStatus) => {
     console.error('Error updating product status:', error);
     showProductInlineFeedback(error.message || 'Failed to update product status', 'error');
     showError(error.message || 'Failed to update product status');
+  }
+};
+
+window.resubmitProductListing = async (productId) => {
+  try {
+    await updateProduct(productId, { status: 'pending_approval' });
+    showSuccess('Product resubmitted for admin review.');
+    showProductInlineFeedback('Listing is back in review queue.', 'success');
+    await Promise.all([loadProducts(), loadDashboardStats()]);
+  } catch (error) {
+    console.error('Error resubmitting product listing:', error);
+    showProductInlineFeedback(error.message || 'Failed to resubmit listing', 'error');
+    showError(error.message || 'Failed to resubmit listing');
   }
 };
 

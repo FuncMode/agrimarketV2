@@ -8,6 +8,19 @@ const issueModel = require('../models/issueModel');
 const { supabase, supabaseService } = require('../config/database');
 const notificationService = require('../services/notificationService');
 
+const isUnsupportedProductStatusError = (error = {}) => {
+  const text = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('invalid input value for enum') ||
+    (text.includes('status') && (
+      text.includes('check constraint') ||
+      text.includes('products_status') ||
+      text.includes('rejected_by_admin')
+    ))
+  );
+};
+
 exports.getDashboardStats = asyncHandler(async (req, res, next) => {
   const stats = {
     users: {
@@ -29,7 +42,9 @@ exports.getDashboardStats = asyncHandler(async (req, res, next) => {
     products: {
       total: 0,
       active: 0,
-      paused: 0
+      paused: 0,
+      pending_approval: 0,
+      rejected_by_admin: 0
     },
     issues: {
       total: 0,
@@ -78,6 +93,8 @@ exports.getDashboardStats = asyncHandler(async (req, res, next) => {
       stats.products.total = products.length;
       stats.products.active = products.filter(p => p.status === 'active').length;
       stats.products.paused = products.filter(p => p.status === 'paused').length;
+      stats.products.pending_approval = products.filter(p => p.status === 'pending_approval').length;
+      stats.products.rejected_by_admin = products.filter(p => p.status === 'rejected_by_admin').length;
     }
 
     const issueStats = issueStatsResult.data;
@@ -562,6 +579,328 @@ exports.getDatabaseStats = asyncHandler(async (req, res, next) => {
         current_status: healthCheck.healthy ? 'healthy' : 'unhealthy',
         last_check_duration_ms: healthCheck.duration || 0
       }
+    }
+  });
+});
+
+// ============ Product Listing Moderation ============
+
+exports.getPendingProductListings = asyncHandler(async (req, res, next) => {
+  const { search, category, page = 1, limit = 20 } = req.query;
+  const pageNum = parseInt(page, 10);
+  const limitNum = Math.min(parseInt(limit, 10), 100);
+  const offset = (pageNum - 1) * limitNum;
+
+  let query = supabase
+    .from('products')
+    .select(`
+      id,
+      seller_id,
+      name,
+      description,
+      category,
+      price_per_unit,
+      unit_type,
+      available_quantity,
+      municipality,
+      photo_path,
+      photos,
+      status,
+      created_at,
+      updated_at,
+      seller:seller_profiles!inner (
+        id,
+        user_id,
+        municipality,
+        user:users!inner (
+          id,
+          full_name,
+          email,
+          status
+        )
+      )
+    `, { count: 'exact' })
+    .in('status', ['pending_approval', 'draft'])
+    .order('created_at', { ascending: true });
+
+  if (search) {
+    query = query.ilike('name', `%${search}%`);
+  }
+
+  if (category) {
+    query = query.eq('category', category);
+  }
+
+  query = query.range(offset, offset + limitNum - 1);
+
+  const { data: products, error, count } = await query;
+
+  if (error) {
+    throw new AppError('Failed to fetch pending product listings.', 500);
+  }
+
+  // Backward-compat filtering:
+  // In older schemas, rejected listings fallback to "draft".
+  // Exclude drafts that already have a PRODUCT_LISTING_REJECTED admin log.
+  const draftProductIds = (products || [])
+    .filter((product) => product?.status === 'draft' && product?.id)
+    .map((product) => product.id);
+
+  let rejectedDraftIds = new Set();
+  let nonPendingDraftIds = new Set();
+  if (draftProductIds.length > 0) {
+    const { data: moderationLogs } = await supabase
+      .from('admin_logs')
+      .select('reference_id, action_type, created_at')
+      .in('action_type', ['PRODUCT_LISTING_REJECTED', 'PRODUCT_LISTING_APPROVED'])
+      .in('reference_id', draftProductIds);
+
+    const latestRejectedAtByProductId = new Map();
+    const latestApprovedAtByProductId = new Map();
+    (moderationLogs || [])
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+      .forEach((log) => {
+        const refId = log?.reference_id;
+        if (!refId) return;
+        if (log.action_type === 'PRODUCT_LISTING_REJECTED' && !latestRejectedAtByProductId.has(refId)) {
+          latestRejectedAtByProductId.set(refId, log.created_at);
+        }
+        if (log.action_type === 'PRODUCT_LISTING_APPROVED' && !latestApprovedAtByProductId.has(refId)) {
+          latestApprovedAtByProductId.set(refId, log.created_at);
+        }
+      });
+
+    const classification = (products || [])
+      .filter((product) => product?.status === 'draft' && product?.id)
+      .map((product) => {
+        const latestRejectedAt = latestRejectedAtByProductId.get(product.id);
+        const latestApprovedAt = latestApprovedAtByProductId.get(product.id);
+        const updatedAtMs = new Date(product.updated_at || product.created_at || 0).getTime();
+        const rejectedAtMs = latestRejectedAt ? new Date(latestRejectedAt).getTime() : NaN;
+        const approvedAtMs = latestApprovedAt ? new Date(latestApprovedAt).getTime() : NaN;
+        const hasRejected = Number.isFinite(rejectedAtMs);
+        const hasApproved = Number.isFinite(approvedAtMs);
+
+        const isPendingResubmission = hasRejected && Number.isFinite(updatedAtMs) && updatedAtMs > rejectedAtMs;
+        const isRejected = hasRejected && (!hasApproved || approvedAtMs <= rejectedAtMs) && !isPendingResubmission;
+        const isApprovedManagedDraft = hasApproved && !isPendingResubmission && !isRejected;
+        const isPendingFresh = !hasApproved && !hasRejected;
+        const isPending = isPendingResubmission || isPendingFresh;
+
+        return {
+          id: product.id,
+          isRejected,
+          isApprovedManagedDraft,
+          isPending
+        };
+      });
+
+    rejectedDraftIds = new Set(
+      classification
+        .filter((item) => item.isRejected)
+        .map((item) => item.id)
+    );
+
+    nonPendingDraftIds = new Set(
+      (products || [])
+        .filter((product) => product?.status === 'draft' && product?.id)
+        .map((product) => product.id)
+        .filter((id) => {
+          const item = classification.find((row) => row.id === id);
+          return item ? !item.isPending : false;
+        })
+    );
+  }
+
+  const visibleProducts = (products || []).filter((product) => {
+    if (product?.status !== 'draft') return true;
+    return !nonPendingDraftIds.has(product.id);
+  });
+
+  const enrichedProducts = visibleProducts.map((product) => ({
+    ...product,
+    seller_name: product?.seller?.user?.full_name || 'Unknown Seller',
+    seller_email: product?.seller?.user?.email || null
+  }));
+
+  const effectiveTotal = typeof count === 'number'
+    ? Math.max(0, count - nonPendingDraftIds.size)
+    : enrichedProducts.length;
+
+  res.status(200).json({
+    success: true,
+    results: enrichedProducts.length,
+    total: effectiveTotal,
+    page: pageNum,
+    limit: limitNum,
+    total_pages: effectiveTotal ? Math.ceil(effectiveTotal / limitNum) : 0,
+    data: {
+      products: enrichedProducts
+    }
+  });
+});
+
+exports.approveProductListing = asyncHandler(async (req, res, next) => {
+  const { productId } = req.params;
+  const adminId = req.user.id;
+
+  const { data: product, error: fetchError } = await supabase
+    .from('products')
+    .select(`
+      id,
+      name,
+      status,
+      seller:seller_profiles!inner (
+        id,
+        user_id,
+        user:users!inner (
+          id,
+          full_name
+        )
+      )
+    `)
+    .eq('id', productId)
+    .single();
+
+  if (fetchError || !product) {
+    throw new AppError('Product listing not found.', 404);
+  }
+
+  if (!['pending_approval', 'draft'].includes(product.status)) {
+    throw new AppError('Only pending listings can be approved.', 400);
+  }
+
+  const { data: updatedProduct, error: updateError } = await supabaseService
+    .from('products')
+    .update({
+      status: 'active',
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', productId)
+    .select()
+    .single();
+
+  if (updateError) {
+    throw new AppError('Failed to approve product listing.', 500);
+  }
+
+  await adminLogModel.createLog({
+    admin_id: adminId,
+    action_type: 'PRODUCT_LISTING_APPROVED',
+    action_description: `Approved product listing "${product.name}"`,
+    target_user_id: product?.seller?.user?.id || null,
+    reference_id: productId,
+    ip_address: req.ip
+  });
+
+  if (product?.seller?.user?.id) {
+    await notificationService.createNotification({
+      user_id: product.seller.user.id,
+      title: 'Product Listing Approved',
+      message: `Your product "${product.name}" has been approved and is now visible to buyers.`,
+      type: 'product_approved',
+      reference_id: productId
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Product listing approved.',
+    data: {
+      product: updatedProduct
+    }
+  });
+});
+
+exports.rejectProductListing = asyncHandler(async (req, res, next) => {
+  const { productId } = req.params;
+  const adminId = req.user.id;
+  const reason = String(req.body.reason || '').trim();
+
+  if (!reason) {
+    throw new AppError('Rejection reason is required.', 400);
+  }
+
+  const { data: product, error: fetchError } = await supabase
+    .from('products')
+    .select(`
+      id,
+      name,
+      status,
+      seller:seller_profiles!inner (
+        id,
+        user_id,
+        user:users!inner (
+          id,
+          full_name
+        )
+      )
+    `)
+    .eq('id', productId)
+    .single();
+
+  if (fetchError || !product) {
+    throw new AppError('Product listing not found.', 404);
+  }
+
+  if (!['pending_approval', 'draft'].includes(product.status)) {
+    throw new AppError('Only pending listings can be rejected.', 400);
+  }
+
+  let { data: updatedProduct, error: updateError } = await supabaseService
+    .from('products')
+    .update({
+      status: 'rejected_by_admin',
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', productId)
+    .select()
+    .single();
+
+  // Backward-compat for older schemas that don't support rejected_by_admin.
+  if (updateError && isUnsupportedProductStatusError(updateError)) {
+    const fallbackResult = await supabaseService
+      .from('products')
+      .update({
+        status: 'draft',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', productId)
+      .select()
+      .single();
+
+    updatedProduct = fallbackResult.data;
+    updateError = fallbackResult.error;
+  }
+
+  if (updateError) {
+    throw new AppError('Failed to reject product listing.', 500);
+  }
+
+  await adminLogModel.createLog({
+    admin_id: adminId,
+    action_type: 'PRODUCT_LISTING_REJECTED',
+    action_description: `Rejected product listing "${product.name}". Reason: ${reason}`,
+    target_user_id: product?.seller?.user?.id || null,
+    reference_id: productId,
+    ip_address: req.ip
+  });
+
+  if (product?.seller?.user?.id) {
+    await notificationService.createNotification({
+      user_id: product.seller.user.id,
+      title: 'Product Listing Needs Changes',
+      message: `Your product "${product.name}" was not approved. Reason: ${reason}`,
+      type: 'product_rejected',
+      reference_id: productId
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Product listing rejected.',
+    data: {
+      product: updatedProduct
     }
   });
 });

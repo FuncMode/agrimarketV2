@@ -1,5 +1,5 @@
 // assets/js/services/admin.service.js
-import { get, post, put, del } from '../core/http.js';
+import { get, post, patch, del } from '../core/http.js';
 import { ENDPOINTS } from '../config/api.js';
 
 // Get admin dashboard stats
@@ -154,6 +154,42 @@ const getDatabaseStats = async () => {
   }
 };
 
+// Get pending product listings for moderation
+const getPendingProductListings = async (filters = {}) => {
+  try {
+    const params = new URLSearchParams();
+    if (filters.search) params.append('search', filters.search);
+    if (filters.category) params.append('category', filters.category);
+    if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
+
+    const queryString = params.toString();
+    const url = queryString ? `${ENDPOINTS.ADMIN.PENDING_PRODUCTS}?${queryString}` : ENDPOINTS.ADMIN.PENDING_PRODUCTS;
+
+    return await get(url);
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Approve a pending product listing
+const approveProductListing = async (productId) => {
+  try {
+    return await patch(ENDPOINTS.ADMIN.APPROVE_PRODUCT(productId), {});
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Reject a pending product listing
+const rejectProductListing = async (productId, reason) => {
+  try {
+    return await patch(ENDPOINTS.ADMIN.REJECT_PRODUCT(productId), { reason });
+  } catch (error) {
+    throw error;
+  }
+};
+
 // Get orders for dispute resolution
 const getOrdersForDispute = async (filters = {}) => {
   try {
@@ -221,6 +257,9 @@ export {
   getSocketConnections,
   getIPBlockingStats,
   getDatabaseStats,
+  getPendingProductListings,
+  approveProductListing,
+  rejectProductListing,
   getOrdersForDispute,
   getOrderDetails,
   getMessagesForDispute

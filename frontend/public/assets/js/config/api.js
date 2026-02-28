@@ -144,6 +144,9 @@ const ENDPOINTS = {
     SOCKET_CONNECTIONS: '/admin/socket/connections',
     IP_BLOCKING: '/admin/security/ip-blocking',
     DATABASE_STATS: '/admin/database/stats',
+    PENDING_PRODUCTS: '/admin/products/pending',
+    APPROVE_PRODUCT: (id) => `/admin/products/${id}/approve`,
+    REJECT_PRODUCT: (id) => `/admin/products/${id}/reject`,
     DISPUTE_ORDERS: '/admin/dispute/orders',
     DISPUTE_MESSAGES: '/admin/dispute/messages'
   },

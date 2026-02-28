@@ -108,27 +108,26 @@ const hideFormShowPendingMessage = () => {
     pendingMessage.id = 'pending-verification-message';
     pendingMessage.className = 'mt-8 mb-4';
     pendingMessage.innerHTML = `
-      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-xl p-8 text-center">
-        <div class="w-20 h-20 bg-info text-white rounded-full flex items-center justify-center mx-auto mb-4">
-          <i class="bi bi-hourglass-split text-4xl"></i>
+      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4 sm:p-6 text-center">
+        <div class="w-16 h-16 sm:w-20 sm:h-20 bg-info text-white rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+          <i class="bi bi-hourglass-split text-2xl sm:text-4xl"></i>
         </div>
-        <h3 class="text-2xl font-bold text-gray-800 mb-4">
-          Verification Submitted Successfully!
+        <h3 class="text-xl sm:text-2xl font-bold text-gray-800 mb-3 sm:mb-4">
+          Verification Submitted
         </h3>
-        <div class="bg-white rounded-lg border-l-4 border-warning p-6 max-w-2xl mx-auto">
-          <div class="flex items-start gap-4">
-            <i class="bi bi-exclamation-triangle text-warning text-2xl mt-1"></i>
+        <div class="bg-white rounded-lg border-l-4 border-warning p-4 sm:p-5 max-w-2xl mx-auto">
+          <div class="flex items-start gap-3">
+            <i class="bi bi-info-circle text-info text-xl mt-0.5"></i>
             <div class="text-left">
-              <p class="font-semibold text-gray-800 mb-2 text-lg">Important Note</p>
-              <p class="text-gray-700 leading-relaxed">
-                Verification typically takes <strong>24-48 hours</strong>. You'll be notified via email once your documents are reviewed. 
-                Make sure your uploaded documents match your account information.
+              <p class="font-semibold text-gray-800 mb-1">Review in progress</p>
+              <p class="text-sm sm:text-base text-gray-700 leading-relaxed">
+                Processing usually takes <strong>24-48 hours</strong>. We will notify you once admin review is complete.
               </p>
             </div>
           </div>
         </div>
-        <div class="mt-6">
-          <a href="${dashboardPath}" class="btn btn-primary btn-lg px-8 py-3">
+        <div class="mt-5">
+          <a href="${dashboardPath}" class="btn btn-primary btn-lg px-7 py-3">
             <i class="bi bi-arrow-left"></i>
             Return to Dashboard
           </a>

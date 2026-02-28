@@ -17,16 +17,26 @@ const initToastContainer = () => {
     if (!toastContainer) {
       toastContainer = document.createElement('div');
       toastContainer.id = 'toast-container';
-      toastContainer.className = 'fixed top-4 right-4 z-50 space-y-2';
-      toastContainer.style.cssText = `
-        position: fixed;
-        top: calc(env(safe-area-inset-top) + 1rem);
-        right: 1rem;
-        z-index: var(--z-toast, 1200);
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-      `;
+      document.body.appendChild(toastContainer);
+    }
+
+    // Apply consistent runtime styles even when container already exists in HTML
+    toastContainer.classList.add('fixed', 'top-4', 'right-4');
+    toastContainer.style.cssText = `
+      position: fixed;
+      top: calc(env(safe-area-inset-top) + 1rem);
+      right: 1rem;
+      z-index: var(--z-toast, 99999) !important;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      width: auto;
+      max-width: min(400px, calc(100vw - 1rem));
+      pointer-events: none;
+    `;
+
+    // Keep toast container at the end of <body> so it stays above other overlays.
+    if (document.body.lastElementChild !== toastContainer) {
       document.body.appendChild(toastContainer);
     }
   }

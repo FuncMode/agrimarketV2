@@ -92,7 +92,7 @@
   --z-modal: 1050;
   --z-popover: 1060;
   --z-tooltip: 1070;
-  --z-toast: 1200;
+  --z-toast: 99999;
 
   /* Container widths */
   --container-sm: 640px;

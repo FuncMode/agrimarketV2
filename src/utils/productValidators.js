@@ -51,8 +51,8 @@ const createProductValidation = [
 
   body('status')
     .optional()
-    .isIn(['active', 'paused', 'draft'])
-    .withMessage('Invalid status. Must be: active, paused, or draft'),
+    .isIn(['active', 'paused', 'draft', 'pending_approval', 'rejected_by_admin'])
+    .withMessage('Invalid status. Must be: active, paused, draft, pending_approval, or rejected_by_admin'),
 
   validate
 ];
@@ -107,8 +107,8 @@ const updateProductValidation = [
 
   body('status')
     .optional()
-    .isIn(['active', 'paused', 'draft'])
-    .withMessage('Invalid status. Must be: active, paused, or draft'),
+    .isIn(['active', 'paused', 'draft', 'pending_approval', 'rejected_by_admin'])
+    .withMessage('Invalid status. Must be: active, paused, draft, pending_approval, or rejected_by_admin'),
 
   validate
 ];
@@ -181,7 +181,7 @@ const productQueryValidation = [
 const myProductsQueryValidation = [
   query('status')
     .optional()
-    .isIn(['active', 'paused', 'draft', 'deleted'])
+    .isIn(['active', 'paused', 'draft', 'pending_approval', 'rejected_by_admin', 'deleted'])
     .withMessage('Invalid status'),
 
   query('category')

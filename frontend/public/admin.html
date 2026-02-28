@@ -20,53 +20,365 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" integrity="sha384-4LISF5TTJX/fLmGSxO53rV4miRxdg84mZsxmO8Rx5jGtp/LbrixFETvWa5a6sESd" crossorigin="anonymous">
   <link rel="stylesheet" href="/assets/css/main.css">
   <link rel="stylesheet" href="/assets/css/components.css">
+  <style>
+    :root {
+      --admin-bg-a: #f3f7f2;
+      --admin-bg-b: #edf4ef;
+      --admin-panel: #ffffff;
+      --admin-panel-soft: #f8fbf8;
+      --admin-border: #d7e5dc;
+      --admin-title: #173b2b;
+      --admin-muted: #5f6f66;
+      --admin-accent: #159364;
+      --admin-shadow: 0 10px 28px rgba(18, 57, 40, 0.08);
+    }
+
+    body.admin-dashboard {
+      background:
+        radial-gradient(1200px 480px at 10% -10%, #dff3e8 0%, transparent 60%),
+        radial-gradient(900px 420px at 90% 0%, #e7efe2 0%, transparent 62%),
+        linear-gradient(180deg, var(--admin-bg-a) 0%, var(--admin-bg-b) 100%);
+      color: #1f2937;
+    }
+
+    .admin-shell {
+      max-width: 1280px;
+    }
+
+    .admin-page-header {
+      background: linear-gradient(145deg, #f8fcfa 0%, #ffffff 65%);
+      border: 1px solid var(--admin-border);
+      border-radius: 18px;
+      padding: 1.1rem 1.25rem;
+      box-shadow: var(--admin-shadow);
+    }
+
+    .admin-page-overline {
+      color: var(--admin-accent);
+      letter-spacing: 0.09em;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.73rem;
+    }
+
+    .admin-section {
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid #dde9e1;
+      border-radius: 16px;
+      padding: 1rem;
+      box-shadow: 0 6px 18px rgba(15, 53, 35, 0.05);
+    }
+
+    .admin-section-title {
+      color: var(--admin-title);
+      font-size: clamp(1.25rem, 2vw, 1.85rem);
+      letter-spacing: -0.01em;
+      margin-bottom: 1rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .admin-section-title i {
+      color: var(--admin-accent);
+      font-size: 0.95em;
+    }
+
+    .admin-stat-card {
+      border: 1px solid var(--admin-border) !important;
+      border-radius: 14px !important;
+      background: linear-gradient(180deg, #ffffff 0%, var(--admin-panel-soft) 100%) !important;
+      box-shadow: 0 8px 20px rgba(17, 56, 38, 0.07) !important;
+    }
+
+    .admin-stat-label {
+      color: #62746a;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+    }
+
+    .admin-stat-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .admin-stat-value {
+      font-size: clamp(1.5rem, 2.5vw, 2rem);
+      font-weight: 800;
+      color: #102f22;
+      line-height: 1;
+    }
+
+    .admin-stat-icon {
+      color: #247853;
+      font-size: 1.15rem;
+      opacity: 0.8;
+      width: 1.4rem;
+      height: 1.4rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      flex: 0 0 1.4rem;
+    }
+
+    .admin-dashboard .form-control,
+    .admin-dashboard .form-select {
+      border-radius: 10px;
+      border: 1px solid #cad9d0;
+      background: #fff;
+    }
+
+    .admin-dashboard .form-control:focus,
+    .admin-dashboard .form-select:focus {
+      border-color: #8cc3a8;
+      box-shadow: 0 0 0 3px rgba(36, 120, 83, 0.15);
+    }
+
+    .admin-dashboard .table thead {
+      background: #eff6f1;
+    }
+
+    .admin-dashboard .table th {
+      color: #284637;
+      font-weight: 700;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      border-bottom: 1px solid #d6e3da;
+    }
+
+    .admin-dashboard .table td {
+      border-bottom: 1px solid #e2ebe5;
+    }
+
+    .admin-dashboard .badge {
+      border-radius: 999px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 0.32rem 0.7rem;
+    }
+
+    .admin-dashboard .btn {
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    /* Admin-only: remove hover top-line/underline effects on navbar links */
+    #main-navbar a,
+    #main-navbar .navbar-link,
+    #main-navbar .dropdown-item {
+      text-decoration: none !important;
+      border-top: none !important;
+      box-shadow: none !important;
+    }
+
+    #main-navbar a:hover,
+    #main-navbar a:focus,
+    #main-navbar a:active,
+    #main-navbar .navbar-link:hover,
+    #main-navbar .navbar-link:focus,
+    #main-navbar .navbar-link:active,
+    #main-navbar .dropdown-item:hover,
+    #main-navbar .dropdown-item:focus,
+    #main-navbar .dropdown-item:active {
+      text-decoration: none !important;
+      border-top: none !important;
+      box-shadow: none !important;
+    }
+
+    #main-navbar .navbar-link::before,
+    #main-navbar .navbar-link::after,
+    #main-navbar a::before,
+    #main-navbar a::after {
+      border-top: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Admin-only: remove card hover accent line and lift animation */
+    body.admin-dashboard .container .card::before {
+      content: none !important;
+      transform: none !important;
+      background: none !important;
+    }
+
+    body.admin-dashboard .container .card:hover,
+    body.admin-dashboard .container .card:focus,
+    body.admin-dashboard .container .card:active {
+      transform: none !important;
+      box-shadow: var(--admin-shadow) !important;
+    }
+
+    body.admin-dashboard .container .card {
+      border: 1px solid var(--admin-border);
+      border-radius: 14px;
+      box-shadow: var(--admin-shadow);
+      background: var(--admin-panel);
+    }
+
+    @media (max-width: 767.98px) {
+      .admin-shell {
+        padding-left: 0.65rem !important;
+        padding-right: 0.65rem !important;
+      }
+
+      .admin-page-header {
+        border-radius: 14px;
+        padding: 0.75rem 0.9rem;
+      }
+
+      .admin-page-overline {
+        font-size: 0.66rem;
+        letter-spacing: 0.07em;
+      }
+
+      .admin-section {
+        border-radius: 12px;
+        padding: 0.7rem;
+      }
+
+      .admin-section-title {
+        font-size: 1.08rem;
+        gap: 0.4rem;
+        margin-bottom: 0.7rem;
+      }
+
+      .admin-dashboard .card {
+        border-radius: 12px;
+      }
+
+      .admin-dashboard .card .card-body {
+        padding: 0.8rem;
+      }
+
+      .admin-stat-card .card-body {
+        padding: 0.85rem 0.9rem;
+      }
+
+      .admin-stat-label {
+        font-size: 0.7rem;
+        margin-bottom: 0.3rem;
+      }
+
+      .admin-stat-value {
+        font-size: 1.85rem;
+      }
+
+      .admin-action-row {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 0.5rem !important;
+      }
+
+      .admin-action-row .btn {
+        width: 100% !important;
+        justify-content: center;
+      }
+
+      [data-verification-id] .grid img,
+      [data-pending-product-id] .grid img {
+        height: 170px !important;
+      }
+
+      #logs .card-body > .flex.gap-4 {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .admin-stat-value {
+        font-size: 1.65rem;
+      }
+
+      .admin-dashboard .btn {
+        min-height: 42px;
+      }
+    }
+  </style>
   
     <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' fill='%2328a745'>🌾</text></svg>">
 </head>
-<body class="bg-light">
+<body class="bg-light admin-dashboard">
   
   <nav id="main-navbar" class="navbar"></nav>
   
-  <div class="container mx-auto px-4 py-4 sm:py-6 md:py-8">
+  <div class="container admin-shell mx-auto px-4 py-4 sm:py-6 md:py-8">
+    <header class="admin-page-header mb-6 sm:mb-8">
+      <p class="admin-page-overline">Administration</p>
+    </header>
     
     <!-- Dashboard Stats -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
-      <div class="card">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6 mb-6 sm:mb-8">
+      <div class="card admin-stat-card">
         <div class="card-body">
-          <p class="text-gray-600 text-xs sm:text-sm">Total Users</p>
-          <p id="stat-users" class="text-xl sm:text-2xl lg:text-3xl font-bold">0</p>
+          <p class="admin-stat-label">Total Users</p>
+          <div class="admin-stat-row">
+            <p id="stat-users" class="admin-stat-value">0</p>
+            <i class="bi bi-people admin-stat-icon"></i>
+          </div>
         </div>
       </div>
-      <div class="card">
+      <div class="card admin-stat-card">
         <div class="card-body">
-          <p class="text-gray-600 text-xs sm:text-sm">Pending Verifications</p>
-          <p id="stat-pending-verifications" class="text-xl sm:text-2xl lg:text-3xl font-bold text-warning">0</p>
+          <p class="admin-stat-label">Pending Verifications</p>
+          <div class="admin-stat-row">
+            <p id="stat-pending-verifications" class="admin-stat-value text-warning">0</p>
+            <i class="bi bi-hourglass-split admin-stat-icon"></i>
+          </div>
         </div>
       </div>
-      <div class="card">
+      <div class="card admin-stat-card">
         <div class="card-body">
-          <p class="text-gray-600 text-xs sm:text-sm">Open Issues</p>
-          <p id="stat-open-issues" class="text-xl sm:text-2xl lg:text-3xl font-bold text-danger">0</p>
+          <p class="admin-stat-label">Open Issues</p>
+          <div class="admin-stat-row">
+            <p id="stat-open-issues" class="admin-stat-value text-danger">0</p>
+            <i class="bi bi-flag admin-stat-icon"></i>
+          </div>
         </div>
       </div>
-      <div class="card">
+      <div class="card admin-stat-card">
         <div class="card-body">
-          <p class="text-gray-600 text-xs sm:text-sm">Total Products</p>
-          <p id="stat-products" class="text-xl sm:text-2xl lg:text-3xl font-bold">0</p>
+          <p class="admin-stat-label">Total Products</p>
+          <div class="admin-stat-row">
+            <p id="stat-products" class="admin-stat-value">0</p>
+            <i class="bi bi-basket admin-stat-icon"></i>
+          </div>
+        </div>
+      </div>
+      <div class="card admin-stat-card">
+        <div class="card-body">
+          <p class="admin-stat-label">Pending Product Listings</p>
+          <div class="admin-stat-row">
+            <p id="stat-pending-product-listings" class="admin-stat-value text-warning">0</p>
+            <i class="bi bi-list-check admin-stat-icon"></i>
+          </div>
         </div>
       </div>
     </div>
     
     <!-- Verifications Section -->
-    <section id="verifications" class="mb-8 sm:mb-12">
-      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Pending Verifications</h2>
+    <section id="verifications" class="admin-section mb-8 sm:mb-12">
+      <h2 class="admin-section-title"><i class="bi bi-person-badge"></i> Pending Verifications</h2>
       <div id="verifications-list"></div>
+    </section>
+
+    <!-- Product Listings Moderation Section -->
+    <section id="product-listings" class="admin-section mb-8 sm:mb-12">
+      <h2 class="admin-section-title"><i class="bi bi-bag-check"></i> Pending Product Listings</h2>
+      <div id="product-listings-list"></div>
     </section>
     
     <!-- Issues Section -->
-    <section id="issues" class="mb-8 sm:mb-12">
-      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Issues & Reports</h2>
+    <section id="issues" class="admin-section mb-8 sm:mb-12">
+      <h2 class="admin-section-title"><i class="bi bi-exclamation-triangle"></i> Issues & Reports</h2>
       <div class="card">
         <div class="card-body">
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 mb-4">
@@ -123,8 +435,8 @@
     </section>
     
     <!-- Users Section -->
-    <section id="users" class="mb-8 sm:mb-12">
-      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">User Management</h2>
+    <section id="users" class="admin-section mb-8 sm:mb-12">
+      <h2 class="admin-section-title"><i class="bi bi-people"></i> User Management</h2>
       <div class="card">
         <div class="card-body">
           <!-- Filters -->
@@ -184,8 +496,8 @@
     </section>
     
     <!-- System Monitoring Section -->
-    <section id="system-monitoring" class="mb-8 sm:mb-12">
-      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">System Monitoring</h2>
+    <section id="system-monitoring" class="admin-section mb-8 sm:mb-12">
+      <h2 class="admin-section-title"><i class="bi bi-activity"></i> System Monitoring</h2>
       
       <!-- Supabase Realtime -->
       <div class="card mb-6">
@@ -278,8 +590,8 @@
     </section>
     
     <!-- Logs Section -->
-    <section id="logs" class="mb-12">
-      <h2 class="text-3xl font-bold mb-6">System Logs</h2>
+    <section id="logs" class="admin-section mb-12">
+      <h2 class="admin-section-title"><i class="bi bi-journal-text"></i> System Logs</h2>
       <div class="card">
         <div class="card-body">
           <div class="flex gap-4 mb-4">
@@ -298,8 +610,8 @@
     </section>
 
     <!-- Transaction & Message Logs for Dispute Resolution -->
-    <section id="dispute-logs" class="mb-8 sm:mb-12">
-      <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Transaction & Message Logs</h2>
+    <section id="dispute-logs" class="admin-section mb-8 sm:mb-12">
+      <h2 class="admin-section-title"><i class="bi bi-receipt"></i> Transaction & Message Logs</h2>
       <p class="text-gray-600 mb-4">View order history and messages for dispute resolution</p>
       
       <!-- Orders Tab -->

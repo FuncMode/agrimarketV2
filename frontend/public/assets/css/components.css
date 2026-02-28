@@ -877,7 +877,7 @@ select.form-control:hover {
   position: fixed;
   top: calc(env(safe-area-inset-top) + 1rem);
   right: 1rem;
-  z-index: var(--z-toast, 1200);
+  z-index: var(--z-toast, 99999) !important;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;

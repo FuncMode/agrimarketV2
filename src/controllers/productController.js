@@ -7,6 +7,23 @@ const { supabase, supabaseService } = require('../config/database');
 const emailService = require('../services/emailService');
 
 const LOW_STOCK_THRESHOLD = 10;
+const LISTING_REVIEW_PENDING_STATUS = 'pending_approval';
+const LISTING_REVIEW_REJECTED_STATUS = 'rejected_by_admin';
+const LISTING_REVIEW_PENDING_FALLBACK_STATUS = 'draft';
+
+const isUnsupportedProductStatusError = (error = {}) => {
+  const text = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('invalid input value for enum') ||
+    text.includes('status') && (
+      text.includes('check constraint') ||
+      text.includes('products_status') ||
+      text.includes(LISTING_REVIEW_PENDING_STATUS) ||
+      text.includes(LISTING_REVIEW_REJECTED_STATUS)
+    )
+  );
+};
 
 const sendStockAlertsForInterestedBuyers = async (beforeProduct, afterProduct) => {
   const oldQuantity = Number(beforeProduct?.available_quantity);
@@ -103,8 +120,7 @@ exports.createProduct = asyncHandler(async (req, res, next) => {
     price_per_unit,
     unit_type,
     available_quantity,
-    tags,
-    status = 'active'
+    tags
   } = req.body;
 
   const { data: sellerProfile, error: profileError } = await supabase
@@ -145,7 +161,7 @@ exports.createProduct = asyncHandler(async (req, res, next) => {
     photoPath = photoUrls[0] || null;
   }
 
-  const { data: product, error } = await productModel.createProduct({
+  let { data: product, error } = await productModel.createProduct({
     seller_id: sellerProfile.id,
     name,
     description,
@@ -156,8 +172,28 @@ exports.createProduct = asyncHandler(async (req, res, next) => {
     municipality: sellerProfile.municipality,
     photo_path: photoPath,
     photos: photoUrls,
-    status
+    status: LISTING_REVIEW_PENDING_STATUS
   });
+
+  // Backward-compat: some databases may not have moderation statuses yet.
+  // If so, use draft as pending-review fallback so listing flow still works.
+  if (error && isUnsupportedProductStatusError(error)) {
+    const retryResult = await productModel.createProduct({
+      seller_id: sellerProfile.id,
+      name,
+      description,
+      category,
+      price_per_unit: parseFloat(price_per_unit),
+      unit_type,
+      available_quantity: parseInt(available_quantity),
+      municipality: sellerProfile.municipality,
+      photo_path: photoPath,
+      photos: photoUrls,
+      status: LISTING_REVIEW_PENDING_FALLBACK_STATUS
+    });
+    product = retryResult.data;
+    error = retryResult.error;
+  }
 
   if (error) {
     throw new AppError('Failed to create product.', 500);
@@ -175,7 +211,7 @@ exports.createProduct = asyncHandler(async (req, res, next) => {
 
   res.status(201).json({
     success: true,
-    message: 'Product created successfully!',
+    message: 'Product submitted for admin review. It will be listed once approved.',
     data: {
       product: completeProduct
     }
@@ -284,6 +320,10 @@ exports.getProductById = asyncHandler(async (req, res, next) => {
 exports.getMyProducts = asyncHandler(async (req, res, next) => {
   const userId = req.user.id;
   const { status, category, page = 1, limit = 20 } = req.query;
+  const requestedStatus = status ? String(status).toLowerCase() : undefined;
+  const dbStatusFilter = ['pending_approval', 'rejected_by_admin'].includes(requestedStatus)
+    ? 'draft'
+    : requestedStatus;
 
   const { data: sellerProfile, error: profileError } = await supabase
     .from('seller_profiles')
@@ -296,7 +336,7 @@ exports.getMyProducts = asyncHandler(async (req, res, next) => {
   }
 
   const filters = { 
-    status, 
+    status: dbStatusFilter, 
     category,
     page: parseInt(page),
     limit: Math.min(parseInt(limit), 100)
@@ -308,15 +348,74 @@ exports.getMyProducts = asyncHandler(async (req, res, next) => {
     throw new AppError('Failed to fetch products.', 500);
   }
 
+  let normalizedProducts = products || [];
+
+  if (normalizedProducts.length > 0) {
+    const productIds = normalizedProducts.map((product) => product.id).filter(Boolean);
+    const { data: moderationLogs } = await supabase
+      .from('admin_logs')
+      .select('reference_id, action_type, created_at')
+      .in('reference_id', productIds)
+      .in('action_type', ['PRODUCT_LISTING_REJECTED', 'PRODUCT_LISTING_APPROVED'])
+      .order('created_at', { ascending: false });
+
+    const latestRejectedAtByProductId = new Map();
+    const latestApprovedAtByProductId = new Map();
+    (moderationLogs || []).forEach((log) => {
+      const refId = log?.reference_id;
+      if (!refId) return;
+
+      if (log.action_type === 'PRODUCT_LISTING_REJECTED' && !latestRejectedAtByProductId.has(refId)) {
+        latestRejectedAtByProductId.set(refId, log.created_at);
+      }
+      if (log.action_type === 'PRODUCT_LISTING_APPROVED' && !latestApprovedAtByProductId.has(refId)) {
+        latestApprovedAtByProductId.set(refId, log.created_at);
+      }
+    });
+
+    normalizedProducts = normalizedProducts.map((product) => {
+      if (product?.status !== 'draft') return product;
+
+      const updatedAtMs = new Date(product.updated_at || product.created_at || 0).getTime();
+      const latestApprovedAt = latestApprovedAtByProductId.get(product.id);
+      const latestRejectedAt = latestRejectedAtByProductId.get(product.id);
+      const approvedAtMs = latestApprovedAt ? new Date(latestApprovedAt).getTime() : NaN;
+      const rejectedAtMs = latestRejectedAt ? new Date(latestRejectedAt).getTime() : NaN;
+
+      const hasApprovedLog = Number.isFinite(approvedAtMs);
+      const hasRejectedLog = Number.isFinite(rejectedAtMs);
+
+      if (hasRejectedLog && Number.isFinite(updatedAtMs) && updatedAtMs > rejectedAtMs) {
+        return { ...product, status: LISTING_REVIEW_PENDING_STATUS };
+      }
+
+      if (hasRejectedLog && (!hasApprovedLog || approvedAtMs <= rejectedAtMs)) {
+        return { ...product, status: LISTING_REVIEW_REJECTED_STATUS };
+      }
+
+      if (hasApprovedLog) {
+        return product;
+      }
+
+      return { ...product, status: LISTING_REVIEW_PENDING_STATUS };
+    });
+  }
+
+  if (requestedStatus) {
+    normalizedProducts = normalizedProducts.filter((product) => product.status === requestedStatus);
+  }
+
   res.status(200).json({
     success: true,
-    results: products.length,
-    total: count || products.length,
+    results: normalizedProducts.length,
+    total: requestedStatus ? normalizedProducts.length : (count || normalizedProducts.length),
     page: parseInt(page),
     limit: filters.limit,
-    total_pages: total_pages || 1,
+    total_pages: requestedStatus
+      ? (normalizedProducts.length ? Math.ceil(normalizedProducts.length / filters.limit) : 0)
+      : (total_pages || 1),
     data: {
-      products
+      products: normalizedProducts
     }
   });
 });
@@ -348,13 +447,32 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
   }
 
   const updates = {};
+  const currentStatus = String(currentProduct.status || '').toLowerCase();
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
   if (category !== undefined) updates.category = category;
   if (price_per_unit !== undefined) updates.price_per_unit = parseFloat(price_per_unit);
   if (unit_type !== undefined) updates.unit_type = unit_type;
   if (available_quantity !== undefined) updates.available_quantity = parseInt(available_quantity);
-  if (status !== undefined) updates.status = status;
+  if (status !== undefined) {
+    const requestedStatus = String(status).toLowerCase();
+    if (requestedStatus === LISTING_REVIEW_REJECTED_STATUS) {
+      throw new AppError('Rejected status can only be set by admin.', 403);
+    }
+
+    if (
+      requestedStatus === 'active' &&
+      [
+        LISTING_REVIEW_PENDING_STATUS,
+        LISTING_REVIEW_REJECTED_STATUS,
+        LISTING_REVIEW_PENDING_FALLBACK_STATUS
+      ].includes(currentStatus)
+    ) {
+      throw new AppError('This listing requires admin approval before it can be activated.', 403);
+    }
+
+    updates.status = requestedStatus;
+  }
   if (photo_path !== undefined) updates.photo_path = photo_path || null;
   if (photos !== undefined) {
     if (Array.isArray(photos)) {
@@ -422,7 +540,41 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
     }
   }
 
-  const { data: updatedProduct, error } = await productModel.updateProduct(productId, updates);
+  const listingFields = [
+    'name',
+    'description',
+    'category',
+    'price_per_unit',
+    'unit_type',
+    'available_quantity',
+    'photo_path',
+    'photos'
+  ];
+  const touchedListingFields = listingFields.some((field) => updates[field] !== undefined);
+  const isResubmittingRejectedListing =
+    currentStatus === LISTING_REVIEW_REJECTED_STATUS &&
+    touchedListingFields &&
+    updates.status === undefined;
+
+  if (isResubmittingRejectedListing) {
+    updates.status = LISTING_REVIEW_PENDING_STATUS;
+  }
+
+  let { data: updatedProduct, error } = await productModel.updateProduct(productId, updates);
+
+  if (
+    error &&
+    isUnsupportedProductStatusError(error) &&
+    updates.status === LISTING_REVIEW_PENDING_STATUS
+  ) {
+    const fallbackUpdates = {
+      ...updates,
+      status: LISTING_REVIEW_PENDING_FALLBACK_STATUS
+    };
+    const fallbackResult = await productModel.updateProduct(productId, fallbackUpdates);
+    updatedProduct = fallbackResult.data;
+    error = fallbackResult.error;
+  }
 
   if (error) {
     throw new AppError('Failed to update product.', 500);
@@ -444,7 +596,9 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    message: 'Product updated successfully!',
+    message: isResubmittingRejectedListing
+      ? 'Product updated and resubmitted for admin review.'
+      : 'Product updated successfully!',
     data: {
       product: completeProduct
     }

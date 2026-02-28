@@ -9,124 +9,321 @@ import { attachPasswordToggleHandler } from '../../utils/helpers.js';
 
 const showLoginModal = () => {
   const modalContent = `
-    <form id="login-form" class="space-y-6">
-      <!-- Header Section -->
-      <div class="text-center pb-4 border-b border-gray-100">
-        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-          <i class="bi bi-box-arrow-in-right text-2xl text-green-600"></i>
+    <form id="login-form" class="auth-ui auth-login space-y-5">
+      <section class="auth-head">
+        <div class="auth-head__icon">
+          <i class="bi bi-box-arrow-in-right"></i>
         </div>
-        <h3 class="text-lg font-semibold text-gray-900 mb-1">Welcome Back</h3>
-        <p class="text-sm text-gray-600">Sign in to your AgriMarket account</p>
-      </div>
+        <div>
+          <h3 class="auth-head__title">Welcome Back</h3>
+          <p class="auth-head__subtitle">Sign in to continue buying and selling on AgriMarket.</p>
+        </div>
+      </section>
 
-      <!-- Login Fields -->
-      <div class="space-y-4">
-        <div class="form-group">
-          <label class="form-label text-base font-medium text-gray-900">Email Address</label>
-          <div class="relative">
-            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <i class="bi bi-envelope text-gray-400"></i>
-            </div>
-            <input 
-              type="email" 
-              id="login-email" 
+      <section class="auth-section">
+        <div class="form-group auth-group">
+          <label class="form-label auth-label" for="login-email">Email Address</label>
+          <div class="auth-field-wrap">
+            <span class="auth-field-icon"><i class="bi bi-envelope"></i></span>
+            <input
+              type="email"
+              id="login-email"
               name="email"
-              class="form-control pl-10"
-              placeholder="your@email.com"
+              class="form-control auth-field"
+              placeholder="you@example.com"
               required
             >
           </div>
           <div class="invalid-feedback"></div>
         </div>
-        
-        <div class="form-group">
-          <label class="form-label text-base font-medium text-gray-900">Password</label>
-          <div class="relative">
-            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <i class="bi bi-lock text-gray-400"></i>
-            </div>
-            <input 
-              type="password" 
-              id="login-password" 
+
+        <div class="form-group auth-group">
+          <label class="form-label auth-label" for="login-password">Password</label>
+          <div class="auth-field-wrap">
+            <span class="auth-field-icon"><i class="bi bi-lock"></i></span>
+            <input
+              type="password"
+              id="login-password"
               name="password"
-              class="form-control pl-10 pr-12"
+              class="form-control auth-field auth-field--with-toggle"
               placeholder="Enter your password"
               required
-              style="padding-right: 2.5rem;"
             >
-            <button type="button" class="password-toggle" data-target="login-password">
+            <button type="button" class="password-toggle auth-pass-toggle" data-target="login-password" aria-label="Toggle password visibility">
               <i class="bi bi-eye"></i>
             </button>
           </div>
           <div class="invalid-feedback"></div>
         </div>
-      </div>
-      
-      <!-- Remember Me & Forgot Password -->
-      <div class="flex items-center justify-between py-2">
-        <div class="flex items-center space-x-2">
-          <input type="checkbox" id="remember-me" class="form-check-input text-green-600 focus:ring-green-500 border-gray-300 rounded">
-          <label for="remember-me" class="text-sm text-gray-700 cursor-pointer">
-            Remember me for 30 days
-          </label>
-        </div>
-        <a href="#" id="forgot-password" class="text-sm text-green-600 font-medium hover:text-green-700 transition-colors">
-          Forgot password?
-        </a>
-      </div>
-      
-      <!-- Submit Button -->
-      <button type="submit" class="btn btn-primary w-full py-3 text-lg font-medium bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 transform hover:scale-[1.02] transition-all duration-200 shadow-lg hover:shadow-xl">
-        <i class="bi bi-box-arrow-in-right mr-2"></i>
-        Sign In
+      </section>
+
+      <section class="auth-meta-row">
+        <label for="remember-me" class="auth-check-wrap">
+          <input type="checkbox" id="remember-me" class="form-check-input auth-check">
+          <span>Remember me for 30 days</span>
+        </label>
+        <a href="#" id="forgot-password" class="auth-link">Forgot password?</a>
+      </section>
+
+      <button type="submit" class="btn btn-primary w-full auth-submit">
+        <i class="bi bi-box-arrow-in-right"></i>
+        <span>Sign In</span>
       </button>
-      
-      <!-- Divider -->
-      <div class="relative flex items-center justify-center py-4">
-        <div class="absolute inset-0 flex items-center">
-          <div class="w-full border-t border-gray-200"></div>
-        </div>
-        <div class="relative px-4 bg-white">
-          <span class="text-xs text-gray-500 uppercase tracking-wide">New to AgriMarket?</span>
-        </div>
-      </div>
-      
-      <!-- Signup Link -->
-      <div class="text-center pt-2">
-        <p class="text-sm text-gray-600">
-          Don't have an account? 
-          <a href="#" id="switch-to-signup" class="text-green-600 font-semibold hover:text-green-700 transition-colors ml-1">
-            Create your account
-          </a>
-        </p>
-      </div>
+
+      <div class="auth-divider"><span>New to AgriMarket?</span></div>
+
+      <p class="auth-switch text-center">
+        Don't have an account?
+        <a href="#" id="switch-to-signup" class="auth-link auth-link-strong">Create your account</a>
+      </p>
     </form>
     
     <style>
-      .form-control:focus, .form-select:focus {
-        border-color: #16a34a !important;
-        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1) !important;
+      .auth-ui {
+        --auth-accent: #18794e;
+        --auth-accent-strong: #10613d;
+        --auth-border: #d9e6dc;
+        --auth-muted: #62716a;
+        --auth-ink: #123327;
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
       }
-      
-      .form-check-input:checked {
-        background-color: #16a34a !important;
-        border-color: #16a34a !important;
+
+      .auth-head {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        padding: 0.85rem 0.95rem;
+        border: 1px solid #d6e6db;
+        border-radius: 12px;
+        background: linear-gradient(145deg, #f2faf5, #ffffff);
       }
-      
-      .form-check-input:focus {
-        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1) !important;
+
+      .auth-head__icon {
+        width: 2.6rem;
+        height: 2.6rem;
+        border-radius: 0.8rem;
+        background: #def3e5;
+        color: var(--auth-accent);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
       }
-      
-      .form-control, .form-select {
-        transition: border-color 150ms ease, box-shadow 150ms ease !important;
+
+      .auth-head__title {
+        margin: 0;
+        color: var(--auth-ink);
+        font-weight: 800;
+        font-size: 1.08rem;
+        line-height: 1.2;
       }
-      
-      a:hover {
+
+      .auth-head__subtitle {
+        margin: 0.2rem 0 0;
+        color: var(--auth-muted);
+        font-size: 0.84rem;
+      }
+
+      .auth-section {
+        display: grid;
+        gap: 0.85rem;
+      }
+
+      .auth-group {
+        margin-bottom: 0;
+      }
+
+      .auth-label {
+        color: #213f32;
+        font-size: 0.85rem;
+        font-weight: 700;
+        margin-bottom: 0.4rem;
+      }
+
+      .auth-field-wrap {
+        position: relative;
+      }
+
+      .auth-field-icon {
+        position: absolute;
+        left: 0.78rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6d8176;
+        pointer-events: none;
+      }
+
+      .auth-field {
+        padding-left: 2.25rem !important;
+        min-height: 46px;
+        border: 1px solid var(--auth-border) !important;
+        border-radius: 11px !important;
+        background: #fdfefd;
+      }
+
+      .auth-field--with-toggle {
+        padding-right: 2.6rem !important;
+      }
+
+      .auth-field:focus {
+        border-color: var(--auth-accent) !important;
+        box-shadow: 0 0 0 3px rgba(24, 121, 78, 0.14) !important;
+        background: #fff;
+      }
+
+      .auth-field:hover {
+        border-color: #9ec9af !important;
+        box-shadow: none !important;
+      }
+
+      .auth-pass-toggle {
+        position: absolute;
+        right: 0.5rem;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 2rem !important;
+        height: 2rem !important;
+        border: 0 !important;
+        background: transparent !important;
+        color: #6f7c76;
+        border-radius: 8px !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .auth-pass-toggle:hover {
+        background: #edf4ef !important;
+        color: var(--auth-accent-strong);
+      }
+
+      .auth-meta-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.65rem;
+      }
+
+      .auth-check-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #4b5e55;
+        font-size: 0.82rem;
+        cursor: pointer;
+      }
+
+      .auth-check {
+        width: 1rem;
+        height: 1rem;
+        min-width: 1rem !important;
+        min-height: 1rem !important;
+        border-radius: 4px !important;
+        margin: 0 !important;
+        flex: 0 0 1rem;
+      }
+
+      .auth-check:checked {
+        background-color: var(--auth-accent) !important;
+        border-color: var(--auth-accent) !important;
+      }
+
+      .auth-check:focus {
+        box-shadow: 0 0 0 3px rgba(24, 121, 78, 0.14) !important;
+      }
+
+      .auth-link {
+        color: var(--auth-accent);
+        font-weight: 600;
+        font-size: 0.83rem;
+        text-decoration: none;
+      }
+
+      .auth-link:hover {
+        color: var(--auth-accent-strong);
         text-decoration: none !important;
       }
-      
-      .btn:active {
-        transform: scale(0.98) !important;
+
+      .auth-submit {
+        min-height: 48px;
+        border-radius: 12px !important;
+        font-size: 0.97rem;
+        font-weight: 700;
+        background: linear-gradient(90deg, #16784d, #1f9a63) !important;
+        border: none !important;
+        box-shadow: 0 12px 22px rgba(20, 104, 67, 0.22) !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.48rem;
+      }
+
+      .auth-submit:hover {
+        background: linear-gradient(90deg, #116740, #1a8556) !important;
+        transform: translateY(-1px);
+      }
+
+      .auth-divider {
+        position: relative;
+        text-align: center;
+      }
+
+      .auth-divider::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        border-top: 1px solid #d9e6dc;
+      }
+
+      .auth-divider span {
+        position: relative;
+        background: #fff;
+        padding: 0 0.55rem;
+        color: #7a8a82;
+        font-size: 0.74rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .auth-switch {
+        margin: 0;
+        color: #55675f;
+        font-size: 0.87rem;
+      }
+
+      .auth-link-strong {
+        margin-left: 0.3rem;
+      }
+
+      @media (max-width: 767.98px) {
+        .auth-head {
+          padding: 0.75rem 0.8rem;
+        }
+
+        .auth-head__title {
+          font-size: 1rem;
+        }
+
+        .auth-head__subtitle {
+          font-size: 0.8rem;
+        }
+
+        .auth-meta-row {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .auth-link {
+          font-size: 0.82rem;
+        }
+
+        .auth-submit {
+          min-height: 46px;
+          font-size: 0.92rem;
+        }
       }
     </style>
   `;
