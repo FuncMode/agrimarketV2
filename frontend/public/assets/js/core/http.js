@@ -1,8 +1,16 @@
 // assets/js/core/http.js
 // HTTP Wrapper - Fetch with Auto-JWT, Error Normalization
 
-import { getToken } from './auth.js';
+import { getToken, logout, redirectToLogin } from './auth.js';
 import { buildUrl } from '../config/api.js';
+
+let isHandlingUnauthorized = false;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('auth:login', () => {
+    isHandlingUnauthorized = false;
+  });
+}
 
 // ============ HTTP Client ============
 
@@ -36,6 +44,17 @@ class HttpClient {
       status: error.status || 500
     };
   }
+
+  handleUnauthorized(includeAuth = true) {
+    if (!includeAuth || isHandlingUnauthorized) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    isHandlingUnauthorized = true;
+    logout();
+    redirectToLogin(window.location.pathname);
+  }
   
   // Generic request method
   async request(url, options = {}) {
@@ -66,9 +85,18 @@ class HttpClient {
     
     try {
       const response = await fetch(fullUrl, config);
-      const data = await response.json();
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        data = {};
+      }
       
       if (!response.ok) {
+        if (response.status === 401) {
+          this.handleUnauthorized(includeAuth);
+        }
+
         throw {
           message: data.message || 'Request failed',
           errors: data.errors || null,

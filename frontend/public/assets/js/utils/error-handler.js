@@ -1,6 +1,7 @@
 // Centralized error handling
 
 import { showToast } from '../components/toast.js';
+import { logout, redirectToLogin } from '../core/auth.js';
 
 export const handleError = (error, context = '') => {
   console.error(`Error ${context}:`, error);
@@ -28,12 +29,8 @@ export const handleError = (error, context = '') => {
 export const handleAPIError = (error) => {
   if (error.status === 401) {
     showToast('Session expired. Please login again.', 'error');
-    // Redirect to login after a delay
-    setTimeout(() => {
-      import('./core/auth.js').then(({ redirectToLogin }) => {
-        redirectToLogin();
-      });
-    }, 2000);
+    logout();
+    setTimeout(() => redirectToLogin(window.location.pathname), 600);
     return;
   }
   

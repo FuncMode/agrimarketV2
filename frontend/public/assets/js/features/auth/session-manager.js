@@ -13,13 +13,11 @@ import { showToast } from '../../components/toast.js';
 // Configuration
 const SESSION_CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
 const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes of inactivity
-const TOKEN_REFRESH_BEFORE = 10 * 60 * 1000; // Refresh 10 minutes before expiry
 
 // State
 let sessionCheckTimer = null;
 let inactivityTimer = null;
 let lastActivityTime = Date.now();
-let isRefreshing = false;
 
 // ============ Session Monitoring ============
 
@@ -68,17 +66,6 @@ const checkSession = async () => {
   // Check if token is expired
   if (isTokenExpired(token)) {
     handleSessionExpired();
-    return;
-  }
-  
-  // Check if token needs refresh
-  const decoded = decodeToken(token);
-  if (decoded && decoded.exp) {
-    const expiresIn = (decoded.exp * 1000) - Date.now();
-    
-    if (expiresIn < TOKEN_REFRESH_BEFORE && !isRefreshing) {
-      await attemptTokenRefresh();
-    }
   }
 };
 
@@ -89,35 +76,6 @@ const handleSessionExpired = () => {
   setTimeout(() => {
     redirectToLogin(window.location.pathname);
   }, 2000);
-};
-
-// ============ Token Refresh ============
-
-const attemptTokenRefresh = async () => {
-  if (isRefreshing) return;
-  
-  isRefreshing = true;
-  
-  try {
-    // Import auth service
-    const { post } = await import('../../core/http.js');
-    const { ENDPOINTS } = await import('../../config/api.js');
-    
-    // Call refresh endpoint
-    const response = await post(ENDPOINTS.AUTH.REFRESH_TOKEN || '/auth/refresh');
-    
-    if (response.success && response.data?.token) {
-      const { setToken } = await import('../../core/auth.js');
-      setToken(response.data.token);
-      
-
-    }
-  } catch (error) {
-    console.error('Failed to refresh token:', error);
-    // Don't force logout on refresh failure - let natural expiry handle it
-  } finally {
-    isRefreshing = false;
-  }
 };
 
 // ============ Inactivity Monitoring ============
