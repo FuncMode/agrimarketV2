@@ -1,4 +1,5 @@
 // assets/js/pages/admin.main.js
+import '../config/tile-cache.js';
 // Admin Dashboard Main Script
 
 import { renderNavbar } from '../components/navbar.js';
@@ -70,6 +71,7 @@ const init = async () => {
   
   // Initialize components
   renderNavbar();
+  initCollapsibleSections();
   
   // Initialize real-time connection
   try {
@@ -94,6 +96,42 @@ const init = async () => {
   attachEventListeners();
   
 
+};
+
+const initCollapsibleSections = () => {
+  const bindToggle = (buttonId, contentId) => {
+    const button = document.getElementById(buttonId);
+    const content = document.getElementById(contentId);
+    if (!button || !content) return;
+
+    const icon = button.querySelector('i');
+    const label = button.querySelector('span');
+
+    const setState = (isExpanded) => {
+      button.setAttribute('aria-expanded', String(isExpanded));
+      content.classList.toggle('hidden', !isExpanded);
+      if (icon) {
+        icon.className = isExpanded ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
+      }
+      if (label) {
+        label.textContent = isExpanded ? 'Collapse' : 'Expand';
+      }
+    };
+
+    setState(true);
+
+    const toggleHandler = () => {
+      const isExpanded = button.getAttribute('aria-expanded') === 'true';
+      setState(!isExpanded);
+    };
+
+    button.addEventListener('click', toggleHandler);
+    eventListeners.push({ element: button, event: 'click', handler: toggleHandler });
+  };
+
+  bindToggle('toggle-verifications-section', 'verifications-content');
+  bindToggle('toggle-product-listings-section', 'product-listings-content');
+  bindToggle('toggle-users-section', 'users-content');
 };
 
 // ============ Dashboard Stats ============
@@ -186,7 +224,7 @@ const createVerificationCard = (verification) => {
             <p class="text-sm font-semibold mb-2">ID Document</p>
             <img src="${verification.id_photo_url || placeholderSvg}" 
                  alt="ID Document" 
-                 class="w-full h-48 object-cover rounded cursor-pointer"
+                 class="w-full h-32 object-cover rounded cursor-pointer"
                  crossorigin="anonymous"
                  onclick="window.viewImage('${verification.id_photo_url}')"
                  style="${!verification.id_photo_url ? 'opacity: 0.5; cursor: not-allowed;' : ''}">
@@ -195,7 +233,7 @@ const createVerificationCard = (verification) => {
             <p class="text-sm font-semibold mb-2">Selfie with ID</p>
             <img src="${verification.selfie_url || placeholderSvg}" 
                  alt="Selfie" 
-                 class="w-full h-48 object-cover rounded cursor-pointer"
+                 class="w-full h-32 object-cover rounded cursor-pointer"
                  crossorigin="anonymous"
                  onclick="window.viewImage('${verification.selfie_url}')"
                  style="${!verification.selfie_url ? 'opacity: 0.5; cursor: not-allowed;' : ''}">
@@ -402,6 +440,9 @@ const createPendingProductCard = (product) => {
   const sellerEmail = product.seller_email || product?.seller?.user?.email || 'No email';
   const quantity = Number(product.available_quantity) || 0;
   const photoUrl = product.photo_path || product?.photos?.[0] || '';
+  const stockStatus = quantity > 0 ? 'In stock' : 'Out of stock';
+  const stockBadgeClass = quantity > 0 ? 'badge-success' : 'badge-danger';
+  const municipality = product.municipality || product?.seller?.municipality || 'N/A';
 
   return `
     <div class="card mb-4" data-pending-product-id="${escapeHtml(product.id)}">
@@ -415,32 +456,70 @@ const createPendingProductCard = (product) => {
           <span class="badge badge-warning">PENDING REVIEW</span>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            ${photoUrl ? `
-              <img src="${escapeHtml(photoUrl)}" alt="${escapeHtml(product.name || 'Product')}" class="w-full h-48 object-cover rounded border">
-            ` : `
-              <div class="w-full h-48 rounded border bg-gray-100 flex items-center justify-center text-gray-500 text-sm">
-                No product image
-              </div>
-            `}
+        <div class="overflow-x-auto">
+          <div class="hidden lg:grid grid-cols-[2.3fr_1.1fr_1.1fr_0.8fr_1fr_1.2fr_1.6fr] gap-4 text-sm font-semibold text-gray-700 mb-2 px-1">
+            <div>Product</div>
+            <div>Category</div>
+            <div>Price</div>
+            <div>Stock</div>
+            <div>Stock Status</div>
+            <div>Listing Status</div>
+            <div>Actions</div>
           </div>
-          <div class="space-y-1 text-sm">
-            <p><strong>Category:</strong> ${escapeHtml(product.category || 'N/A')}</p>
-            <p><strong>Price:</strong> ${formatCurrency(product.price_per_unit || 0)} / ${escapeHtml(product.unit_type || 'unit')}</p>
-            <p><strong>Available Qty:</strong> ${quantity}</p>
-            <p><strong>Municipality:</strong> ${escapeHtml(product.municipality || product?.seller?.municipality || 'N/A')}</p>
-            <p><strong>Description:</strong> ${escapeHtml(product.description || 'No description')}</p>
-          </div>
-        </div>
 
-        <div class="admin-action-row flex gap-2">
-          <button class="btn btn-sm btn-success" onclick="window.approvePendingProductListing('${product.id}')">
-            <i class="bi bi-check-circle"></i> Approve Listing
-          </button>
-          <button class="btn btn-sm btn-danger" onclick="window.rejectPendingProductListing('${product.id}')">
-            <i class="bi bi-x-circle"></i> Reject Listing
-          </button>
+          <div class="grid grid-cols-1 lg:grid-cols-[2.3fr_1.1fr_1.1fr_0.8fr_1fr_1.2fr_1.6fr] gap-4 items-center border rounded-lg p-3 bg-gray-50 mb-4">
+            <div class="flex items-center gap-3 min-w-0">
+              ${photoUrl ? `
+                <img src="${escapeHtml(photoUrl)}" alt="${escapeHtml(product.name || 'Product')}" class="w-14 h-14 object-cover rounded border shrink-0">
+              ` : `
+                <div class="w-14 h-14 rounded border bg-gray-100 flex items-center justify-center text-gray-500 text-xs shrink-0">
+                  No Img
+                </div>
+              `}
+              <div class="min-w-0">
+                <p class="font-semibold text-base leading-tight break-words">${escapeHtml(product.name || 'Unnamed Product')}</p>
+                <p class="text-sm text-gray-600 leading-tight break-words">${escapeHtml(sellerName)}</p>
+                <p class="text-sm text-gray-600 leading-tight break-words">${escapeHtml(municipality)}</p>
+              </div>
+            </div>
+
+            <div class="text-sm">
+              <p class="text-xs uppercase tracking-wide text-gray-500 lg:hidden mb-1">Category</p>
+              <p>${escapeHtml(product.category || 'N/A')}</p>
+            </div>
+
+            <div class="text-sm">
+              <p class="text-xs uppercase tracking-wide text-gray-500 lg:hidden mb-1">Price</p>
+              <p class="font-semibold">${formatCurrency(product.price_per_unit || 0)} / ${escapeHtml(product.unit_type || 'unit')}</p>
+            </div>
+
+            <div class="text-sm">
+              <p class="text-xs uppercase tracking-wide text-gray-500 lg:hidden mb-1">Stock</p>
+              <p class="font-semibold">${quantity}</p>
+            </div>
+
+            <div class="text-sm">
+              <p class="text-xs uppercase tracking-wide text-gray-500 lg:hidden mb-1">Stock Status</p>
+              <span class="badge ${stockBadgeClass}">${stockStatus}</span>
+            </div>
+
+            <div class="text-sm">
+              <p class="text-xs uppercase tracking-wide text-gray-500 lg:hidden mb-1">Listing Status</p>
+              <span class="badge badge-warning">Pending Approval</span>
+            </div>
+
+            <div class="text-sm">
+              <p class="text-xs uppercase tracking-wide text-gray-500 lg:hidden mb-1">Actions</p>
+              <div class="admin-action-row flex flex-wrap gap-2">
+                <button class="btn btn-sm btn-success" onclick="window.approvePendingProductListing('${product.id}')">
+                  <i class="bi bi-check-circle"></i> Approve
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="window.rejectPendingProductListing('${product.id}')">
+                  <i class="bi bi-x-circle"></i> Reject
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

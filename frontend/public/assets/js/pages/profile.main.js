@@ -1,3 +1,4 @@
+import '../config/tile-cache.js';
 import { renderNavbar, updateCartCount, updateOrdersCount } from '../components/navbar.js';
 import { createToast } from '../components/toast.js';
 import { showPageLoader, hidePageLoader } from '../components/loading-spinner.js';

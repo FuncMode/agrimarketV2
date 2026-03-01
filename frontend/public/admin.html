@@ -366,14 +366,42 @@
     
     <!-- Verifications Section -->
     <section id="verifications" class="admin-section mb-8 sm:mb-12">
-      <h2 class="admin-section-title"><i class="bi bi-person-badge"></i> Pending Verifications</h2>
-      <div id="verifications-list"></div>
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <h2 class="admin-section-title mb-0"><i class="bi bi-person-badge"></i> Pending Verifications</h2>
+        <button
+          id="toggle-verifications-section"
+          class="btn btn-sm btn-outline"
+          type="button"
+          aria-expanded="true"
+          aria-controls="verifications-content"
+        >
+          <i class="bi bi-chevron-up"></i>
+          <span>Collapse</span>
+        </button>
+      </div>
+      <div id="verifications-content">
+        <div id="verifications-list"></div>
+      </div>
     </section>
 
     <!-- Product Listings Moderation Section -->
     <section id="product-listings" class="admin-section mb-8 sm:mb-12">
-      <h2 class="admin-section-title"><i class="bi bi-bag-check"></i> Pending Product Listings</h2>
-      <div id="product-listings-list"></div>
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <h2 class="admin-section-title mb-0"><i class="bi bi-bag-check"></i> Pending Product Listings</h2>
+        <button
+          id="toggle-product-listings-section"
+          class="btn btn-sm btn-outline"
+          type="button"
+          aria-expanded="true"
+          aria-controls="product-listings-content"
+        >
+          <i class="bi bi-chevron-up"></i>
+          <span>Collapse</span>
+        </button>
+      </div>
+      <div id="product-listings-content">
+        <div id="product-listings-list"></div>
+      </div>
     </section>
     
     <!-- Issues Section -->
@@ -436,9 +464,22 @@
     
     <!-- Users Section -->
     <section id="users" class="admin-section mb-8 sm:mb-12">
-      <h2 class="admin-section-title"><i class="bi bi-people"></i> User Management</h2>
-      <div class="card">
-        <div class="card-body">
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <h2 class="admin-section-title mb-0"><i class="bi bi-people"></i> User Management</h2>
+        <button
+          id="toggle-users-section"
+          class="btn btn-sm btn-outline"
+          type="button"
+          aria-expanded="true"
+          aria-controls="users-content"
+        >
+          <i class="bi bi-chevron-up"></i>
+          <span>Collapse</span>
+        </button>
+      </div>
+      <div id="users-content">
+        <div class="card">
+          <div class="card-body">
           <!-- Filters -->
           <div class="flex flex-wrap gap-4 mb-6">
             <select id="filter-role" class="form-select flex-1 min-w-[150px]">
@@ -490,7 +531,8 @@
           </div>
           
           <!-- Pagination -->
-          <div id="users-pagination" class="flex justify-center gap-2 mt-6"></div>
+            <div id="users-pagination" class="flex justify-center gap-2 mt-6"></div>
+          </div>
         </div>
       </div>
     </section>

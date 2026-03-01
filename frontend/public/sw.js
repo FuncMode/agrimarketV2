@@ -1,17 +1,41 @@
-const CACHE_NAME = 'agrimarket-tiles-v3';
+const TILE_CACHE_NAME = 'agrimarket-tiles-v4';
+const STATIC_CACHE_NAME = 'agrimarket-static-v1';
+const PAGE_CACHE_NAME = 'agrimarket-pages-v1';
 const TILE_CACHE_EXPIRE = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+const PRECACHE_ASSETS = [
+  '/',
+  '/index.html',
+  '/assets/css/main.css',
+  '/assets/css/components.css',
+  '/assets/css/utilities.css',
+  '/assets/images/logo.png',
+  '/assets/images/agriculture.webp',
+  '/assets/js/config/env-loader.js'
+];
+
+const isSameOrigin = (url) => url.origin === self.location.origin;
+const isApiRequest = (url) => url.pathname.startsWith('/api/');
+const isStaticAsset = (url) => (
+  /\.(?:js|css|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|eot|mp3|wav)$/i.test(url.pathname) ||
+  url.pathname.startsWith('/assets/')
+);
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME));
+  event.waitUntil((async () => {
+    const cache = await caches.open(STATIC_CACHE_NAME);
+    await cache.addAll(PRECACHE_ASSETS);
+  })());
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
+      const allowed = new Set([TILE_CACHE_NAME, STATIC_CACHE_NAME, PAGE_CACHE_NAME]);
       return Promise.all(
         cacheNames
-          .filter((cacheName) => cacheName !== CACHE_NAME)
+          .filter((cacheName) => !allowed.has(cacheName))
           .map((cacheName) => caches.delete(cacheName))
       );
     })
@@ -21,6 +45,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  if (request.method !== 'GET') return;
   
   try {
     const url = new URL(request.url);
@@ -28,13 +53,24 @@ self.addEventListener('fetch', (event) => {
     // Only handle OpenStreetMap tile requests
     if (url.hostname.match(/tile\.openstreetmap\.org/)) {
       event.respondWith(handleTileRequest(request));
+      return;
     }
-    // Let all other requests (including API) pass through to network
-    // Don't intercept them
+
+    if (!isSameOrigin(url) || isApiRequest(url)) {
+      return;
+    }
+
+    if (request.mode === 'navigate') {
+      event.respondWith(handlePageRequest(request));
+      return;
+    }
+
+    if (isStaticAsset(url)) {
+      event.respondWith(handleStaticRequest(request));
+      return;
+    }
   } catch (error) {
     console.error('Service worker fetch handler error:', error);
-    // Re-throw to let browser handle it
-    throw error;
   }
 });
 
@@ -71,7 +107,7 @@ async function handleTileRequest(request) {
 
       // Keep original response intact for opaque/cross-origin safety.
       if (responseToCache.type === 'opaque') {
-        caches.open(CACHE_NAME).then((cache) => {
+        caches.open(TILE_CACHE_NAME).then((cache) => {
           cache.put(request, responseToCache).catch(() => {});
         });
       } else {
@@ -81,7 +117,7 @@ async function handleTileRequest(request) {
           headers: new Headers(responseToCache.headers)
         });
         cacheResponse.headers.set('sw-cache-date', Date.now().toString());
-        caches.open(CACHE_NAME).then((cache) => {
+        caches.open(TILE_CACHE_NAME).then((cache) => {
           cache.put(request, cacheResponse).catch(() => {});
         });
       }
@@ -113,5 +149,45 @@ async function handleTileRequest(request) {
         headers: { 'Content-Type': 'image/png' }
       }
     );
+  }
+}
+
+async function handleStaticRequest(request) {
+  const cache = await caches.open(STATIC_CACHE_NAME);
+  const cached = await cache.match(request);
+  if (cached) {
+    fetch(request)
+      .then((response) => {
+        if (response && response.ok) {
+          cache.put(request, response.clone()).catch(() => {});
+        }
+      })
+      .catch(() => {});
+    return cached;
+  }
+
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      cache.put(request, response.clone()).catch(() => {});
+    }
+    return response;
+  } catch (error) {
+    return cached || Response.error();
+  }
+}
+
+async function handlePageRequest(request) {
+  const cache = await caches.open(PAGE_CACHE_NAME);
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      cache.put(request, response.clone()).catch(() => {});
+    }
+    return response;
+  } catch (error) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    return cache.match('/index.html');
   }
 }

@@ -3,6 +3,7 @@
 // Verification Page Script
 // ========================================
 
+import '../config/tile-cache.js';
 import { renderNavbar } from '../components/navbar.js';
 import { showToast, showError, showSuccess } from '../components/toast.js';
 import { requireAuth, getRole } from '../core/auth.js';

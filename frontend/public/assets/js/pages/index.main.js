@@ -1,4 +1,5 @@
 // assets/js/pages/index.main.js
+import '../config/tile-cache.js';
 // Main JavaScript for Landing/Guest Browsing Page
 
 import { renderNavbar, updateCartCount, updateOrdersCount } from '../components/navbar.js';

@@ -1,11 +1,11 @@
 // assets/js/pages/seller.main.js
+import '../config/tile-cache.js';
 // Seller Dashboard Main Script
 
 import { renderNavbar, updateOrdersCount, updateMessagesCount } from '../components/navbar.js';
 import { showToast, showError, showSuccess, showWarning } from '../components/toast.js';
 import { showSpinner, hideSpinner } from '../components/loading-spinner.js';
 import { createModal } from '../components/modal.js';
-import { openIssueModal } from '../components/issue-modal.js';
 import { requireAuth, requireVerification, getUser, getToken, getUserId } from '../core/auth.js';
 import { formatCurrency, formatDate, formatRelativeTime } from '../utils/formatters.js';
 import { ENDPOINTS, buildUrl } from '../config/api.js';
@@ -31,17 +31,84 @@ import {
 } from '../services/message.service.js';
 import { getMyIssues, getIssue } from '../services/issue.service.js';
 import { PRODUCT_CATEGORIES, UNIT_TYPES, RIZAL_MUNICIPALITIES } from '../utils/constants.js';
-import {
-  initOnlineStatus,
-  createStatusBadge,
-  isUserOnline,
-  onStatusChange,
-  setInitialOnlineUsers,
-  cleanup as cleanupOnlineStatus
-} from '../features/real-time/online-status.js';
-import { initLiveUpdates, onUpdate } from '../features/real-time/live-updates.js';
 import { getDeliveryProofUrl, getIssueEvidenceUrl, getMessageAttachmentUrl } from '../utils/image-helpers.js';
-import { initNotificationSounds, playMessageSound } from '../features/notifications/notification-sound.js';
+
+let notificationSoundModulePromise = null;
+const loadNotificationSoundModule = () => {
+  if (!notificationSoundModulePromise) {
+    notificationSoundModulePromise = import('../features/notifications/notification-sound.js');
+  }
+  return notificationSoundModulePromise;
+};
+
+const initNotificationSoundsLazy = async () => {
+  const mod = await loadNotificationSoundModule();
+  if (typeof mod.initNotificationSounds === 'function') {
+    mod.initNotificationSounds();
+  }
+};
+
+const playMessageSoundLazy = async () => {
+  const mod = await loadNotificationSoundModule();
+  if (typeof mod.playMessageSound === 'function') {
+    await mod.playMessageSound();
+  }
+};
+
+let onlineStatusModulePromise = null;
+const loadOnlineStatusModule = () => {
+  if (!onlineStatusModulePromise) {
+    onlineStatusModulePromise = import('../features/real-time/online-status.js');
+  }
+  return onlineStatusModulePromise;
+};
+
+const createFallbackStatusBadge = (userId) => {
+  const badge = document.createElement('span');
+  badge.className = 'status-badge inline-flex items-center gap-2 px-2 py-1 rounded text-sm';
+  badge.dataset.userId = userId;
+  badge.style.cssText = 'background-color:#f8f9fa;color:#6c757d;';
+  badge.innerHTML = '<i class="bi bi-circle-fill" style="font-size:0.5rem;"></i><span>Offline</span>';
+  return badge;
+};
+
+let onlineStatusApi = {
+  initOnlineStatus: () => {},
+  createStatusBadge: (userId) => createFallbackStatusBadge(userId),
+  setInitialOnlineUsers: () => {}
+};
+
+const hydrateOnlineStatusApi = async () => {
+  const mod = await loadOnlineStatusModule();
+  onlineStatusApi = {
+    initOnlineStatus: mod.initOnlineStatus || (() => {}),
+    createStatusBadge: mod.createStatusBadge || ((userId) => createFallbackStatusBadge(userId)),
+    setInitialOnlineUsers: mod.setInitialOnlineUsers || (() => {})
+  };
+  return onlineStatusApi;
+};
+
+let liveUpdatesModulePromise = null;
+const loadLiveUpdatesModule = () => {
+  if (!liveUpdatesModulePromise) {
+    liveUpdatesModulePromise = import('../features/real-time/live-updates.js');
+  }
+  return liveUpdatesModulePromise;
+};
+
+let liveUpdatesApi = {
+  initLiveUpdates: () => {},
+  onUpdate: () => () => {}
+};
+
+const hydrateLiveUpdatesApi = async () => {
+  const mod = await loadLiveUpdatesModule();
+  liveUpdatesApi = {
+    initLiveUpdates: mod.initLiveUpdates || (() => {}),
+    onUpdate: mod.onUpdate || (() => () => {})
+  };
+  return liveUpdatesApi;
+};
 
 // ============ State ============
 
@@ -244,8 +311,8 @@ const init = async () => {
   // Setup navigation first - this allows hash-based routing to work immediately
   setupNavigation();
   
-  // Initialize notification sounds
-  initNotificationSounds();
+  // Initialize notification sounds (lazy-loaded)
+  initNotificationSoundsLazy().catch(() => {});
   
   // Initialize real-time features (socket) BEFORE rendering navbar
   initializeRealTime();
@@ -2313,8 +2380,14 @@ window.completeOrder = async (orderId) => {
 };
 
 // Report issue for completed order
-window.reportOrderIssue = (orderId, orderNumber) => {
-  openIssueModal(orderId, orderNumber);
+window.reportOrderIssue = async (orderId, orderNumber) => {
+  try {
+    const { openIssueModal } = await import('../components/issue-modal.js');
+    openIssueModal(orderId, orderNumber);
+  } catch (error) {
+    console.error('Error loading issue modal:', error);
+    showError('Failed to open issue form');
+  }
 };
 
 // ============ My Issues Management ============
@@ -4529,7 +4602,7 @@ const updateOnlineStatusDisplay = () => {
   const headerStatus = document.getElementById('chat-status');
   if (headerStatus && headerStatus.dataset.userId) {
     const userId = headerStatus.dataset.userId;
-    const statusBadge = createStatusBadge(userId, 'User');
+    const statusBadge = onlineStatusApi.createStatusBadge(userId, 'User');
     headerStatus.innerHTML = '';
     headerStatus.appendChild(statusBadge);
   }
@@ -4735,7 +4808,7 @@ const renderConversationsList = (container) => {
     document.querySelectorAll('.status-badge-container').forEach(container => {
       const userId = container.dataset.userId;
       if (userId) {
-        const badge = createStatusBadge(userId);
+        const badge = onlineStatusApi.createStatusBadge(userId);
         container.innerHTML = '';
         container.appendChild(badge);
       } else {
@@ -5558,13 +5631,14 @@ const initializeRealTime = async () => {
     const socket = initSocket();
     
     // NOW initialize the online-status module (socket exists now)
-    initOnlineStatus();
+    await Promise.all([hydrateOnlineStatusApi(), hydrateLiveUpdatesApi()]);
+    onlineStatusApi.initOnlineStatus();
     
     // Initialize live order updates
-    initLiveUpdates();
+    liveUpdatesApi.initLiveUpdates();
     
     // Register callback to reload orders on real-time updates
-    onUpdate((data) => {
+    liveUpdatesApi.onUpdate((data) => {
       if (typeof loadOrders === 'function') {
         loadOrders();
       }
@@ -5586,7 +5660,7 @@ const initializeRealTime = async () => {
         lastMessageToastOrderKey = normalizedKey;
         lastMessageToastAt = now;
         showToast('New message received', 'info', 5000, false);
-        playMessageSound();
+        playMessageSoundLazy().catch(() => {});
       };
 
       // IMPORTANT: Register all socket listeners immediately
@@ -5595,7 +5669,7 @@ const initializeRealTime = async () => {
       // Listen for initial online users list when socket connects
       onInitialOnlineUsers((data) => {
         if (data.onlineUsers && Array.isArray(data.onlineUsers)) {
-          setInitialOnlineUsers(data.onlineUsers);
+          onlineStatusApi.setInitialOnlineUsers(data.onlineUsers);
           clearTimeout(timeoutId);
           resolveInitialUsers();
           loadConversations(); // Refresh conversations to show correct status

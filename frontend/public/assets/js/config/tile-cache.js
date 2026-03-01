@@ -28,7 +28,7 @@ const TileCacheManager = {
   initTileCaching: () => {
     // Open the tile cache
     if ('caches' in window) {
-      caches.open('agrimarket-tiles-v3').catch(err => {
+      caches.open('agrimarket-tiles-v4').catch(err => {
         console.warn('Cache API not available:', err);
       });
     }
@@ -59,10 +59,14 @@ const TileCacheManager = {
   clearOldCaches: async () => {
     if ('caches' in window) {
       const cacheNames = await caches.keys();
-      const currentCache = 'agrimarket-tiles-v3';
+      const activeCaches = new Set([
+        'agrimarket-tiles-v4',
+        'agrimarket-static-v1',
+        'agrimarket-pages-v1'
+      ]);
       await Promise.all(
         cacheNames
-          .filter(name => name !== currentCache && name.includes('agrimarket'))
+          .filter(name => name.includes('agrimarket') && !activeCaches.has(name))
           .map(name => caches.delete(name))
       );
     }

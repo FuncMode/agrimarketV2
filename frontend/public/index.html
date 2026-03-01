@@ -39,6 +39,23 @@
   <link rel="stylesheet" href="/assets/css/main.css?v=20260226e">
   <link rel="stylesheet" href="/assets/css/components.css?v=20260226e">
   <link rel="stylesheet" href="/assets/css/utilities.css?v=20260226e">
+  <style>
+    /* Homepage-specific navbar brand alignment */
+    #main-navbar .navbar-container {
+      max-width: none;
+      margin: 0;
+      padding-left: 1.5rem !important;
+      padding-right: 0.75rem !important;
+    }
+
+    #main-navbar .navbar-brand {
+      margin-inline-start: 0;
+    }
+
+    #main-navbar .navbar-brand img {
+      margin-inline-start: 0;
+    }
+  </style>
   
   <!-- Tailwind Config -->
   <script>
@@ -62,7 +79,7 @@
           },
           backgroundImage: {
             'agricultural': 'radial-gradient(120% 120% at 12% 4%, #40682f 0%, #26452d 46%, #152e20 100%)',
-            'wheat-field': 'url("/assets/images/agriculture.png")',
+            'wheat-field': 'url("/assets/images/agriculture.webp")',
           }
         }
       }
@@ -148,7 +165,10 @@
           <!-- Main Image -->
           <div class="home-hero-media relative rounded-2xl overflow-hidden shadow-2xl transition-all duration-500">
             <div class="aspect-[4/3]">
-              <img src="/assets/images/agriculture.png" alt="Beautiful Farmlands" class="w-full h-full object-cover transition-transform duration-700" loading="eager" fetchpriority="high">
+              <picture>
+                <source srcset="/assets/images/agriculture.webp" type="image/webp">
+                <img src="/assets/images/agriculture.png" alt="Beautiful Farmlands" class="w-full h-full object-cover transition-transform duration-700" loading="eager" fetchpriority="high">
+              </picture>
             </div>
             
             <!-- Verification Badge Overlay -->
