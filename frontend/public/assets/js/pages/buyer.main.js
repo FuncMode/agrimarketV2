@@ -3167,9 +3167,8 @@ const calculateCartSummary = () => {
   const selectedItems = getSelectedCartItems();
   const subtotal = selectedItems.reduce((sum, item) => sum + getCartItemSubtotal(item), 0);
   const shippingEstimate = selectedItems.length > 0 ? 49 : 0;
-  const serviceFee = subtotal > 0 ? Number((subtotal * 0.015).toFixed(2)) : 0;
-  const grandTotal = subtotal + shippingEstimate + serviceFee;
-  return { selectedItems, subtotal, shippingEstimate, serviceFee, grandTotal };
+  const grandTotal = subtotal + shippingEstimate;
+  return { selectedItems, subtotal, shippingEstimate, grandTotal };
 };
 
 const pulseElement = (el) => {
@@ -3183,7 +3182,6 @@ const refreshCartSummaryUI = () => {
   const subtotalEl = document.getElementById('cart-subtotal');
   const totalEl = document.getElementById('cart-total');
   const shippingEl = document.getElementById('cart-shipping-estimate');
-  const serviceFeeEl = document.getElementById('cart-service-fee');
   const grandTotalEl = document.getElementById('cart-grand-total');
   const selectedInfoEl = document.getElementById('cart-selected-info');
   const btnCheckout = document.getElementById('btn-checkout');
@@ -3192,7 +3190,6 @@ const refreshCartSummaryUI = () => {
     selectedItems,
     subtotal,
     shippingEstimate,
-    serviceFee,
     grandTotal
   } = calculateCartSummary();
 
@@ -3201,7 +3198,6 @@ const refreshCartSummaryUI = () => {
     pulseElement(subtotalEl);
   }
   if (shippingEl) shippingEl.textContent = formatCurrency(shippingEstimate);
-  if (serviceFeeEl) serviceFeeEl.textContent = formatCurrency(serviceFee);
   if (grandTotalEl) {
     grandTotalEl.textContent = formatCurrency(grandTotal);
     pulseElement(grandTotalEl);
