@@ -10,7 +10,7 @@
   
   const apiBase = isLocalhost 
     ? 'http://localhost:3000/api'
-    : 'https://agrimarketv2-production.up.railway.app/api'; // Production Railway backend
+    : 'https://agrimarketv2-production-6061.up.railway.app/api'; // Production Railway backend
     
   // Load from environment variables (injected by server)
   const envVars = window.__ENV || {};

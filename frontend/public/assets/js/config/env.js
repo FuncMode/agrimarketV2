@@ -26,7 +26,7 @@ const getDefaultApiUrl = () => {
     }
     // For production (Vercel), don't use current domain, use Railway backend
     // This is the hardcoded production backend URL
-    return 'https://agrimarketv2-production.up.railway.app/api';
+    return 'https://agrimarketv2-production-6061.up.railway.app/api';
   }
   return 'http://localhost:3000/api'; // Default for Node.js environment
 };
