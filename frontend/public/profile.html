@@ -220,10 +220,23 @@
             animation: none;
         }
 
+        .profile-animate-delay-1 {
+            animation-delay: 0.1s;
+        }
+
+        .profile-animate-delay-2 {
+            animation-delay: 0.2s;
+        }
+
+        .profile-animate-delay-3 {
+            animation-delay: 0.3s;
+        }
+
         #back-btn {
             border: 1px solid #e5e7eb;
             border-radius: 8px;
             background: #ffffff;
+            -webkit-backdrop-filter: none;
             backdrop-filter: none;
             box-shadow: none !important;
         }
@@ -316,6 +329,28 @@
             color: #475569;
             font-weight: 800;
             margin-bottom: 0.7rem;
+        }
+
+        .profile-icon-summary {
+            width: 44px;
+            height: 44px;
+            font-size: 1.2rem;
+        }
+
+        .profile-icon-detail {
+            width: 40px;
+            height: 40px;
+            font-size: 1.25rem;
+        }
+
+        .profile-icon-location {
+            width: 36px;
+            height: 36px;
+            font-size: 1rem;
+        }
+
+        .profile-relative {
+            position: relative;
         }
 
         @media (max-width: 767px) {
@@ -416,13 +451,13 @@
             </div>
 
             <!-- Profile Card -->
-            <div class="profile-card bg-white rounded-2xl shadow-2xl overflow-hidden mb-6 animate-fade-in" style="animation-delay: 0.1s;">
+            <div class="profile-card bg-white rounded-2xl shadow-2xl overflow-hidden mb-6 animate-fade-in profile-animate-delay-1">
                 <div class="px-4 sm:px-8 pb-6 sm:pb-8">
                     <!-- Profile Info -->
                     <div id="profile-view" class="profile-split-view mt-2">
                         <aside class="profile-sidebar">
                             <div class="flex items-center gap-3">
-                                <div class="icon-wrapper" style="width: 44px; height: 44px; font-size: 1.2rem;">
+                                <div class="icon-wrapper profile-icon-summary">
                                     <i class="bi bi-person-fill"></i>
                                 </div>
                                 <div>
@@ -453,7 +488,7 @@
                             <!-- First Name -->
                             <div class="info-card">
                                 <div class="flex items-start gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-green-500 to-emerald-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper profile-icon-detail bg-gradient-to-br from-green-500 to-emerald-600 text-white text-xl">
                                         <i class="bi bi-person"></i>
                                     </div>
                                     <div class="flex-1">
@@ -466,7 +501,7 @@
                             <!-- Last Name -->
                             <div class="info-card">
                                 <div class="flex items-start gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-teal-500 to-cyan-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper profile-icon-detail bg-gradient-to-br from-teal-500 to-cyan-600 text-white text-xl">
                                         <i class="bi bi-person-badge"></i>
                                     </div>
                                     <div class="flex-1">
@@ -479,7 +514,7 @@
                             <!-- Email -->
                             <div class="info-card md:col-span-2">
                                 <div class="flex items-start gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-blue-500 to-sky-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper profile-icon-detail bg-gradient-to-br from-blue-500 to-sky-600 text-white text-xl">
                                         <i class="bi bi-envelope"></i>
                                     </div>
                                     <div class="flex-1">
@@ -492,7 +527,7 @@
                             <!-- Phone -->
                             <div class="info-card">
                                 <div class="flex items-start gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-orange-500 to-red-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper profile-icon-detail bg-gradient-to-br from-orange-500 to-red-600 text-white text-xl">
                                         <i class="bi bi-phone"></i>
                                     </div>
                                     <div class="flex-1">
@@ -505,7 +540,7 @@
                             <!-- User Type -->
                             <div class="info-card">
                                 <div class="flex items-start gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-amber-500 to-yellow-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper profile-icon-detail bg-gradient-to-br from-amber-500 to-yellow-600 text-white text-xl">
                                         <i class="bi bi-award"></i>
                                     </div>
                                     <div class="flex-1">
@@ -529,7 +564,7 @@
                         <div class="info-card">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-3">
-                                    <div class="icon-wrapper bg-gradient-to-br from-emerald-500 to-green-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper profile-icon-detail bg-gradient-to-br from-emerald-500 to-green-600 text-white text-xl">
                                         <i class="bi bi-check-circle"></i>
                                     </div>
                                     <div>
@@ -548,7 +583,7 @@
                         <!-- Address Section -->
                         <div class="info-card">
                             <div class="flex items-start gap-3">
-                                <div class="icon-wrapper bg-gradient-to-br from-red-500 to-rose-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                <div class="icon-wrapper profile-icon-detail bg-gradient-to-br from-red-500 to-rose-600 text-white text-xl">
                                     <i class="bi bi-geo-alt"></i>
                                 </div>
                                 <div class="flex-1">
@@ -562,7 +597,7 @@
                         <div id="verification-section" class="gradient-border p-6">
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                                 <div class="flex items-center gap-4">
-                                    <div class="icon-wrapper bg-gradient-to-br from-green-500 to-emerald-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                                    <div class="icon-wrapper profile-icon-detail bg-gradient-to-br from-green-500 to-emerald-600 text-white text-xl">
                                         <i id="verification-icon" class="bi bi-check-circle"></i>
                                     </div>
                                     <div>
@@ -592,45 +627,45 @@
                         
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                                <label for="edit-first-name" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                                     <i class="bi bi-person text-green-600"></i>
                                     First Name
                                 </label>
                                 <input type="text" id="edit-first-name" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base transition-all duration-300" required>
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                                <label for="edit-last-name" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                                     <i class="bi bi-person-badge text-teal-600"></i>
                                     Last Name
                                 </label>
                                 <input type="text" id="edit-last-name" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base transition-all duration-300" required>
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                                <label for="edit-phone" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                                     <i class="bi bi-phone text-orange-600"></i>
                                     Phone Number
                                 </label>
                                 <input type="tel" id="edit-phone" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base transition-all duration-300" pattern="(09|\+639)\d{9}" placeholder="+639XXXXXXXXX">
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                                <label for="edit-municipality" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                                     <i class="bi bi-building text-cyan-600"></i>
                                     Municipality
                                 </label>
-                                <select id="edit-municipality" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base transition-all duration-300">
+                                <select id="edit-municipality" aria-label="Municipality" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base transition-all duration-300">
                                     <option value="">Select Municipality</option>
                                 </select>
                             </div>
                         </div>
 
                         <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                            <label for="open-location-picker-btn" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
                                 <i class="bi bi-geo-alt text-red-600"></i>
                                 Delivery Address
                             </label>
-                            <div style="position: relative;">
+                            <div class="profile-relative">
                                 <button type="button" id="open-location-picker-btn" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-white text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent flex items-center gap-3 transition-all duration-300">
-                                    <div class="icon-wrapper bg-gradient-to-br from-red-500 to-rose-600 text-white text-base" style="width: 36px; height: 36px; font-size: 1rem;">
+                                    <div class="icon-wrapper profile-icon-location bg-gradient-to-br from-red-500 to-rose-600 text-white text-base">
                                         <i class="bi bi-pin-map-fill"></i>
                                     </div>
                                     <span id="selected-address-display" class="flex-1 text-gray-700">Click to select location on map</span>
@@ -659,7 +694,7 @@
             </div>
 
             <!-- Stats Section -->
-            <div id="stats-section" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 hidden animate-fade-in" style="animation-delay: 0.2s;">
+            <div id="stats-section" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 hidden animate-fade-in profile-animate-delay-2">
                 <div class="stat-card bg-white rounded-2xl shadow-lg p-6 border-l-4 border-green-500 hover:shadow-2xl">
                     <div class="flex items-center justify-between mb-4">
                         <div class="icon-wrapper bg-gradient-to-br from-green-500 to-emerald-600 text-white">
@@ -696,10 +731,10 @@
             </div>
 
             <!-- Danger Zone -->
-            <div class="profile-danger-zone bg-white rounded-2xl shadow-lg overflow-hidden border-l-4 border-red-500 animate-fade-in" style="animation-delay: 0.3s;">
+            <div class="profile-danger-zone bg-white rounded-2xl shadow-lg overflow-hidden border-l-4 border-red-500 animate-fade-in profile-animate-delay-3">
                 <div class="bg-gradient-to-r from-red-50 to-rose-50 px-6 py-4 border-b border-red-100">
                     <h3 class="text-xl font-bold text-red-700 flex items-center gap-3">
-                        <div class="icon-wrapper bg-gradient-to-br from-red-500 to-rose-600 text-white text-xl" style="width: 40px; height: 40px; font-size: 1.25rem;">
+                        <div class="icon-wrapper profile-icon-detail bg-gradient-to-br from-red-500 to-rose-600 text-white text-xl">
                             <i class="bi bi-exclamation-triangle-fill"></i>
                         </div>
                         Danger Zone

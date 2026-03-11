@@ -55,6 +55,18 @@
     #main-navbar .navbar-brand img {
       margin-inline-start: 0;
     }
+
+    .home-view-all-hidden {
+      display: none;
+    }
+
+    .home-map-layer {
+      z-index: 1;
+    }
+
+    .home-footer-logo {
+      filter: brightness(0) invert(1);
+    }
   </style>
   
   <!-- Tailwind Config -->
@@ -167,7 +179,7 @@
             <div class="aspect-[4/3]">
               <picture>
                 <source srcset="/assets/images/agriculture.webp" type="image/webp">
-                <img src="/assets/images/agriculture.png" alt="Beautiful Farmlands" class="w-full h-full object-cover transition-transform duration-700" loading="eager" fetchpriority="high">
+                <img src="/assets/images/agriculture.png" alt="Beautiful Farmlands" class="w-full h-full object-cover transition-transform duration-700" loading="eager">
               </picture>
             </div>
             
@@ -308,7 +320,7 @@
           
           <!-- Filters -->
           <div class="col-span-2">
-            <select id="filter-category" class="w-full h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary bg-white text-slate-800">
+            <select id="filter-category" aria-label="Filter products by category" class="w-full h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary bg-white text-slate-800">
               <option value="">All Categories</option>
               <option value="vegetables">Vegetables</option>
               <option value="fruits">Fruits</option>
@@ -319,13 +331,13 @@
           </div>
 
           <div class="col-span-2">
-            <select id="filter-municipality" class="w-full h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary bg-white text-slate-800">
+            <select id="filter-municipality" aria-label="Filter products by municipality" class="w-full h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary bg-white text-slate-800">
               <option value="">All Municipalities</option>
             </select>
           </div>
 
           <div class="col-span-2">
-            <select id="sort-by" class="w-full h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary bg-white text-slate-800">
+            <select id="sort-by" aria-label="Sort products" class="w-full h-11 px-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary bg-white text-slate-800">
               <option value="created_at:desc">Newest First</option>
               <option value="price_per_unit:asc">Price: Low to High</option>
               <option value="view_count:desc">Most Viewed</option>
@@ -343,7 +355,7 @@
       </div>
       
       <!-- View All Button -->
-      <div id="view-all-container" class="mt-8 sm:mt-12 text-center" style="display: none;">
+      <div id="view-all-container" class="mt-8 sm:mt-12 text-center home-view-all-hidden">
         <button id="btn-view-all" class="inline-flex items-center px-6 py-3 bg-primary text-white font-semibold rounded-xl hover:bg-primary-light transition-all duration-300 shadow-lg hover:shadow-xl">
           <i class="bi bi-grid-3x3-gap me-2"></i>
           View All Products
@@ -364,7 +376,7 @@
       </div>
       
       <div class="home-map-card bg-white rounded-2xl p-4 home-map-shell">
-        <div id="sellers-map" class="w-full h-[220px] sm:h-[450px] md:h-[500px] rounded-xl overflow-hidden relative" style="z-index: 1;">
+        <div id="sellers-map" class="w-full h-[220px] sm:h-[450px] md:h-[500px] rounded-xl overflow-hidden relative home-map-layer">
           <!-- Map will be rendered by map.js -->
         </div>
         <button id="btn-view-full-map" class="md:hidden mt-3 w-full h-11 rounded-xl border border-primary text-primary font-semibold bg-white">
@@ -380,7 +392,7 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
         <div class="sm:col-span-2 lg:col-span-1">
           <div class="flex items-center gap-2 mb-4">
-            <img src="/assets/images/logo.png" alt="AgriMarket" class="h-8 w-auto" style="filter: brightness(0) invert(1);">
+            <img src="/assets/images/logo.png" alt="AgriMarket" class="h-8 w-auto home-footer-logo">
             <h3 class="text-2xl font-bold font-display">AgriMarket</h3>
           </div>
           <p class="text-green-100 leading-relaxed mb-4">

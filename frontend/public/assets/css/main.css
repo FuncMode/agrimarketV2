@@ -513,7 +513,6 @@ img.error {
 
 .home-hero-title {
   letter-spacing: -0.02em;
-  text-wrap: balance;
 }
 
 .home-cta-group #btn-browse-products:hover {
@@ -559,6 +558,7 @@ img.error {
   background: rgba(255, 255, 255, 0.09);
   border-radius: 12px;
   padding: 0.85rem 0.9rem;
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
 
@@ -815,6 +815,7 @@ img.error {
   background: rgba(13, 24, 20, 0.94);
   border: 1px solid rgba(202, 255, 225, 0.28);
   border-radius: 14px;
+  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   padding: 0.58rem 0.72rem;
   display: flex;
@@ -992,7 +993,6 @@ img.error {
   }
 
   .home-hero {
-    min-height: auto;
     padding-top: 2.25rem;
     padding-bottom: 1.65rem;
   }
@@ -1029,6 +1029,7 @@ img.error {
     bottom: 0;
     z-index: 2;
     background: #ffffffee;
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     border-top: 1px solid #e2e8f0;
     padding-bottom: 0.75rem;
@@ -1081,6 +1082,7 @@ img.error {
     position: sticky;
     top: 86px;
     z-index: 35;
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
   }
 
@@ -1293,7 +1295,6 @@ html {
     display: block;
     width: 100%;
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
 
   .table-responsive table {
@@ -1391,7 +1392,6 @@ html {
     padding: 1rem 1.5rem !important;
     max-height: calc(100vh - 200px);
     overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
   }
 
   .modal-footer {
