@@ -17,16 +17,14 @@ if (isBrowser) {
   envSource = process.env;
 }
 
-// Create ENV object with environment-based fallback values
-// For development: use localhost, for production: use Railway backend
+// Create ENV object with environment-based fallback values.
+// For development use localhost, for production default to same-origin /api.
 const getDefaultApiUrl = () => {
   if (isBrowser) {
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       return 'http://localhost:3000/api';
     }
-    // For production (Vercel), don't use current domain, use Railway backend
-    // This is the hardcoded production backend URL
-    return 'https://agrimarketv2-production-6061.up.railway.app/api';
+    return `${window.location.origin}/api`;
   }
   return 'http://localhost:3000/api'; // Default for Node.js environment
 };

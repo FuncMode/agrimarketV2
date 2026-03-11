@@ -7,13 +7,14 @@
   // If on localhost, use localhost; otherwise use current domain
   const isLocalhost = window.location.hostname === 'localhost' || 
                       window.location.hostname === '127.0.0.1';
-  
-  const apiBase = isLocalhost 
+
+  // Load from environment variables injected at runtime.
+  const envVars = window.__ENV || window.__APP_ENV__ || {};
+  const inferredApiBase = isLocalhost
     ? 'http://localhost:3000/api'
-    : 'https://agrimarketv2-production-6061.up.railway.app/api'; // Production Railway backend
-    
-  // Load from environment variables (injected by server)
-  const envVars = window.__ENV || {};
+    : `${window.location.origin}/api`;
+  
+  const apiBase = envVars.API_BASE_URL || envVars.VITE_API_BASE_URL || inferredApiBase;
 
   // Resolve public runtime config from backend when not injected.
   // We use sync XHR here because this script must finish before ES modules boot.
